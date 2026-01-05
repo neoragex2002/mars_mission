@@ -14,8 +14,44 @@ class Spacecraft {
         this.solarPanelRight = null;
         this.antenna = null;
         this.landingLegs = [];
+        this.sharedTextures = {};
         
         this.createSpacecraft();
+    }
+
+    getMicroNormalMap() {
+        if (this.sharedTextures.microNormal) {
+            return this.sharedTextures.microNormal;
+        }
+
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const context = canvas.getContext('2d');
+        const image = context.createImageData(size, size);
+
+        const amplitude = 0.16;
+        for (let i = 0; i < size * size; i++) {
+            const nx = (Math.random() - 0.5) * amplitude;
+            const ny = (Math.random() - 0.5) * amplitude;
+
+            image.data[i * 4] = Math.floor((0.5 + nx) * 255);
+            image.data[i * 4 + 1] = Math.floor((0.5 + ny) * 255);
+            image.data[i * 4 + 2] = 255;
+            image.data[i * 4 + 3] = 255;
+        }
+
+        context.putImageData(image, 0, 0);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(6, 6);
+        texture.needsUpdate = true;
+
+        this.sharedTextures.microNormal = texture;
+        return texture;
     }
 
     createSpacecraft() {
@@ -35,13 +71,17 @@ class Spacecraft {
 
     createBody() {
         const bodyGeometry = new THREE.CylinderGeometry(0.012, 0.015, 0.05, 16);
+        const microNormal = this.getMicroNormalMap();
         
-        const bodyMaterial = new THREE.MeshStandardMaterial({
-            color: 0xb0c4de,
-            metalness: 0.8,
-            roughness: 0.2,
-            emissive: 0x1a1a3a,
-            emissiveIntensity: 0.1
+        const bodyMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xb9c1c8,
+            metalness: 1.0,
+            roughness: 0.35,
+            clearcoat: 0.25,
+            clearcoatRoughness: 0.28,
+            envMapIntensity: 1.4,
+            normalMap: microNormal,
+            normalScale: new THREE.Vector2(0.12, 0.12)
         });
         
         const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
@@ -52,10 +92,15 @@ class Spacecraft {
         
         for (let i = 0; i < 3; i++) {
             const panelGeometry = new THREE.BoxGeometry(0.025, 0.0015, 0.012);
-            const panelMaterial = new THREE.MeshStandardMaterial({
-                color: 0x8a9bb8,
+            const panelMaterial = new THREE.MeshPhysicalMaterial({
+                color: 0x8e99aa,
                 metalness: 0.9,
-                roughness: 0.1
+                roughness: 0.45,
+                clearcoat: 0.15,
+                clearcoatRoughness: 0.35,
+                envMapIntensity: 1.2,
+                normalMap: microNormal,
+                normalScale: new THREE.Vector2(0.08, 0.08)
             });
             const panel = new THREE.Mesh(panelGeometry, panelMaterial);
             panel.position.y = -0.008 + i * 0.008;
@@ -68,14 +113,15 @@ class Spacecraft {
     createCockpit() {
         const cockpitGeometry = new THREE.ConeGeometry(0.012, 0.02, 16);
         
-        const cockpitMaterial = new THREE.MeshStandardMaterial({
-            color: 0x00bfff,
-            metalness: 0.3,
-            roughness: 0.1,
+        const cockpitMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x0a1630,
+            metalness: 0.0,
+            roughness: 0.06,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.08,
             transparent: true,
-            opacity: 0.9,
-            emissive: 0x0044aa,
-            emissiveIntensity: 0.2
+            opacity: 0.35,
+            envMapIntensity: 1.0
         });
         
         const cockpit = new THREE.Mesh(cockpitGeometry, cockpitMaterial);
@@ -85,12 +131,15 @@ class Spacecraft {
         this.mesh.add(cockpit);
         
         const windowGeometry = new THREE.CircleGeometry(0.006, 16);
-        const windowMaterial = new THREE.MeshStandardMaterial({
-            color: 0x000033,
-            metalness: 0.1,
-            roughness: 0.0,
-            emissive: 0x000011,
-            emissiveIntensity: 0.5
+        const windowMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x05070f,
+            metalness: 0.0,
+            roughness: 0.08,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.05,
+            transparent: true,
+            opacity: 0.6,
+            envMapIntensity: 1.0
         });
         
         const window = new THREE.Mesh(windowGeometry, windowMaterial);
@@ -102,10 +151,13 @@ class Spacecraft {
         const panelGroupLeft = new THREE.Group();
         
         const frameGeometry = new THREE.BoxGeometry(0.06, 0.002, 0.02);
-        const frameMaterial = new THREE.MeshStandardMaterial({
-            color: 0x333333,
-            metalness: 0.9,
-            roughness: 0.3
+        const frameMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x2a2a2a,
+            metalness: 1.0,
+            roughness: 0.6,
+            envMapIntensity: 1.0,
+            normalMap: this.getMicroNormalMap(),
+            normalScale: new THREE.Vector2(0.06, 0.06)
         });
         
         const frameLeft = new THREE.Mesh(frameGeometry, frameMaterial);
@@ -114,8 +166,8 @@ class Spacecraft {
         const cellGeometry = new THREE.BoxGeometry(0.028, 0.001, 0.018);
         const cellMaterial = new THREE.MeshStandardMaterial({
             color: 0x1a237e,
-            metalness: 0.6,
-            roughness: 0.2,
+            metalness: 0.0,
+            roughness: 0.35,
             emissive: 0x0a0a52,
             emissiveIntensity: 0.1
         });
@@ -157,12 +209,13 @@ class Spacecraft {
 
     createThrusterNozzles() {
         const nozzleGeometry = new THREE.CylinderGeometry(0.006, 0.01, 0.015, 12);
-        const nozzleMaterial = new THREE.MeshStandardMaterial({
-            color: 0xff4500,
-            metalness: 0.9,
-            roughness: 0.3,
-            emissive: 0xff6600,
-            emissiveIntensity: 0.5
+        const nozzleMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x3a3a3a,
+            metalness: 1.0,
+            roughness: 0.65,
+            envMapIntensity: 1.0,
+            normalMap: this.getMicroNormalMap(),
+            normalScale: new THREE.Vector2(0.08, 0.08)
         });
         
         const nozzle = new THREE.Mesh(nozzleGeometry, nozzleMaterial);
@@ -199,10 +252,15 @@ class Spacecraft {
 
     createAntenna() {
         const dishGeometry = new THREE.CylinderGeometry(0.008, 0.008, 0.002, 16);
-        const dishMaterial = new THREE.MeshStandardMaterial({
-            color: 0xcccccc,
-            metalness: 0.9,
-            roughness: 0.1
+        const dishMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xd0d0d0,
+            metalness: 1.0,
+            roughness: 0.25,
+            clearcoat: 0.15,
+            clearcoatRoughness: 0.25,
+            envMapIntensity: 1.2,
+            normalMap: this.getMicroNormalMap(),
+            normalScale: new THREE.Vector2(0.06, 0.06)
         });
         
         const dish = new THREE.Mesh(dishGeometry, dishMaterial);
@@ -211,10 +269,13 @@ class Spacecraft {
         this.mesh.add(dish);
         
         const mastGeometry = new THREE.CylinderGeometry(0.001, 0.001, 0.03, 8);
-        const mastMaterial = new THREE.MeshStandardMaterial({
-            color: 0x888888,
-            metalness: 0.8,
-            roughness: 0.2
+        const mastMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x7f7f7f,
+            metalness: 1.0,
+            roughness: 0.45,
+            envMapIntensity: 1.1,
+            normalMap: this.getMicroNormalMap(),
+            normalScale: new THREE.Vector2(0.06, 0.06)
         });
         
         const mast = new THREE.Mesh(mastGeometry, mastMaterial);
@@ -226,10 +287,13 @@ class Spacecraft {
 
     createLandingLegs() {
         const legGeometry = new THREE.BoxGeometry(0.002, 0.02, 0.002);
-        const legMaterial = new THREE.MeshStandardMaterial({
-            color: 0x666666,
-            metalness: 0.9,
-            roughness: 0.2
+        const legMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x686868,
+            metalness: 1.0,
+            roughness: 0.55,
+            envMapIntensity: 1.1,
+            normalMap: this.getMicroNormalMap(),
+            normalScale: new THREE.Vector2(0.06, 0.06)
         });
         
         for (let i = 0; i < 4; i++) {

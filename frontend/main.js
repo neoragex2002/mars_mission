@@ -40,6 +40,7 @@ class MarsMissionApp {
         this.setupScene();
         this.setupCamera();
         this.setupRenderer();
+        this.setupEnvironment();
         this.setupControls();
         this.setupPostProcessing();
         this.setupLighting();
@@ -105,8 +106,8 @@ class MarsMissionApp {
         this.camera = new THREE.PerspectiveCamera(
             60,
             window.innerWidth / window.innerHeight,
-            0.1,
-            20000
+            0.03,
+            3000
         );
         this.camera.position.set(5, 4, 5);
         this.camera.lookAt(0, 0, 0);
@@ -124,11 +125,76 @@ class MarsMissionApp {
         container.appendChild(this.renderer.domElement);
     }
 
+    createEnvironmentTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024;
+        canvas.height = 512;
+        const context = canvas.getContext('2d');
+
+        const bg = context.createLinearGradient(0, 0, 0, canvas.height);
+        bg.addColorStop(0, 'rgb(6, 6, 16)');
+        bg.addColorStop(0.5, 'rgb(2, 2, 8)');
+        bg.addColorStop(1, 'rgb(6, 6, 16)');
+        context.fillStyle = bg;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        const nebulaColors = [
+            'rgba(80, 60, 150, 0.26)',
+            'rgba(20, 90, 140, 0.22)',
+            'rgba(140, 40, 90, 0.20)',
+            'rgba(200, 130, 60, 0.16)'
+        ];
+
+        for (let i = 0; i < 14; i++) {
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * canvas.height;
+            const radius = 140 + Math.random() * 280;
+            const gradient = context.createRadialGradient(x, y, 0, x, y, radius);
+            gradient.addColorStop(0, nebulaColors[i % nebulaColors.length]);
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            context.fillStyle = gradient;
+            context.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+        }
+
+        const highlights = [
+            { x: canvas.width * 0.22, y: canvas.height * 0.25, r: 260, c0: 'rgba(255, 255, 255, 0.85)', c1: 'rgba(255, 255, 255, 0.25)' },
+            { x: canvas.width * 0.78, y: canvas.height * 0.20, r: 220, c0: 'rgba(255, 245, 230, 0.80)', c1: 'rgba(255, 245, 230, 0.22)' },
+            { x: canvas.width * 0.62, y: canvas.height * 0.78, r: 280, c0: 'rgba(210, 230, 255, 0.75)', c1: 'rgba(210, 230, 255, 0.20)' }
+        ];
+
+        highlights.forEach(({ x, y, r, c0, c1 }) => {
+            const gradient = context.createRadialGradient(x, y, 0, x, y, r);
+            gradient.addColorStop(0, c0);
+            gradient.addColorStop(0.15, c1);
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            context.fillStyle = gradient;
+            context.fillRect(x - r, y - r, r * 2, r * 2);
+        });
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        texture.needsUpdate = true;
+        return texture;
+    }
+
+    setupEnvironment() {
+        const environmentTexture = this.createEnvironmentTexture();
+        const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+        pmremGenerator.compileEquirectangularShader();
+
+        const envRenderTarget = pmremGenerator.fromEquirectangular(environmentTexture);
+        this.scene.environment = envRenderTarget.texture;
+        this.environmentRenderTarget = envRenderTarget;
+
+        environmentTexture.dispose();
+        pmremGenerator.dispose();
+    }
+
     setupControls() {
         this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
-        this.controls.minDistance = 1;
+        this.controls.minDistance = 0.3;
         this.controls.maxDistance = 50;
         this.controls.target.set(0, 0, 0);
     }
@@ -555,28 +621,31 @@ class MarsMissionApp {
         let material;
         if (name === 'earth') {
             const earthTexture = this.textureLoader.load('/static/assets/textures/earth_atmos_2048.jpg');
-            const earthSpecular = this.textureLoader.load('/static/assets/textures/earth_specular_2048.jpg');
             const earthBump = this.textureLoader.load('/static/assets/textures/earthbump1k.jpg');
             const earthLights = this.textureLoader.load('/static/assets/textures/earthlights1k.jpg');
             
-            material = new THREE.MeshPhongMaterial({
+            material = new THREE.MeshStandardMaterial({
                 map: earthTexture,
-                specularMap: earthSpecular,
                 bumpMap: earthBump,
-                bumpScale: 0.05,
+                bumpScale: 0.03,
                 emissiveMap: earthLights,
                 emissive: new THREE.Color(0xffff44),
                 emissiveIntensity: 0.8,
-                specular: new THREE.Color(0x111111),
-                shininess: 15
+                metalness: 0.0,
+                roughness: 0.92,
+                envMapIntensity: 0.2
             });
 
             const cloudGeometry = new THREE.SphereGeometry(size * 1.02, 64, 64);
             const cloudTexture = this.textureLoader.load('/static/assets/textures/earth_clouds_1024.png');
-            const cloudMaterial = new THREE.MeshPhongMaterial({
+            const cloudMaterial = new THREE.MeshStandardMaterial({
                 map: cloudTexture,
                 transparent: true,
-                opacity: 0.8
+                opacity: 0.75,
+                metalness: 0.0,
+                roughness: 1.0,
+                envMapIntensity: 0.0,
+                depthWrite: false
             });
             const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
             this.objects.earthClouds = clouds;
@@ -587,11 +656,13 @@ class MarsMissionApp {
             const marsTexture = this.textureLoader.load('/static/assets/textures/mars_1k_color.jpg');
             const marsBump = this.textureLoader.load('/static/assets/textures/marsbump1k.jpg');
             
-            material = new THREE.MeshPhongMaterial({
+            material = new THREE.MeshStandardMaterial({
                 map: marsTexture,
                 bumpMap: marsBump,
                 bumpScale: 0.02,
-                shininess: 2
+                metalness: 0.0,
+                roughness: 0.98,
+                envMapIntensity: 0.15
             });
             this.objects[name] = new THREE.Mesh(geometry, material);
         } else {
