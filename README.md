@@ -1,211 +1,138 @@
-# Mars Mission 3D Visualization 🚀
+# 火星往返任务 3D 可视化（Mars Mission 3D Visualization）
 
-An interactive 3D visualization of a round-trip Mars mission using real orbital mechanics, built with FastAPI (backend) and Three.js (frontend).
+Vibe Programming实现的交互式 3D 火星往返任务可视化演示：后端使用 FastAPI 提供轨道/任务数据，并通过 WebSocket 实时推送；前端使用 Three.js 渲染太阳、行星、飞船与视觉效果。
 
-## Quick Reference
+<img src="images/screenshot.png" alt="火星往返任务" width="800"/>
+
+## 快速开始
 
 ```bash
-# Install dependencies
+# 安装依赖
 pip install -r requirements.txt
 
-# Run tests
+# 运行自检（可选但推荐）
 python3 test.py
 
-# Start server
+# 启动服务（会自动寻找可用端口，默认从 8712 开始）
 ./start.sh
 
-# Open browser
-http://localhost:8712  # or the port printed by start.sh
+# 浏览器打开（以控制台输出的端口为准）
+http://localhost:8712
 ```
 
-## Features Overview
+## 功能特性
 
-## Features
+- **真实（近似）轨道参数**：使用 JPL 数据的近似轨道根数（偏心率/倾角/周期等）计算地球与火星位置
+- **任务阶段**：发射等待 → 地火转移 → 火星停留 → 火地转移 → 完成
+- **实时仿真**：WebSocket 推送 `update`/`snapshot`，前端即时更新渲染与信息面板
+- **交互式 3D**：鼠标旋转/平移/缩放，多种视角跟随（地球/火星/飞船/俯视/自由）
+- **视觉效果**：Bloom泛光、大气Fresnel、镜头Bokeh、星球纹理、凹凸贴图、飞船精模、推进粒子、银河带/星尘、星云、轨迹尾迹
+- **信息展示**：实时坐标、地火距离、速度与进度条，支持时间轴拖动回放
 
-- **Real Orbital Mechanics**: Uses JPL planetary orbital data including eccentricity, inclination, and orbital periods
-- **Interactive 3D Visualization**: Rotate, zoom, and pan the view using mouse controls
-- **Real-time Simulation**: WebSocket-based real-time data streaming
-- **Mission Phases**: 
-  - Pre-launch
-  - Earth to Mars transfer (Hohmann transfer orbit)
-  - Mars surface operations
-  - Mars to Earth return transfer
-  - Mission complete
-- **Sci-fi Visual Effects**: 
-  - Bloom post-processing for glowing sun and engine effects
-  - Particle systems for thruster effects
-  - Starfield background
-  - Orbital trails
-- **Educational Features**: 
-  - Real-time mission data display
-  - Phase indicators
-  - Distance and velocity information
-  - Timeline controls
-
-## Project Structure
+## 项目结构
 
 ```
-mars_mission_3d/
+mars_mission/
 ├── backend/
-│   ├── main.py              # FastAPI server with WebSocket
-│   └── orbit_engine.py      # Orbital mechanics calculations
+│   ├── main.py              # FastAPI 服务 + WebSocket
+│   └── orbit_engine.py      # 轨道/任务阶段计算
 ├── frontend/
-│   ├── index.html           # Main HTML file
-│   ├── styles.css           # Styling
-│   ├── main.js             # Three.js scene setup
-│   ├── orbit.js            # Orbit rendering
-│   ├── spacecraft.js       # Spacecraft model and effects
-│   ├── controls.js         # User interaction
-│   └── ui.js               # UI updates
-└── requirements.txt        # Python dependencies
+│   ├── index.html           # 页面与脚本加载
+│   ├── styles.css           # 样式
+│   ├── main.js              # Three.js 场景与渲染
+│   ├── orbit.js             # 轨道/尾迹工具（可选）
+│   ├── spacecraft.js        # 飞船模型与效果
+│   ├── controls.js          # 控件与快捷键
+│   └── ui.js                # 信息面板更新
+├── requirements.txt         # Python 依赖
+├── start.sh                 # 一键启动（自动选择端口）
+└── test.py                  # 基本自检脚本
 ```
 
-## Installation
+## 安装与运行
 
-1. **Clone or navigate to the project directory:**
-   ```bash
-   cd /mnt/c/dev/vibe/mars_mission
-   ```
-
-2. **Install Python dependencies:**
+1. 安装 Python 依赖：
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **No frontend dependencies needed** - All libraries are loaded via CDN
-
-## Usage
-
-### Quick Start
-
-1. **Run the test suite** (recommended first):
-   ```bash
-   python3 test.py
-   ```
-
-2. **Start the application**:
+2. 启动服务（推荐）：
    ```bash
    ./start.sh
    ```
-   
-   Or manually:
+
+   或手动指定端口：
    ```bash
    cd backend
-   python3 main.py
+   python3 main.py --port 9000
    ```
 
-3. **Open your browser**:
+3. 浏览器访问控制台提示的地址，例如：
+   ```text
+   http://localhost:8712
    ```
-   http://localhost:8712  (or the port printed by start.sh)
-   ```
 
-### Starting the Server
+## 操作说明
 
-From the project root directory:
+**3D 视角：**
+- 左键拖动：旋转
+- 右键拖动：平移
+- 滚轮：缩放
 
-```bash
-./start.sh
-```
+**仿真控件：**
+- Start：开始仿真
+- Pause：暂停/继续
+- Stop：复位到初始状态
+- Time Speed：调整仿真推进速度
+- Timeline：拖动时间轴进行回放/快进
+- View Mode：切换视角（自由/跟随地球/跟随火星/跟随飞船/俯视）
 
-Or using uvicorn directly:
+**键盘快捷键：**
+- Space：暂停/继续
+- ← / →：按天回退/前进
+- R：复位
+- F：全屏切换
 
-```bash
-cd backend
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-With custom port:
-
-```bash
-./start.sh  # Automatically finds available port
-# or
-cd backend
-python3 main.py --port 9000
-```
-
-### Accessing the Application
-
-1. Open your web browser
-2. Navigate to: `http://localhost:8712` (or the port shown in the console)
-3. The 3D visualization will load automatically
-4. Click "Start" to begin the mission simulation
-
-### Controls
-
-**3D Navigation:**
-- Left Mouse: Rotate view
-- Right Mouse: Pan view
-- Scroll: Zoom in/out
-
-**Simulation Controls:**
-- **Start**: Begin the mission simulation
-- **Pause**: Pause/resume the simulation
-- **Stop**: Reset to initial state
-- **Time Speed**: Adjust simulation speed (0.1x to 10x)
-- **Timeline**: Drag to scrub through the mission
-- **View Mode**: Change camera perspective (Free, Follow Earth, Follow Mars, Follow Spacecraft, Top View)
-
-**Keyboard Shortcuts:**
-- Space: Pause/Resume
-- Left/Right Arrows: Step backward/forward one day
-- R: Reset simulation
-- F: Toggle fullscreen
-
-## API Endpoints
+## 接口
 
 ### REST API
 
-- `GET /` - API status
-- `GET /api/mission/info` - Mission information
-- `GET /api/planets` - Planetary orbital parameters
-- `GET /api/orbit/{planet}` - Generate orbit points
-- `GET /api/state` - Current simulation state
-- `GET /api/snapshot` - Current system snapshot
+- `GET /`：返回前端页面（`frontend/index.html`）
+- `GET /api/mission/info`：任务参数与总时长
+- `GET /api/planets`：行星轨道参数摘要
+- `GET /api/orbit/{planet}`：生成轨道采样点（`earth` / `mars`）
+- `GET /api/state`：当前仿真状态（是否运行/时间/速度/是否暂停）
+- `GET /api/snapshot`：当前时刻系统快照（行星/飞船位置等）
 
 ### WebSocket
 
-- `WS /ws` - Real-time simulation data stream
+- `WS /ws`：实时推送仿真数据（`init`、`update`、`snapshot` 等）
 
-## Technical Details
+## 坐标与单位说明
 
-### Orbital Mechanics
+- 后端 `backend/orbit_engine.py` 输出坐标为 `(x, y, z)`，位置单位为 **AU**，时间单位为 **day**，速度为 **AU/day**（数值由差分估计）。
+- Three.js 默认 **Y 轴向上**。为使“轨道平面”视觉上更贴合直觉，前端渲染时会将后端坐标映射为 **`(x, z, y)`**（也就是把后端的 `z` 映射到 Three 的 `y`）。
+- 信息面板（`frontend/ui.js`）展示的是后端原始 `(x, y, z)` 数据；渲染使用的是映射后的坐标。
 
-- **Earth**:
-  - Semi-major axis: 1.000 AU
-  - Eccentricity: 0.0167
-  - Inclination: 0.000°
-  - Period: 365.25 days
+## 技术细节
 
-- **Mars**:
-  - Semi-major axis: 1.524 AU
-  - Eccentricity: 0.0934
-  - Inclination: 1.850°
-  - Period: 687.0 days
+### 行星轨道参数（示例）
 
-### Mission Timeline
+- **地球**：半长轴 ~1.000 AU，偏心率 ~0.0167，倾角 ~0.000°，周期 ~365.25 天
+- **火星**：半长轴 ~1.524 AU，偏心率 ~0.0934，倾角 ~1.850°，周期 ~687.0 天
 
-- **Earth-Mars Transfer**: ~259 days (Hohmann transfer)
-- **Mars Wait Time**: ~454 days (waiting for optimal return window)
-- **Mars-Earth Transfer**: ~259 days (Hohmann transfer)
-- **Total Mission**: ~972 days
+### 任务时间线（默认参数）
 
-### Technology Stack
+- 地球→火星：~259 天
+- 火星停留：~454 天
+- 火星→地球：~259 天
+- 单次任务总时长：~972 天
 
-**Backend:**
-- FastAPI - Modern Python web framework
-- WebSocket - Real-time communication
-- NumPy - Orbital calculations
+## 自定义与开发
 
-**Frontend:**
-- Three.js - 3D rendering
-- EffectComposer - Post-processing effects
-- Bloom - Glow effects
+### 调整任务参数
 
-## Customization
-
-### Adjusting Mission Parameters
-
-Edit `backend/orbit_engine.py`:
+编辑 `backend/orbit_engine.py`（例如）：
 
 ```python
 self.transfer_time_earth_mars = 259  # days
@@ -213,78 +140,49 @@ self.transfer_time_mars_earth = 259  # days
 self.mars_wait_time = 454  # days
 ```
 
-### Changing Visual Effects
+### 调整视觉效果
 
-Edit `frontend/main.js` bloom parameters:
+可在 `frontend/main.js` 调整 Bloom 等效果参数，例如：
 
 ```javascript
-const bloomPass = new THREE.UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.5,  // strength
-    0.4,  // radius
-    0.85  // threshold
+this.bloomPass = new THREE.UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  2.0, // strength
+  0.8, // radius
+  0.5  // threshold
 );
 ```
 
-### Adding More Planets
+## 排障
 
-1. Add orbital parameters in `backend/orbit_engine.py`
-2. Create planet mesh in `frontend/main.js`
-3. Update UI and controls as needed
+### WebSocket 连接失败
 
-## Development
+- 确认后端服务正在运行
+- 确认端口未被占用（`start.sh` 会自动递增端口）
+- 检查浏览器控制台/网络面板是否有被拦截或断开
 
-### Project Phases
+### 3D 场景无法加载
 
-✅ Phase 1: Basic architecture
-✅ Phase 2: Orbital mechanics
-✅ Phase 3: 3D rendering
-✅ Phase 4: Visual effects
-✅ Phase 5: Interactive controls
-✅ Phase 6: UI interface
-🔄 Phase 7: Testing and optimization
+- 打开浏览器控制台查看报错
+- 确认浏览器允许加载脚本（Three.js 等库通过 CDN 引入）
+- 建议使用 Chrome / Firefox
 
-### Future Enhancements
+### 性能问题
 
-- Add more planets (Mercury, Venus, Jupiter)
-- Include moon orbits
-- Add asteroid belt visualization
-- Implement realistic textures
-- Add more transfer orbit options
-- Mission planning tools
-- Export simulation data
-
-## Troubleshooting
-
-### WebSocket Connection Failed
-
-- Ensure the backend server is running
-- Check that the selected port is not in use (default: 8712)
-- Verify firewall settings
-
-### 3D Scene Not Loading
-
-- Check browser console for errors
-- Ensure JavaScript is enabled
-- Try a different browser (Chrome, Firefox recommended)
-
-### Performance Issues
-
-- Reduce time speed
-- Lower bloom intensity
-- Close other browser tabs
-- Disable trails
+- 降低 Time Speed（减少每帧变化幅度）
+- 适当调低 Bloom 强度
+- 关闭其他高负载标签页
 
 ## License
 
-This project is for educational purposes.
+本项目用于学习与演示目的。
 
 ## Credits
 
-- Orbital data from NASA JPL
-- Three.js by three.js contributors
-- Built with FastAPI and modern web technologies
+- 轨道参数参考：NASA JPL（近似）
+- Three.js：three.js contributors
+- 后端：FastAPI / Uvicorn
 
-## Contact
+## 联系方式
 
-For issues or suggestions, please open an issue in the project repository.
+如有问题或建议，请在项目仓库提交 issue。 
