@@ -26,6 +26,12 @@ class MarsMissionApp {
         this.animationId = null;
         this.sharedTextures = {};
         
+        // Camera smoothing
+        this.camLerpFactor = 0.05;
+        this.targetLerpFactor = 0.05;
+        this.isTransitioning = false;
+        this.lastViewMode = 'free';
+        
         this.textureLoader = new THREE.TextureLoader();
 
         this.lastPhase = null;
@@ -753,22 +759,26 @@ class MarsMissionApp {
             this.lastPhase = missionInfo.phase;
         }
         
-        // Update planet positions
         if (missionInfo.earth_position && this.objects.earth) {
             const pos = missionInfo.earth_position;
-            this.objects.earth.position.set(pos[0], pos[2], pos[1]);
+            if (!this.objects.earth.userData.targetPos) this.objects.earth.userData.targetPos = new THREE.Vector3();
+            this.objects.earth.userData.targetPos.set(pos[0], pos[2], pos[1]);
         }
         
         if (missionInfo.mars_position && this.objects.mars) {
             const pos = missionInfo.mars_position;
-            this.objects.mars.position.set(pos[0], pos[2], pos[1]);
+            if (!this.objects.mars.userData.targetPos) this.objects.mars.userData.targetPos = new THREE.Vector3();
+            this.objects.mars.userData.targetPos.set(pos[0], pos[2], pos[1]);
         }
         
         if (missionInfo.spacecraft_position && this.objects.spacecraft) {
             const pos = missionInfo.spacecraft_position;
-            this.objects.spacecraft.getMesh().position.set(pos[0], pos[2], pos[1]);
-            this.objects.spacecraft.getMesh().visible = true;
+            const mesh = this.objects.spacecraft.getMesh();
+            
+            if (!mesh.userData.targetPos) mesh.userData.targetPos = new THREE.Vector3();
+            mesh.userData.targetPos.set(pos[0], pos[2], pos[1]);
 
+            mesh.visible = true;
             const isTransfer = missionInfo.phase === 'transfer_to_mars' || missionInfo.phase === 'transfer_to_earth';
             this.objects.spacecraft.setThrusterActive(isTransfer);
 
@@ -790,15 +800,12 @@ class MarsMissionApp {
                         pos[2] + direction.y,
                         pos[1] + direction.z
                     );
-                    this.objects.spacecraft.getMesh().lookAt(target);
+                    mesh.userData.lookTarget = target;
                 }
             }
             this.lastSpacecraftPosition = [pos[0], pos[2], pos[1]];
-        } else {
-            console.warn('Spacecraft object not found or no position data');
         }
         
-        // Update UI
         updateDataPanel(missionInfo);
         updateTimeline(missionInfo.time_days);
     }
@@ -810,53 +817,90 @@ class MarsMissionApp {
     updateCamera() {
         if (!this.missionData) return;
 
+        // Detect mode change to trigger transition
+        if (this.viewMode !== this.lastViewMode) {
+            this.isTransitioning = true;
+            this.lastViewMode = this.viewMode;
+        }
+
         const earthPos = this.objects.earth ? this.objects.earth.position : null;
         const marsPos = this.objects.mars ? this.objects.mars.position : null;
         const shipPos = this.objects.spacecraft ? this.objects.spacecraft.getMesh().position : null;
 
+        let focusPoint = null;
+        let idealOffset = null;
+
+        // 1. Determine Focus Point & Ideal Offset based on mode
         switch (this.viewMode) {
             case 'earth':
+                this.controls.enablePan = false;
                 if (earthPos) {
-                    this.controls.target.copy(earthPos);
-                    this.camera.position.set(
-                        earthPos.x + 1,
-                        earthPos.y + 0.5,
-                        earthPos.z + 1
-                    );
+                    focusPoint = earthPos;
+                    idealOffset = new THREE.Vector3(0.8, 0.4, 0.8);
                 }
                 break;
 
             case 'mars':
+                this.controls.enablePan = false;
                 if (marsPos) {
-                    this.controls.target.copy(marsPos);
-                    this.camera.position.set(
-                        marsPos.x + 1,
-                        marsPos.y + 0.5,
-                        marsPos.z + 1
-                    );
+                    focusPoint = marsPos;
+                    idealOffset = new THREE.Vector3(0.6, 0.3, 0.6);
                 }
                 break;
 
             case 'spacecraft':
+                this.controls.enablePan = false;
                 if (shipPos) {
-                    this.controls.target.copy(shipPos);
-                    this.camera.position.set(
-                        shipPos.x + 0.5,
-                        shipPos.y + 0.3,
-                        shipPos.z + 0.5
-                    );
+                    focusPoint = shipPos;
+                    idealOffset = new THREE.Vector3(0.3, 0.2, 0.3);
                 }
                 break;
 
             case 'top':
-                this.controls.target.set(0, 0, 0);
-                this.camera.position.set(0, 4, 0);
-                this.camera.lookAt(0, 0, 0);
-                break;
+                this.controls.enablePan = true;
+                // Special case for TOP view: always enforce position
+                this.controls.target.lerp(new THREE.Vector3(0, 0, 0), this.targetLerpFactor);
+                this.camera.position.lerp(new THREE.Vector3(0, 4, 0), this.camLerpFactor);
+                this.controls.update();
+                return; // Exit early for top view
 
             case 'free':
             default:
-                break;
+                this.controls.enablePan = true;
+                this.controls.update();
+                return; // Exit early for free view
+        }
+
+        // 2. Handle Follow Logic (Earth/Mars/Spacecraft)
+        if (focusPoint && idealOffset) {
+            const idealCameraPos = focusPoint.clone().add(idealOffset);
+            
+            // Check if we have arrived (Transition Complete)
+            if (this.isTransitioning) {
+                const distToTarget = this.camera.position.distanceTo(idealCameraPos);
+                const distToFocus = this.controls.target.distanceTo(focusPoint);
+                
+                // Threshold to end transition
+                if (distToTarget < 0.1 && distToFocus < 0.1) {
+                    this.isTransitioning = false;
+                }
+                
+                // Transition Phase: Force camera to ideal position
+                this.controls.target.lerp(focusPoint, this.targetLerpFactor);
+                this.camera.position.lerp(idealCameraPos, this.camLerpFactor);
+            } else {
+                // Locked Phase:
+                // A. Move target EXACTLY to focus point (lock center)
+                // We use a temp vector to calculate how much the target moved this frame
+                const lastTarget = this.controls.target.clone();
+                this.controls.target.copy(focusPoint);
+                
+                // B. Move camera by the SAME delta to maintain relative distance/angle
+                // This prevents "jitter" because we are not enforcing a specific angle,
+                // just carrying the camera along with the planet.
+                const delta = new THREE.Vector3().subVectors(this.controls.target, lastTarget);
+                this.camera.position.add(delta);
+            }
         }
 
         this.controls.update();
@@ -922,6 +966,35 @@ class MarsMissionApp {
 
     animate() {
         this.animationId = requestAnimationFrame(() => this.animate());
+
+        // Interpolate planet/ship positions
+        const lerpAlpha = 0.1;
+        
+        if (this.objects.earth && this.objects.earth.userData.targetPos) {
+            this.objects.earth.position.lerp(this.objects.earth.userData.targetPos, lerpAlpha);
+        }
+        
+        if (this.objects.mars && this.objects.mars.userData.targetPos) {
+            this.objects.mars.position.lerp(this.objects.mars.userData.targetPos, lerpAlpha);
+        }
+        
+        if (this.objects.spacecraft) {
+            const mesh = this.objects.spacecraft.getMesh();
+            if (mesh.userData.targetPos) {
+                mesh.position.lerp(mesh.userData.targetPos, lerpAlpha);
+            }
+            
+            if (mesh.userData.lookTarget) {
+                // Smooth lookAt
+                const currentQuat = mesh.quaternion.clone();
+                mesh.lookAt(mesh.userData.lookTarget);
+                const targetQuat = mesh.quaternion.clone();
+                mesh.quaternion.copy(currentQuat).slerp(targetQuat, lerpAlpha);
+            }
+            
+            const time = Date.now();
+            this.objects.spacecraft.update(time);
+        }
 
         this.updateCamera();
 
