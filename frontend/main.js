@@ -44,11 +44,56 @@ class MarsMissionApp {
         this.setupPostProcessing();
         this.setupLighting();
         this.setupStars();
+        this.setupNebulae();
+        this.createLensFlare();
         this.setupWebSocket();
         this.setupEventListeners();
         this.animate();
         
         console.log('Initialization complete!');
+    }
+
+    setupWebSocket() {
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const wsUrl = `${protocol}://${window.location.host}/ws`;
+        this.ws = new WebSocket(wsUrl);
+        this.ws.onopen = () => {
+            console.log('WebSocket connected');
+            this.connected = true;
+            this.updateConnectionStatus(true);
+        };
+        this.ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            this.handleMessage(data);
+        };
+        this.ws.onclose = () => {
+            console.log('WebSocket disconnected');
+            this.connected = false;
+            this.updateConnectionStatus(false);
+        };
+    }
+
+    handleMessage(data) {
+        switch (data.type) {
+            case 'init':
+                this.handleInitialData(data);
+                break;
+            case 'snapshot':
+            case 'update':
+                this.handleMissionUpdate(data);
+                break;
+        }
+    }
+
+    handleInitialData(data) {
+        this.missionData = data.mission_info;
+        this.createSun();
+        this.createPlanet('earth', data.earth_orbit);
+        this.createPlanet('mars', data.mars_orbit);
+        this.createSpacecraft();
+        updateMissionInfo(data.mission_info);
+        document.getElementById('total-days').textContent = Math.round(data.mission_info.total_duration);
+        document.getElementById('timeline').max = Math.round(data.mission_info.total_duration);
     }
 
     setupScene() {
@@ -114,102 +159,135 @@ class MarsMissionApp {
         this.scene.add(sunLight);
     }
 
-    setupStars() {
-        const geometry = new THREE.BufferGeometry();
-        const vertices = [];
-        
-        for (let i = 0; i < 10000; i++) {
-            const x = (Math.random() - 0.5) * 1000;
-            const y = (Math.random() - 0.5) * 1000;
-            const z = (Math.random() - 0.5) * 1000;
-            vertices.push(x, y, z);
+    createNebulaTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const context = canvas.getContext('2d');
+        const gradient = context.createRadialGradient(128, 128, 0, 128, 128, 128);
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+        gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.1)');
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, 256, 256);
+        return new THREE.CanvasTexture(canvas);
+    }
+
+    setupNebulae() {
+        const texture = this.createNebulaTexture();
+        const colors = [0x442288, 0x112266, 0x441144, 0x114466];
+        const nebulaCount = 8;
+        this.objects.nebulae = new THREE.Group();
+        for (let i = 0; i < nebulaCount; i++) {
+            const material = new THREE.SpriteMaterial({
+                map: texture,
+                color: colors[i % colors.length],
+                transparent: true,
+                opacity: 0.2 + Math.random() * 0.2,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            const sprite = new THREE.Sprite(material);
+            const r = 900;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            sprite.position.set(
+                r * Math.sin(phi) * Math.cos(theta),
+                r * Math.sin(phi) * Math.sin(theta),
+                r * Math.cos(phi)
+            );
+            const scale = 300 + Math.random() * 500;
+            sprite.scale.set(scale, scale, 1);
+            this.objects.nebulae.add(sprite);
         }
-        
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-        
-        const material = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 0.5,
-            sizeAttenuation: true,
+        this.scene.add(this.objects.nebulae);
+    }
+
+    setupStars() {
+        const starCount = 20000;
+        const dustCount = 20000;
+        const totalCount = starCount + dustCount;
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(totalCount * 3);
+        const colors = new Float32Array(totalCount * 3);
+        const sizes = new Float32Array(totalCount);
+        const colorOptions = [
+            new THREE.Color(0xffffff),
+            new THREE.Color(0xfff4ea),
+            new THREE.Color(0xeaf4ff),
+            new THREE.Color(0xffe5d9)
+        ];
+
+        for (let i = 0; i < totalCount; i++) {
+            const isDust = i >= starCount;
+            const r = 800 + Math.random() * 400;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            let x = r * Math.sin(phi) * Math.cos(theta);
+            let y = r * Math.sin(phi) * Math.sin(theta);
+            let z = r * Math.cos(phi);
+
+            const tilt = 0.5;
+            if (isDust || Math.random() > 0.6) {
+                const spread = isDust ? 150 : 250;
+                const dist = 50 + Math.random() * spread;
+                const angle = Math.random() * Math.PI * 2;
+                x = dist * Math.cos(angle) * (r / 300);
+                y = (dist * Math.sin(angle) * Math.sin(tilt) + (Math.random() - 0.5) * (isDust ? 60 : 100)) * (r / 300);
+                z = (dist * Math.sin(angle) * Math.cos(tilt)) * (r / 300);
+            }
+
+            positions[i * 3] = x;
+            positions[i * 3 + 1] = y;
+            positions[i * 3 + 2] = z;
+
+            const color = isDust ? new THREE.Color(0xaa88ff) : colorOptions[Math.floor(Math.random() * colorOptions.length)];
+            colors[i * 3] = color.r;
+            colors[i * 3 + 1] = color.g;
+            colors[i * 3 + 2] = color.b;
+            sizes[i] = isDust ? 0.3 + Math.random() * 0.5 : 0.8 + Math.random() * 2.5;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 }
+            },
+            vertexShader: `
+                uniform float time;
+                attribute float size;
+                attribute vec3 color;
+                varying vec3 vColor;
+                varying float vOpacity;
+                void main() {
+                    vColor = color;
+                    // Add subtle twinkling effect based on position and time
+                    float twinkle = sin(time * 0.002 + position.x + position.y) * 0.3 + 0.7;
+                    vOpacity = twinkle;
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    gl_PointSize = max(1.5, size * (950.0 / -mvPosition.z));
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vColor;
+                varying float vOpacity;
+                void main() {
+                    float r = distance(gl_PointCoord, vec2(0.5));
+                    if (r > 0.5) discard;
+                    gl_FragColor = vec4(vColor * 1.5, vOpacity * (1.0 - r * 2.0));
+                }
+            `,
             transparent: true,
-            opacity: 0.8
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
         });
-        
+
         this.objects.stars = new THREE.Points(geometry, material);
         this.scene.add(this.objects.stars);
-    }
-
-    setupWebSocket() {
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const wsUrl = `${protocol}://${window.location.host}/ws`;
-        
-        this.ws = new WebSocket(wsUrl);
-        
-        this.ws.onopen = () => {
-            console.log('WebSocket connected');
-            this.connected = true;
-            this.updateConnectionStatus(true);
-        };
-        
-        this.ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            this.handleMessage(data);
-        };
-        
-        this.ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
-        
-        this.ws.onclose = () => {
-            console.log('WebSocket disconnected');
-            this.connected = false;
-            this.updateConnectionStatus(false);
-        };
-    }
-
-    handleMessage(data) {
-        switch (data.type) {
-            case 'init':
-                console.log('Received initial data');
-                this.handleInitialData(data);
-                break;
-            
-            case 'snapshot':
-            case 'update':
-                this.handleMissionUpdate(data);
-                break;
-            
-            case 'ack':
-                console.log('Command acknowledged:', data.command);
-                break;
-        }
-    }
-
-    handleInitialData(data) {
-        this.missionData = data.mission_info;
-        
-        // Create sun
-        this.createSun();
-        
-        // Create planets
-        this.createPlanet('earth', data.earth_orbit);
-        this.createPlanet('mars', data.mars_orbit);
-        
-        // Create spacecraft
-        this.createSpacecraft();
-        
-        // Update UI with mission info
-        updateMissionInfo(data.mission_info);
-        
-        // Update total days
-        document.getElementById('total-days').textContent = 
-            Math.round(data.mission_info.total_duration);
-        
-        // Update timeline max
-        document.getElementById('timeline').max = 
-            Math.round(data.mission_info.total_duration);
-        
-        console.log('Scene setup complete');
     }
 
     createGlowTexture() {
@@ -302,6 +380,82 @@ class MarsMissionApp {
         }
     }
 
+    createFlareTexture(type) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const context = canvas.getContext('2d');
+        const center = 64;
+
+        if (type === 'hexagon') {
+            context.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const angle = (i * Math.PI) / 3;
+                const x = center + 50 * Math.cos(angle);
+                const y = center + 50 * Math.sin(angle);
+                if (i === 0) context.moveTo(x, y);
+                else context.lineTo(x, y);
+            }
+            context.closePath();
+            context.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            context.fill();
+        } else if (type === 'ring') {
+            context.beginPath();
+            context.arc(center, center, 40, 0, Math.PI * 2);
+            context.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            context.lineWidth = 1;
+            context.stroke();
+        } else {
+            const gradient = context.createRadialGradient(center, center, 0, center, center, 64);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)');
+            gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.2)');
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, 128, 128);
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        return texture;
+    }
+
+    createLensFlare() {
+        const textures = {
+            main: this.createFlareTexture('glow'),
+            hexagon: this.createFlareTexture('hexagon'),
+            ring: this.createFlareTexture('ring')
+        };
+
+        this.flareElements = [];
+        
+        const flareConfigs = [
+            { dist: 0.0, size: 1.0, opacity: 0.4, color: 0xffffff, tex: 'main' },
+            { dist: 0.2, size: 0.15, opacity: 0.2, color: 0xffccaa, tex: 'hexagon' },
+            { dist: 0.4, size: 0.08, opacity: 0.15, color: 0xffaaaa, tex: 'hexagon' },
+            { dist: 0.5, size: 0.3, opacity: 0.1, color: 0xffffff, tex: 'ring' },
+            { dist: 0.6, size: 0.1, opacity: 0.15, color: 0xaaaaff, tex: 'hexagon' },
+            { dist: 0.8, size: 0.2, opacity: 0.1, color: 0xffffff, tex: 'ring' },
+            { dist: 1.1, size: 0.3, opacity: 0.15, color: 0xffccaa, tex: 'hexagon' }
+        ];
+
+        flareConfigs.forEach(cfg => {
+            const mat = new THREE.SpriteMaterial({
+                map: textures[cfg.tex],
+                color: cfg.color,
+                transparent: true,
+                opacity: cfg.opacity,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                depthTest: false
+            });
+            const sprite = new THREE.Sprite(mat);
+            sprite.scale.set(cfg.size, cfg.size, 1);
+            sprite.visible = false;
+            this.scene.add(sprite);
+            this.flareElements.push({ sprite, dist: cfg.dist });
+        });
+    }
+
     createSun() {
         if (this.objects.sun) {
             this.disposeObject(this.objects.sun);
@@ -315,10 +469,10 @@ class MarsMissionApp {
         const material = new THREE.MeshStandardMaterial({
             map: sunTexture,
             emissive: 0xffaa00,
-            emissiveIntensity: 1.0,
+            emissiveIntensity: 1.5,
             emissiveMap: sunTexture,
             toneMapped: false,
-            depthWrite: true
+            depthWrite: false
         });
         
         this.objects.sun = new THREE.Mesh(geometry, material);
@@ -353,6 +507,35 @@ class MarsMissionApp {
         
         this.scene.add(this.objects.sun);
         this.sunTexture = sunTexture;
+    }
+
+    createAtmosphereMaterial(color) {
+        return new THREE.ShaderMaterial({
+            uniforms: { 
+                glowColor: { value: new THREE.Color(color) }
+            },
+            vertexShader: `
+                varying vec3 vNormal;
+                void main() {
+                    vNormal = normalize(normalMatrix * normal);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 glowColor;
+                varying vec3 vNormal;
+                void main() {
+                    // BackSide rendering: edge dot is 0, center dot is -1
+                    // We want intensity to be 1 at edge and 0 at center
+                    float intensity = pow(1.0 + dot(vNormal, vec3(0, 0, 1.0)), 6.0);
+                    gl_FragColor = vec4(glowColor, intensity);
+                }
+            `,
+            side: THREE.BackSide,
+            blending: THREE.AdditiveBlending,
+            transparent: true,
+            depthWrite: false
+        });
     }
 
     createPlanet(name, orbitPoints) {
@@ -436,12 +619,17 @@ class MarsMissionApp {
         const glow = new THREE.Sprite(glowMaterial);
         glow.scale.set(size * 4, size * 4, 1.0);
         this.objects[name].add(glow);
+
+        const atmosphereGeometry = new THREE.SphereGeometry(size * 1.06, 64, 64);
+        const atmosphereMaterial = this.createAtmosphereMaterial(color);
+        const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+        this.objects[name].add(atmosphere);
         
         const orbitGeometry = new THREE.BufferGeometry();
         const positions = [];
         
         orbitPoints.points.forEach(point => {
-            positions.push(point[0], point[1], point[2]);
+            positions.push(point[0], point[2], point[1]);
         });
         
         orbitGeometry.setAttribute('position', 
@@ -497,45 +685,44 @@ class MarsMissionApp {
         // Update planet positions
         if (missionInfo.earth_position && this.objects.earth) {
             const pos = missionInfo.earth_position;
-            this.objects.earth.position.set(pos[0], pos[1], pos[2]);
+            this.objects.earth.position.set(pos[0], pos[2], pos[1]);
         }
         
         if (missionInfo.mars_position && this.objects.mars) {
             const pos = missionInfo.mars_position;
-            this.objects.mars.position.set(pos[0], pos[1], pos[2]);
+            this.objects.mars.position.set(pos[0], pos[2], pos[1]);
         }
         
         if (missionInfo.spacecraft_position && this.objects.spacecraft) {
             const pos = missionInfo.spacecraft_position;
-            this.objects.spacecraft.getMesh().position.set(pos[0], pos[1], pos[2]);
+            this.objects.spacecraft.getMesh().position.set(pos[0], pos[2], pos[1]);
             this.objects.spacecraft.getMesh().visible = true;
 
             const isTransfer = missionInfo.phase === 'transfer_to_mars' || missionInfo.phase === 'transfer_to_earth';
             this.objects.spacecraft.setThrusterActive(isTransfer);
 
             if (isTransfer) {
-                this.updateSpacecraftTrail(pos);
+                this.updateSpacecraftTrail([pos[0], pos[2], pos[1]]);
             }
             
-            // Update spacecraft rotation to face direction of travel
-            if (this.lastSpacecraftPosition) {
-            const rawDirection = new THREE.Vector3(
-                pos[0] - this.lastSpacecraftPosition[0],
-                pos[1] - this.lastSpacecraftPosition[1],
-                pos[2] - this.lastSpacecraftPosition[2]
-            );
-
-            if (rawDirection.length() > 0.001) {
-                const direction = rawDirection.normalize();
-                const target = new THREE.Vector3(
-                    pos[0] + direction.x,
-                    pos[1] + direction.y,
-                    pos[2] + direction.z
+            if (this.lastSpacecraftPosition && Array.isArray(this.lastSpacecraftPosition)) {
+                const rawDirection = new THREE.Vector3(
+                    pos[0] - this.lastSpacecraftPosition[0],
+                    pos[2] - this.lastSpacecraftPosition[1],
+                    pos[1] - this.lastSpacecraftPosition[2]
                 );
-                this.objects.spacecraft.getMesh().lookAt(target);
+
+                if (rawDirection.length() > 0.001) {
+                    const direction = rawDirection.normalize();
+                    const target = new THREE.Vector3(
+                        pos[0] + direction.x,
+                        pos[2] + direction.y,
+                        pos[1] + direction.z
+                    );
+                    this.objects.spacecraft.getMesh().lookAt(target);
+                }
             }
-            }
-            this.lastSpacecraftPosition = pos;
+            this.lastSpacecraftPosition = [pos[0], pos[2], pos[1]];
         } else {
             console.warn('Spacecraft object not found or no position data');
         }
@@ -629,6 +816,39 @@ class MarsMissionApp {
         }
     }
 
+    updateLensFlare() {
+        if (!this.flareElements || !this.objects.sun) return;
+
+        const sunPos = new THREE.Vector3();
+        this.objects.sun.getWorldPosition(sunPos);
+
+        const screenPos = sunPos.clone();
+        screenPos.project(this.camera);
+
+        const isVisible = (screenPos.x >= -1 && screenPos.x <= 1 &&
+                           screenPos.y >= -1 && screenPos.y <= 1 &&
+                           screenPos.z < 1);
+
+        if (!isVisible) {
+            this.flareElements.forEach(f => f.sprite.visible = false);
+            return;
+        }
+
+        const sunVec = sunPos.clone().sub(this.camera.position);
+        const camDir = new THREE.Vector3();
+        this.camera.getWorldDirection(camDir);
+
+        this.flareElements.forEach(f => {
+            const dist = f.dist;
+            const pos = this.camera.position.clone()
+                .add(sunVec.clone().multiplyScalar(dist))
+                .add(camDir.clone().multiplyScalar(1 - dist).multiplyScalar(0.5));
+            
+            f.sprite.position.copy(pos);
+            f.sprite.visible = true;
+        });
+    }
+
     animate() {
         this.animationId = requestAnimationFrame(() => this.animate());
 
@@ -655,7 +875,6 @@ class MarsMissionApp {
         }
         if (this.objects.earthClouds) {
             this.objects.earthClouds.rotation.y += 0.001;
-            this.objects.earthClouds.rotation.x += 0.0002;
         }
 
         if (this.objects.mars) {
@@ -669,7 +888,16 @@ class MarsMissionApp {
 
         if (this.objects.stars) {
             this.objects.stars.rotation.y += 0.0001;
+            if (this.objects.stars.material.uniforms) {
+                this.objects.stars.material.uniforms.time.value = Date.now() % 1000000;
+            }
         }
+
+        if (this.objects.nebulae) {
+            this.objects.nebulae.rotation.y += 0.00005;
+        }
+
+        this.updateLensFlare();
 
         this.composer.render();
     }
