@@ -234,6 +234,26 @@ class MarsMissionApp {
         return texture;
     }
 
+    createRadialTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const context = canvas.getContext('2d');
+        const gradient = context.createRadialGradient(256, 256, 0, 256, 256, 256);
+        
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+        gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.8)');
+        gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.2)');
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, 512, 512);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        return texture;
+    }
+
     createSun() {
         if (this.objects.sun) {
             this.scene.remove(this.objects.sun);
@@ -352,16 +372,18 @@ class MarsMissionApp {
         
         this.scene.add(this.objects[name]);
         
-        const glowGeometry = new THREE.SphereGeometry(size * 1.15, 32, 32);
-        const glowMaterial = new THREE.MeshBasicMaterial({
+        const glowTexture = this.createRadialTexture();
+        const glowMaterial = new THREE.SpriteMaterial({
+            map: glowTexture,
             color: color,
             transparent: true,
-            opacity: 0.15,
-            toneMapped: false,
-            side: THREE.BackSide,
+            opacity: 0.6,
+            blending: THREE.AdditiveBlending,
             depthWrite: false
         });
-        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        
+        const glow = new THREE.Sprite(glowMaterial);
+        glow.scale.set(size * 4, size * 4, 1.0);
         this.objects[name].add(glow);
         
         const orbitGeometry = new THREE.BufferGeometry();
