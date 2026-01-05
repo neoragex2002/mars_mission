@@ -136,11 +136,31 @@ function setupKeyboardControls() {
             
             case 'f':
             case 'F':
+                event.preventDefault();
                 // Toggle full screen
                 if (!document.fullscreenElement) {
                     document.documentElement.requestFullscreen();
                 } else {
                     document.exitFullscreen();
+                }
+                break;
+
+            case 'c':
+            case 'C':
+                event.preventDefault();
+                // Cycle camera / view mode
+                if (app) {
+                    const viewModeSelect = document.getElementById('view-mode');
+                    const modes = ['free', 'earth', 'mars', 'spacecraft', 'top'];
+                    const currentMode =
+                        (viewModeSelect && viewModeSelect.value) ? viewModeSelect.value : 'free';
+                    const currentIndex = modes.indexOf(currentMode);
+                    const nextMode = modes[(currentIndex + 1 + modes.length) % modes.length];
+
+                    if (viewModeSelect) {
+                        viewModeSelect.value = nextMode;
+                    }
+                    app.setViewMode(nextMode);
                 }
                 break;
         }
