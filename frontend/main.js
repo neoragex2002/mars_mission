@@ -24,7 +24,8 @@ class MarsMissionApp {
         this.simulationRunning = false;
         this.viewMode = 'free';
         this.animationId = null;
-
+        this.sharedTextures = {};
+        
         this.textureLoader = new THREE.TextureLoader();
 
         this.lastPhase = null;
@@ -212,6 +213,10 @@ class MarsMissionApp {
     }
 
     createGlowTexture() {
+        if (this.sharedTextures.glow) {
+            return this.sharedTextures.glow;
+        }
+
         const canvas = document.createElement('canvas');
         canvas.width = 512;
         canvas.height = 512;
@@ -231,10 +236,15 @@ class MarsMissionApp {
         
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
+        this.sharedTextures.glow = texture;
         return texture;
     }
 
     createRadialTexture() {
+        if (this.sharedTextures.radial) {
+            return this.sharedTextures.radial;
+        }
+
         const canvas = document.createElement('canvas');
         canvas.width = 512;
         canvas.height = 512;
@@ -251,11 +261,50 @@ class MarsMissionApp {
         
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
+        this.sharedTextures.radial = texture;
         return texture;
+    }
+
+    disposeObject(obj) {
+        if (!obj) return;
+        
+        if (obj.geometry) {
+            obj.geometry.dispose();
+        }
+        
+        if (obj.material) {
+            if (Array.isArray(obj.material)) {
+                obj.material.forEach(material => {
+                    if (material.map) material.map.dispose();
+                    if (material.lightMap) material.lightMap.dispose();
+                    if (material.bumpMap) material.bumpMap.dispose();
+                    if (material.normalMap) material.normalMap.dispose();
+                    if (material.specularMap) material.specularMap.dispose();
+                    if (material.emissiveMap) material.emissiveMap.dispose();
+                    material.dispose();
+                });
+            } else {
+                if (obj.material.map) obj.material.map.dispose();
+                if (obj.material.lightMap) obj.material.lightMap.dispose();
+                if (obj.material.bumpMap) obj.material.bumpMap.dispose();
+                if (obj.material.normalMap) obj.material.normalMap.dispose();
+                if (obj.material.specularMap) obj.material.specularMap.dispose();
+                if (obj.material.emissiveMap) obj.material.emissiveMap.dispose();
+                obj.material.dispose();
+            }
+        }
+        
+        if (obj.children) {
+            while (obj.children.length > 0) {
+                this.disposeObject(obj.children[0]);
+                obj.remove(obj.children[0]);
+            }
+        }
     }
 
     createSun() {
         if (this.objects.sun) {
+            this.disposeObject(this.objects.sun);
             this.scene.remove(this.objects.sun);
         }
 
@@ -308,9 +357,11 @@ class MarsMissionApp {
 
     createPlanet(name, orbitPoints) {
         if (this.objects[name]) {
+            this.disposeObject(this.objects[name]);
             this.scene.remove(this.objects[name]);
         }
         if (this.objects[`${name}Orbit`]) {
+            this.disposeObject(this.objects[`${name}Orbit`]);
             this.scene.remove(this.objects[`${name}Orbit`]);
         }
 
