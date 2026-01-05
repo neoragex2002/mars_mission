@@ -535,7 +535,7 @@ class MarsMissionApp {
         const material = new THREE.MeshStandardMaterial({
             map: sunTexture,
             emissive: 0xffaa00,
-            emissiveIntensity: 1.5,
+            emissiveIntensity: 0.5,
             emissiveMap: sunTexture,
             toneMapped: false,
             depthWrite: false
@@ -549,7 +549,7 @@ class MarsMissionApp {
             map: glowTexture,
             color: 0xffddaa,
             transparent: true,
-            opacity: 0.6,
+            opacity: 0.5,
             blending: THREE.AdditiveBlending,
             depthWrite: false
         });
@@ -561,7 +561,7 @@ class MarsMissionApp {
             map: glowTexture,
             color: 0xffaa66,
             transparent: true,
-            opacity: 0.3,
+            opacity: 0.22,
             blending: THREE.AdditiveBlending,
             depthWrite: false
         });
