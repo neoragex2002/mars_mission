@@ -1,0 +1,91 @@
+# Mars Mission 3D Configuration
+
+## Server Configuration
+server:
+  host: "0.0.0.0"
+  port: 8712
+  reload: false
+
+## Simulation Configuration
+simulation:
+  # Time step for simulation loop (seconds)
+  time_step: 0.05  # 20 FPS
+  
+  # Default time speed (days per update)
+  default_time_speed: 1.0
+  
+  # Minimum and maximum time speed
+  min_time_speed: 0.1
+  max_time_speed: 10.0
+
+## Visualization Configuration
+visualization:
+  # Three.js configuration
+  threejs:
+    antialias: true
+    pixel_ratio: window.devicePixelRatio
+    tone_mapping: "ReinhardToneMapping"
+    exposure: 1.2
+  
+  # Bloom effect configuration
+  bloom:
+    strength: 1.5
+    radius: 0.4
+    threshold: 0.85
+  
+  # Camera configuration
+  camera:
+    fov: 60
+    near: 0.1
+    far: 2000
+    initial_position:
+      x: 5
+      y: 4
+      z: 5
+  
+  # Controls configuration
+  controls:
+    enable_damping: true
+    damping_factor: 0.05
+    min_distance: 1
+    max_distance: 50
+
+## Mission Configuration
+mission:
+  # Transfer times (days)
+  earth_mars_transfer: 259
+  mars_earth_transfer: 259
+  
+  # Wait time on Mars (days)
+  mars_wait_time: 454
+  
+  # Planet properties (in AU)
+  earth:
+    radius: 1.0
+    display_radius: 0.05
+    color: "#4a90d9"
+  
+  mars:
+    radius: 1.524
+    display_radius: 0.04
+    color: "#e74c3c"
+  
+  sun:
+    display_radius: 0.2
+    color: "#ffff00"
+    glow_radius: 0.25
+
+## UI Configuration
+ui:
+  # Data panel update rate (ms)
+  update_interval: 50
+  
+  # Toast notification duration (ms)
+  toast_duration: 3000
+  
+  # Colors
+  colors:
+    success: "#00ff00"
+    warning: "#ffaa00"
+    error: "#ff0000"
+    info: "#4a90d9"
