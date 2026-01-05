@@ -1,5 +1,57 @@
 // Main.js - Main application entry point
 
+// Custom Shader for Cinematic Effects (Grain + Chromatic Aberration)
+const CinematicShader = {
+    uniforms: {
+        "tDiffuse": { value: null },
+        "time": { value: 0.0 },
+        "amount": { value: 0.002 }, // Chromatic Aberration intensity
+        "grainIntensity": { value: 0.03 } // Film Grain intensity
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float time;
+        uniform float amount;
+        uniform float grainIntensity;
+        varying vec2 vUv;
+
+        // Pseudo-random generator
+        float random(vec2 p) {
+            return fract(sin(dot(p.xy ,vec2(12.9898,78.233))) * 43758.5453);
+        }
+
+        void main() {
+            vec2 uv = vUv;
+            
+            // 1. Chromatic Aberration (RGB Shift based on distance from center)
+            float dist = distance(uv, vec2(0.5));
+            vec2 offset = (uv - 0.5) * amount * dist * 2.0;
+            
+            float r = texture2D(tDiffuse, uv + offset).r;
+            float g = texture2D(tDiffuse, uv).g;
+            float b = texture2D(tDiffuse, uv - offset).b;
+            vec3 color = vec3(r, g, b);
+
+            // 2. Film Grain
+            float noise = random(uv + time);
+            color += (noise - 0.5) * grainIntensity;
+
+            // 3. Simple Vignette (Darker corners)
+            float vignette = 1.0 - dist * 0.5;
+            color *= vignette;
+
+            gl_FragColor = vec4(color, 1.0);
+        }
+    `
+};
+
 class MarsMissionApp {
     constructor() {
         this.scene = null;
@@ -7,6 +59,7 @@ class MarsMissionApp {
         this.renderer = null;
         this.controls = null;
         this.composer = null;
+        this.raycaster = new THREE.Raycaster(); // For lens flare occlusion
 
         this.objects = {
             sun: null,
@@ -124,8 +177,10 @@ class MarsMissionApp {
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.renderer.toneMapping = THREE.ReinhardToneMapping;
-        this.renderer.toneMappingExposure = 1.2;
+        // Switch to ACES Filmic Tone Mapping for cinematic look
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        // Adjusted: Lower exposure slightly to prevent blowout on sunlit sides
+        this.renderer.toneMappingExposure = 0.9;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         container.appendChild(this.renderer.domElement);
@@ -215,9 +270,14 @@ class MarsMissionApp {
             new THREE.Vector2(window.innerWidth, window.innerHeight),
             2.0,
             0.8,
-            0.5
+            0.85 // Raised threshold: Only sun/lights glow, not the planet surface
         );
         this.composer.addPass(this.bloomPass);
+
+        // Add Cinematic Pass (Grain + Chromatic Aberration)
+        this.cinematicPass = new THREE.ShaderPass(CinematicShader);
+        this.cinematicPass.renderToScreen = true;
+        this.composer.addPass(this.cinematicPass);
     }
 
     setupLighting() {
@@ -292,7 +352,11 @@ class MarsMissionApp {
 
         for (let i = 0; i < totalCount; i++) {
             const isDust = i >= starCount;
-            const r = 800 + Math.random() * 400;
+            // Parallax optimization: Move dust much closer to create depth
+            // Stars are background (800-1200), Dust is foreground volume (250-650)
+            // Adjusted: Pushed dust further away (was 20-300) to reduce visual clutter
+            const r = isDust ? 250 + Math.random() * 400 : 800 + Math.random() * 400;
+            
             const theta = Math.random() * Math.PI * 2;
             const phi = Math.acos(2 * Math.random() - 1);
             let x = r * Math.sin(phi) * Math.cos(theta);
@@ -301,7 +365,9 @@ class MarsMissionApp {
 
             const tilt = 0.5;
             if (isDust || Math.random() > 0.6) {
-                const spread = isDust ? 150 : 250;
+                // Flatten dust slightly into a disk-like shape for orbital plane feeling
+                // But keep some spread
+                const spread = isDust ? 40 : 250; 
                 const dist = 50 + Math.random() * spread;
                 const angle = Math.random() * Math.PI * 2;
                 x = dist * Math.cos(angle) * (r / 300);
@@ -313,11 +379,16 @@ class MarsMissionApp {
             positions[i * 3 + 1] = y;
             positions[i * 3 + 2] = z;
 
-            const color = isDust ? new THREE.Color(0xaa88ff) : colorOptions[Math.floor(Math.random() * colorOptions.length)];
+            // FIX: Drastically reduce dust brightness to avoid Bloom artifacts
+            // Dust should be subtle (dark grey/blue), Stars stay bright
+            const color = isDust ? new THREE.Color(0x333344) : colorOptions[Math.floor(Math.random() * colorOptions.length)];
+            
             colors[i * 3] = color.r;
             colors[i * 3 + 1] = color.g;
             colors[i * 3 + 2] = color.b;
-            sizes[i] = isDust ? 0.3 + Math.random() * 0.5 : 0.8 + Math.random() * 2.5;
+            
+            // FIX: Make dust much smaller so it looks like speed lines, not light bulbs
+            sizes[i] = isDust ? 0.2 + Math.random() * 0.4 : 0.8 + Math.random() * 2.5;
         }
 
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -635,7 +706,8 @@ class MarsMissionApp {
                 bumpMap: earthBump,
                 bumpScale: 0.03,
                 emissiveMap: earthLights,
-                emissive: new THREE.Color(0xffff44),
+                // FIX: Remove global yellow emissive color. Use black so only the city light map glows.
+                emissive: new THREE.Color(0x000000),
                 emissiveIntensity: 0.8,
                 metalness: 0.0,
                 roughness: 0.92,
@@ -881,8 +953,13 @@ class MarsMissionApp {
                 const distToFocus = this.controls.target.distanceTo(focusPoint);
                 
                 // Threshold to end transition
-                if (distToTarget < 0.1 && distToFocus < 0.1) {
+                // FIX: Reduced threshold (0.1 -> 0.01) and added Hard Snap to prevent "jump" at end
+                if (distToTarget < 0.01 && distToFocus < 0.01) {
                     this.isTransitioning = false;
+                    this.controls.target.copy(focusPoint);
+                    this.camera.position.copy(idealCameraPos);
+                    this.controls.update(); // Sync state immediately
+                    return;
                 }
                 
                 // Transition Phase: Force camera to ideal position
@@ -940,11 +1017,32 @@ class MarsMissionApp {
         const screenPos = sunPos.clone();
         screenPos.project(this.camera);
 
-        const isVisible = (screenPos.x >= -1 && screenPos.x <= 1 &&
+        const isVisibleOnScreen = (screenPos.x >= -1 && screenPos.x <= 1 &&
                            screenPos.y >= -1 && screenPos.y <= 1 &&
                            screenPos.z < 1);
 
-        if (!isVisible) {
+        // Occlusion Check using Raycaster
+        let isOccluded = false;
+        if (isVisibleOnScreen) {
+            const direction = sunPos.clone().sub(this.camera.position).normalize();
+            this.raycaster.set(this.camera.position, direction);
+            
+            // Reuse explicit array to avoid GC and ensure we only hit the solid planetary body
+            // recursive: false is intentional! We don't want clouds/atmosphere to trigger occlusion.
+            const obstacles = [this.objects.earth, this.objects.mars].filter(obj => obj !== null);
+            
+            const intersects = this.raycaster.intersectObjects(obstacles, false);
+            
+            // If obstacle is closer than the sun, it's an occlusion
+            if (intersects.length > 0) {
+                const distToSun = this.camera.position.distanceTo(sunPos);
+                if (intersects[0].distance < distToSun) {
+                    isOccluded = true;
+                }
+            }
+        }
+
+        if (!isVisibleOnScreen || isOccluded) {
             this.flareElements.forEach(f => f.sprite.visible = false);
             return;
         }
@@ -1039,6 +1137,10 @@ class MarsMissionApp {
 
         if (this.objects.nebulae) {
             this.objects.nebulae.rotation.y += 0.00005;
+        }
+
+        if (this.cinematicPass) {
+            this.cinematicPass.uniforms.time.value = Date.now() * 0.001;
         }
 
         this.updateLensFlare();
