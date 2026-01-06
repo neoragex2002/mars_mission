@@ -208,3 +208,4 @@ this.bloomPass = new THREE.UnrealBloomPass(
 * https://planetpixelemporium.com/planets.html
 * https://github.com/dawidbil/solar-system
 * https://www.solarsystemscope.com
+* http://www.celestiamotherlode.net/catalog/mars.html

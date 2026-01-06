@@ -109,6 +109,7 @@ class MarsMissionApp {
         this.earthSpinRate = 0.09;
         this.earthCloudSpinRate = 0.03;
         this.marsSpinRate = 0.06;
+        this.marsCloudSpinRate = 0.02;
 
         this.init();
     }
@@ -538,6 +539,34 @@ class MarsMissionApp {
         return texture;
     }
 
+    loadTextureWithFallback(primaryUrl, fallbackUrl, onLoad) {
+        const texture = this.textureLoader.load(
+            primaryUrl,
+            (loadedTexture) => {
+                if (onLoad) onLoad(loadedTexture);
+            },
+            undefined,
+            () => {
+                if (!fallbackUrl) return;
+                this.textureLoader.load(
+                    fallbackUrl,
+                    (fallbackTexture) => {
+                        // Keep the original texture object so materials don't need to be updated.
+                        texture.image = fallbackTexture.image;
+                        texture.needsUpdate = true;
+                        if (onLoad) onLoad(texture);
+                        fallbackTexture.dispose();
+                    },
+                    undefined,
+                    (err) => {
+                        console.warn('Failed to load texture and fallback:', primaryUrl, fallbackUrl, err);
+                    }
+                );
+            }
+        );
+        return texture;
+    }
+
     disposeObject(obj) {
         if (!obj) return;
         
@@ -852,18 +881,97 @@ class MarsMissionApp {
             // this.objects[name].receiveShadow = true;
             this.objects[name].add(clouds);
         } else if (name === 'mars') {
-            const marsTexture = this.textureLoader.load('/static/assets/textures/mars_1k_color.jpg');
-            const marsBump = this.textureLoader.load('/static/assets/textures/marsbump1k.jpg');
+            const marsTexture = this.loadTextureWithFallback(
+                '/static/assets/textures/mars/mars_2k_color.jpg',
+                '/static/assets/textures/mars/mars_2k_color.png'
+            );
+            marsTexture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+            marsTexture.minFilter = THREE.LinearMipmapLinearFilter;
+            marsTexture.magFilter = THREE.LinearFilter;
+
+            const marsNormal = this.loadTextureWithFallback(
+                '/static/assets/textures/mars/mars_2k_normal.jpg',
+                '/static/assets/textures/mars/mars_2k_normal.png'
+            );
+            marsNormal.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+            marsNormal.minFilter = THREE.LinearMipmapLinearFilter;
+            marsNormal.magFilter = THREE.LinearFilter;
             
             material = new THREE.MeshStandardMaterial({
                 map: marsTexture,
-                bumpMap: marsBump,
-                bumpScale: 0.02,
+                normalMap: marsNormal,
+                // Tip reference strength: ~300%
+                normalScale: new THREE.Vector2(3.0, 3.0),
                 metalness: 0.0,
                 roughness: 0.98,
                 envMapIntensity: 0.15
             });
             this.objects[name] = new THREE.Mesh(geometry, material);
+
+            // Mars clouds (separate transparent shell)
+            const cloudGeometry = new THREE.SphereGeometry(size * 1.018, 64, 64);
+            const marsClouds = this.textureLoader.load(
+                '/static/assets/textures/mars/mars_clouds.png',
+                (texture) => {
+                    // The provided mars_clouds.png has a very low alpha range (0..~42).
+                    // Boost it at load time so the cloud layer is actually visible.
+                    try {
+                        const image = texture.image;
+                        if (!image || !image.width || !image.height) return;
+
+                        const canvas = document.createElement('canvas');
+                        canvas.width = image.width;
+                        canvas.height = image.height;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+
+                        ctx.drawImage(image, 0, 0);
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const data = imageData.data;
+
+                        let maxAlpha = 0;
+                        for (let i = 3; i < data.length; i += 4) {
+                            if (data[i] > maxAlpha) maxAlpha = data[i];
+                        }
+                        if (maxAlpha <= 0 || maxAlpha >= 255) return;
+
+                        const targetMaxAlpha = 255;
+                        const boostFactor = Math.min(8.0, targetMaxAlpha / maxAlpha);
+                        if (boostFactor <= 1.01) return;
+
+                        for (let i = 3; i < data.length; i += 4) {
+                            data[i] = Math.min(255, Math.round(data[i] * boostFactor));
+                        }
+
+                        ctx.putImageData(imageData, 0, 0);
+                        texture.image = canvas;
+                        texture.needsUpdate = true;
+                    } catch (err) {
+                        console.warn('Failed to boost Mars clouds alpha:', err);
+                    }
+                }
+            );
+            marsClouds.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+            marsClouds.minFilter = THREE.LinearMipmapLinearFilter;
+            marsClouds.magFilter = THREE.LinearFilter;
+
+            const cloudMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: marsClouds,
+                transparent: true,
+                opacity: 0.2,
+                metalness: 0.0,
+                roughness: 1.0,
+                emissive: 0x111111,
+                emissiveIntensity: 0.25,
+                envMapIntensity: 0.2,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+
+            const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
+            this.objects.marsClouds = clouds;
+            this.objects[name].add(clouds);
         } else {
             material = new THREE.MeshPhongMaterial({
                 color: color,
@@ -1297,6 +1405,9 @@ class MarsMissionApp {
         }
         if (this.objects.mars) {
             this.objects.mars.rotation.y = (simDays * this.marsSpinRate) % twoPi;
+        }
+        if (this.objects.marsClouds) {
+            this.objects.marsClouds.rotation.y = (simDays * this.marsCloudSpinRate) % twoPi;
         }
 
         if (this.objects.stars) {
