@@ -882,7 +882,6 @@ class MarsMissionApp {
             this.objects[name].add(clouds);
         } else if (name === 'mars') {
             const marsTexture = this.loadTextureWithFallback(
-                '/static/assets/textures/mars/mars_2k_color.jpg',
                 '/static/assets/textures/mars/mars_2k_color.png'
             );
             marsTexture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
@@ -890,7 +889,6 @@ class MarsMissionApp {
             marsTexture.magFilter = THREE.LinearFilter;
 
             const marsNormal = this.loadTextureWithFallback(
-                '/static/assets/textures/mars/mars_2k_normal.jpg',
                 '/static/assets/textures/mars/mars_2k_normal.png'
             );
             marsNormal.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
