@@ -8,7 +8,6 @@ class MissionPhase(Enum):
     TRANSFER_TO_MARS = "transfer_to_mars"
     ON_MARS = "on_mars"
     TRANSFER_TO_EARTH = "transfer_to_earth"
-    COMPLETE = "complete"
 
 @dataclass
 class OrbitalElements:
@@ -205,7 +204,7 @@ class OrbitEngine:
             (phase, mission_number, time_in_mission)
             - phase: 任务阶段
             - mission_number: 第几次任务（从0开始）
-            - time_in_mission: 在当前任务中的时间（[0, single_mission_duration]）
+            - time_in_mission: 在当前任务中的时间（[0, single_mission_duration)）
         """
         # 计算第几次任务
         mission_number = int(time_days // self.single_mission_duration)
@@ -226,10 +225,8 @@ class OrbitEngine:
             phase = MissionPhase.TRANSFER_TO_MARS
         elif time_in_mission < t_departure_mars:
             phase = MissionPhase.ON_MARS
-        elif time_in_mission < t_arrival_earth:
-            phase = MissionPhase.TRANSFER_TO_EARTH
         else:
-            phase = MissionPhase.COMPLETE
+            phase = MissionPhase.TRANSFER_TO_EARTH
         
         return (phase, mission_number, time_in_mission)
 
@@ -265,10 +262,7 @@ class OrbitEngine:
             return self._get_transfer_position(t_departure_mars, t_arrival_earth, 
                                              pos_start, pos_end, 
                                              time_days, 'inward')
-            
-        else:  # COMPLETE
-            # 任务完成，飞船在地球上
-            return self.get_planet_position('earth', time_days)
+        raise RuntimeError(f"Unhandled mission phase: {phase}")
 
     def generate_orbit_points(self, planet: str, num_points: int = 360) -> List[Tuple[float, float, float]]:
         points = []

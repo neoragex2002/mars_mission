@@ -9,7 +9,11 @@ function updateDataPanel(data) {
     const phaseDisplay = document.getElementById('phase-display');
     const phase = data.phase || '';
     const cssPhase = phase.replace(/_/g, '-');
-    phaseDisplay.textContent = formatPhase(phase);
+    const missionNumber =
+        typeof data.mission_number === 'number' ? data.mission_number + 1 : undefined;
+    const phaseText = formatPhase(phase);
+    phaseDisplay.textContent =
+        missionNumber !== undefined ? `Mission ${missionNumber}: ${phaseText}` : phaseText;
     phaseDisplay.className = `phase-badge ${cssPhase}`;
     
     // Update positions
@@ -63,8 +67,7 @@ function formatPhase(phase) {
         'pre_launch': 'Pre-Launch',
         'transfer_to_mars': 'Earth → Mars Transfer',
         'on_mars': 'On Mars Surface',
-        'transfer_to_earth': 'Mars → Earth Transfer',
-        'complete': 'Mission Complete'
+        'transfer_to_earth': 'Mars → Earth Transfer'
     };
     
     return phaseMap[phase] || phase;

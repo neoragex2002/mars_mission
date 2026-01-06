@@ -697,9 +697,10 @@ class MarsMissionApp {
         
         let material;
         if (name === 'earth') {
-            const earthTexture = this.textureLoader.load('/static/assets/textures/earth_atmos_2048.jpg');
-            const earthBump = this.textureLoader.load('/static/assets/textures/earthbump1k.jpg');
-            const earthLights = this.textureLoader.load('/static/assets/textures/earthlights1k.jpg');
+            const earthTexture = this.textureLoader.load('/static/assets/textures/earth/earthmap2k.jpg');
+            const earthBump = this.textureLoader.load('/static/assets/textures/earth/earthbump2k.jpg');
+            const earthLights = this.textureLoader.load('/static/assets/textures/earth/earthlights2k.jpg');
+            const earthSpec = this.textureLoader.load('/static/assets/textures/earth/earthspec2k.jpg');
             
             material = new THREE.MeshStandardMaterial({
                 map: earthTexture,
@@ -711,7 +712,8 @@ class MarsMissionApp {
                 emissive: new THREE.Color(0xffffff),
                 emissiveIntensity: 0.8,
                 metalness: 0.0,
-                roughness: 0.92,
+                roughness: 1.0,
+                roughnessMap: earthSpec,
                 envMapIntensity: 0.2
             });
 
@@ -721,12 +723,22 @@ class MarsMissionApp {
                 shader.uniforms.sunPositionView = { value: new THREE.Vector3(0, 0, 0) };
                 this.earthMaterialShader = shader;
 
-                // Fragment Shader Only Injection
                 shader.fragmentShader = shader.fragmentShader.replace(
                     '#include <common>',
                     `
                     #include <common>
                     uniform vec3 sunPositionView;
+                    `
+                );
+
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <roughnessmap_fragment>',
+                    `
+                    float roughnessFactor = roughness;
+                    #ifdef USE_ROUGHNESSMAP
+                        vec4 texelRoughness = texture2D( roughnessMap, vUv );
+                        roughnessFactor *= (1.0 - texelRoughness.g);
+                    #endif
                     `
                 );
                 
@@ -735,24 +747,13 @@ class MarsMissionApp {
                     `
                     #include <emissivemap_fragment>
                     
-                    // Vector from Fragment to Sun (in View Space)
-                    // sunPositionView is passed from CPU (already in View Space)
-                    // vViewPosition is the fragment position in View Space
                     vec3 sunDirectionView = normalize(sunPositionView - vViewPosition);
-                    
-                    // vNormal is the View Space normal
                     float dayNightDot = dot(normalize(vNormal), sunDirectionView);
-                    
-                    // FIX: Harder transition (sharper terminator) as requested
-                    // Was [-0.1, 0.1], now [-0.02, 0.02] to simulate a "Texture Switch" feel
                     float dayFactor = smoothstep(-0.02, 0.02, dayNightDot);
                     float lightsFactor = 1.0 - dayFactor;
                     
-                    // Boost & Sharpen: 
-                    // 1. Boost brightness (3.0x)
-                    // 2. Apply a power curve to remove low-light noise and make cities distinct
                     vec3 lightsColor = totalEmissiveRadiance * 3.0;
-                    lightsColor = pow(lightsColor, vec3(2)); // Contrast boost
+                    lightsColor = pow(lightsColor, vec3(2));
                     
                     totalEmissiveRadiance = lightsColor * lightsFactor;
                     `
@@ -1183,11 +1184,6 @@ class MarsMissionApp {
 
         if (this.objects.mars) {
             this.objects.mars.rotation.y += 0.004;
-        }
-
-        if (this.objects.spacecraft) {
-            const time = Date.now();
-            this.objects.spacecraft.update(time);
         }
 
         if (this.objects.stars) {
