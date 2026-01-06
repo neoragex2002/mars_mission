@@ -90,6 +90,26 @@ class MarsMissionApp {
         this.lastPhase = null;
         this.lastSpacecraftPosition = null;
 
+        this.simulationState = {
+            is_running: false,
+            paused: false,
+            time_speed: 0.5,
+        };
+        // Simulation-time tracking for smooth rendering between WS updates.
+        // Backend advances time at ~20Hz (see backend sleep 0.05s), so we locally interpolate.
+        this.serverTickSeconds = 0.05;
+        this.simulationTimeDays = 0.0; // last authoritative time_days received
+        this.simulationTimeBaseMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+        this.simulationTimeRateDaysPerSec = 0.0;
+        this.lastSimPacketTimeDays = null;
+        this.lastSimPacketMs = null;
+
+        // Visual spin rates (radians per simulated day)
+        // Chosen to roughly match the previous on-screen speed at default time_speed.
+        this.earthSpinRate = 0.09;
+        this.earthCloudSpinRate = 0.03;
+        this.marsSpinRate = 0.06;
+
         this.init();
     }
 
@@ -147,13 +167,28 @@ class MarsMissionApp {
 
     handleInitialData(data) {
         this.missionData = data.mission_info;
+        if (data.simulation_state) {
+            this.simulationState = { ...this.simulationState, ...data.simulation_state };
+        }
         this.createSun();
         this.createPlanet('earth', data.earth_orbit);
         this.createPlanet('mars', data.mars_orbit);
         this.createSpacecraft();
         updateMissionInfo(data.mission_info);
-        document.getElementById('total-days').textContent = Math.round(data.mission_info.total_duration);
-        document.getElementById('timeline').max = Math.round(data.mission_info.total_duration);
+        const initialHorizonEnd =
+            (data.current_snapshot && typeof data.current_snapshot.timeline_horizon_end === 'number')
+                ? data.current_snapshot.timeline_horizon_end
+                : (data.mission_info && typeof data.mission_info.timeline_horizon_end === 'number')
+                    ? data.mission_info.timeline_horizon_end
+                    : 0;
+
+        document.getElementById('total-days').textContent = Math.round(initialHorizonEnd);
+        document.getElementById('timeline').max = Math.ceil(initialHorizonEnd);
+
+        // Apply initial snapshot so objects don't start at origin until "Start".
+        if (data.current_snapshot) {
+            this.handleMissionUpdate({ type: 'snapshot', data: data.current_snapshot });
+        }
     }
 
     setupScene() {
@@ -864,7 +899,8 @@ class MarsMissionApp {
         const positions = [];
         
         orbitPoints.points.forEach(point => {
-            positions.push(point[0], point[2], point[1]);
+            // Backend (x, y, z) -> Three.js (x, z, -y)
+            positions.push(point[0], point[2], -point[1]);
         });
         
         orbitGeometry.setAttribute('position', 
@@ -910,6 +946,44 @@ class MarsMissionApp {
 
     handleMissionUpdate(data) {
         const missionInfo = data.type === 'update' ? data : data.data;
+
+        if (missionInfo.simulation && typeof missionInfo.simulation === 'object') {
+            this.simulationState = { ...this.simulationState, ...missionInfo.simulation };
+        }
+        if (typeof missionInfo.time_days === 'number' && Number.isFinite(missionInfo.time_days)) {
+            const nowMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+            const nextDays = missionInfo.time_days;
+
+            // Estimate sim-time rate (days/sec) from packet cadence (preferred), with a fallback
+            // to the configured backend rate (time_speed days/tick at ~20Hz).
+            let nextRate = this.simulationTimeRateDaysPerSec;
+
+            if (typeof this.lastSimPacketTimeDays === 'number' && typeof this.lastSimPacketMs === 'number') {
+                const dtSec = (nowMs - this.lastSimPacketMs) / 1000.0;
+                const dDays = nextDays - this.lastSimPacketTimeDays;
+                if (dtSec > 0.02 && dDays >= 0) {
+                    const instRate = dDays / dtSec;
+                    if (Number.isFinite(instRate) && instRate >= 0) {
+                        nextRate = nextRate > 0 ? (nextRate * 0.8 + instRate * 0.2) : instRate;
+                    }
+                }
+            }
+
+            const configuredSpeed =
+                (this.simulationState && typeof this.simulationState.time_speed === 'number' && Number.isFinite(this.simulationState.time_speed))
+                    ? this.simulationState.time_speed
+                    : 0.0;
+            const fallbackRate = this.serverTickSeconds > 0 ? (configuredSpeed / this.serverTickSeconds) : 0.0;
+            if (!(nextRate > 0) && fallbackRate > 0) {
+                nextRate = fallbackRate;
+            }
+
+            this.simulationTimeRateDaysPerSec = nextRate;
+            this.simulationTimeDays = nextDays;
+            this.simulationTimeBaseMs = nowMs;
+            this.lastSimPacketTimeDays = nextDays;
+            this.lastSimPacketMs = nowMs;
+        }
         
         // Clear trail on phase change
         if (missionInfo.phase && this.lastPhase !== missionInfo.phase) {
@@ -920,52 +994,57 @@ class MarsMissionApp {
         if (missionInfo.earth_position && this.objects.earth) {
             const pos = missionInfo.earth_position;
             if (!this.objects.earth.userData.targetPos) this.objects.earth.userData.targetPos = new THREE.Vector3();
-            this.objects.earth.userData.targetPos.set(pos[0], pos[2], pos[1]);
+            this.objects.earth.userData.targetPos.set(pos[0], pos[2], -pos[1]);
         }
         
         if (missionInfo.mars_position && this.objects.mars) {
             const pos = missionInfo.mars_position;
             if (!this.objects.mars.userData.targetPos) this.objects.mars.userData.targetPos = new THREE.Vector3();
-            this.objects.mars.userData.targetPos.set(pos[0], pos[2], pos[1]);
+            this.objects.mars.userData.targetPos.set(pos[0], pos[2], -pos[1]);
         }
         
         if (missionInfo.spacecraft_position && this.objects.spacecraft) {
             const pos = missionInfo.spacecraft_position;
             const mesh = this.objects.spacecraft.getMesh();
+
+            const mappedX = pos[0];
+            const mappedY = pos[2];
+            const mappedZ = -pos[1];
             
             if (!mesh.userData.targetPos) mesh.userData.targetPos = new THREE.Vector3();
-            mesh.userData.targetPos.set(pos[0], pos[2], pos[1]);
+            mesh.userData.targetPos.set(mappedX, mappedY, mappedZ);
 
             mesh.visible = true;
             const isTransfer = missionInfo.phase === 'transfer_to_mars' || missionInfo.phase === 'transfer_to_earth';
             this.objects.spacecraft.setThrusterActive(isTransfer);
 
             if (isTransfer) {
-                this.updateSpacecraftTrail([pos[0], pos[2], pos[1]]);
+                this.updateSpacecraftTrail([mappedX, mappedY, mappedZ]);
             }
             
             if (this.lastSpacecraftPosition && Array.isArray(this.lastSpacecraftPosition)) {
+                const [lastX, lastY, lastZ] = this.lastSpacecraftPosition;
                 const rawDirection = new THREE.Vector3(
-                    pos[0] - this.lastSpacecraftPosition[0],
-                    pos[2] - this.lastSpacecraftPosition[1],
-                    pos[1] - this.lastSpacecraftPosition[2]
+                    mappedX - lastX,
+                    mappedY - lastY,
+                    mappedZ - lastZ
                 );
 
                 if (rawDirection.length() > 0.001) {
                     const direction = rawDirection.normalize();
                     const target = new THREE.Vector3(
-                        pos[0] + direction.x,
-                        pos[2] + direction.y,
-                        pos[1] + direction.z
+                        mappedX + direction.x,
+                        mappedY + direction.y,
+                        mappedZ + direction.z
                     );
                     mesh.userData.lookTarget = target;
                 }
             }
-            this.lastSpacecraftPosition = [pos[0], pos[2], pos[1]];
+            this.lastSpacecraftPosition = [mappedX, mappedY, mappedZ];
         }
         
         updateDataPanel(missionInfo);
-        updateTimeline(missionInfo.time_days);
+        updateTimeline(missionInfo.time_days, missionInfo.timeline_horizon_end);
     }
 
     setViewMode(mode) {
@@ -1018,7 +1097,8 @@ class MarsMissionApp {
                 this.controls.enablePan = true;
                 if (!this.isUserInteracting) {
                     this.controls.target.lerp(new THREE.Vector3(0, 0, 0), this.targetLerpFactor);
-                    this.camera.position.lerp(new THREE.Vector3(0, 4, 0), this.camLerpFactor);
+                    // Add a tiny offset to avoid collinearity singularities in OrbitControls.
+                    this.camera.position.lerp(new THREE.Vector3(0.0001, 4, 0.0001), this.camLerpFactor);
                 }
                 this.controls.update();
                 return;
@@ -1206,15 +1286,17 @@ class MarsMissionApp {
             this.sunTexture.offset.y += 0.0002;
         }
 
+        // Planet self-rotation: bind to (interpolated) simulation time so it respects time speed and pause.
+        const simDays = this.getDisplaySimulationTimeDays();
+        const twoPi = Math.PI * 2;
         if (this.objects.earth) {
-            this.objects.earth.rotation.y -= 0.015;
+            this.objects.earth.rotation.y = (simDays * this.earthSpinRate) % twoPi;
         }
         if (this.objects.earthClouds) {
-            this.objects.earthClouds.rotation.y -= 0.005;
+            this.objects.earthClouds.rotation.y = (simDays * this.earthCloudSpinRate) % twoPi;
         }
-
         if (this.objects.mars) {
-            this.objects.mars.rotation.y -= 0.01;
+            this.objects.mars.rotation.y = (simDays * this.marsSpinRate) % twoPi;
         }
 
         if (this.objects.stars) {
@@ -1267,6 +1349,37 @@ class MarsMissionApp {
         } else {
             console.warn('WebSocket not connected, command not sent');
         }
+    }
+
+    togglePlayPause() {
+        const isRunning = !!(this.simulationState && this.simulationState.is_running);
+        if (!isRunning) {
+            this.startSimulation();
+            return;
+        }
+        this.pauseSimulation();
+    }
+
+    getDisplaySimulationTimeDays() {
+        const baseDays =
+            (typeof this.simulationTimeDays === 'number' && Number.isFinite(this.simulationTimeDays))
+                ? this.simulationTimeDays
+                : 0.0;
+
+        const isRunning = !!(this.simulationState && this.simulationState.is_running);
+        const isPaused = !!(this.simulationState && this.simulationState.paused);
+        if (!isRunning || isPaused) {
+            return baseDays;
+        }
+
+        const nowMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+        const dtSec = (nowMs - this.simulationTimeBaseMs) / 1000.0;
+        const rate =
+            (typeof this.simulationTimeRateDaysPerSec === 'number' && Number.isFinite(this.simulationTimeRateDaysPerSec))
+                ? this.simulationTimeRateDaysPerSec
+                : 0.0;
+
+        return baseDays + Math.max(0.0, rate) * Math.max(0.0, dtSec);
     }
 }
 

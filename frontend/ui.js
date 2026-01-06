@@ -56,10 +56,21 @@ function updateDataPanel(data) {
     }
 }
 
-function updateTimeline(time) {
-    document.getElementById('current-day').textContent = 
-        Math.round(time);
-    document.getElementById('timeline').value = time;
+function updateTimeline(time, horizonEnd) {
+    const timeline = document.getElementById('timeline');
+    const totalDays = document.getElementById('total-days');
+
+    if (typeof horizonEnd === 'number' && Number.isFinite(horizonEnd)) {
+        const currentMax = parseFloat(timeline.max || '0');
+        const nextMax = Math.ceil(Math.max(currentMax, horizonEnd));
+        if (nextMax !== currentMax) {
+            timeline.max = String(nextMax);
+            totalDays.textContent = Math.round(nextMax);
+        }
+    }
+
+    document.getElementById('current-day').textContent = Math.round(time);
+    timeline.value = time;
 }
 
 function formatPhase(phase) {

@@ -103,8 +103,11 @@ function setupKeyboardControls() {
         switch (event.key) {
             case ' ':
                 event.preventDefault();
-                // Toggle pause
-                if (app) {
+                // Start if stopped; otherwise toggle pause/resume.
+                if (app && typeof app.togglePlayPause === 'function') {
+                    app.togglePlayPause();
+                } else if (app) {
+                    // Fallback for older app versions
                     app.pauseSimulation();
                 }
                 break;

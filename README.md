@@ -102,7 +102,7 @@ mars_mission/
 ### REST API
 
 - `GET /`：返回前端页面（`frontend/index.html`）
-- `GET /api/mission/info`：任务参数与总时长
+- `GET /api/mission/info`：仿真模型元数据（动态任务时间表预览、时间轴范围等）
 - `GET /api/planets`：行星轨道参数摘要
 - `GET /api/orbit/{planet}`：生成轨道采样点（`earth` / `mars`）
 - `GET /api/state`：当前仿真状态（是否运行/时间/速度/是否暂停）
@@ -115,7 +115,11 @@ mars_mission/
 ## 坐标与单位说明
 
 - 后端 `backend/orbit_engine.py` 输出坐标为 `(x, y, z)`，位置单位为 **AU**，时间单位为 **day**，速度为 **AU/day**（数值由差分估计）。
-- Three.js 默认 **Y 轴向上**。为使"轨道平面"视觉上更贴合直觉，前端渲染时会将后端坐标映射为 **`(x, z, y)`**（也就是把后端的 `z` 映射到 Three 的 `y`）。
+- Three.js 默认 **Y 轴向上**。为满足“前后端坐标对齐 + 行星/飞船主要在前端 X-Z 平面活动”的约定，前端渲染将后端坐标映射为：
+  - 后端 `+X` → 前端 `+X`
+  - 后端 `+Y` → 前端 `-Z`
+  - 后端 `+Z` → 前端 `+Y`
+  - 即：**`(x, y, z)_backend → (x, z, -y)_three`**
 - 信息面板（`frontend/ui.js`）展示的是后端原始 `(x, y, z)` 数据；渲染使用的是映射后的坐标。
 
 ## 技术细节
@@ -125,12 +129,15 @@ mars_mission/
 - **地球**：半长轴 ~1.000 AU，偏心率 ~0.0167，倾角 ~0.000°，周期 ~365.25 天
 - **火星**：半长轴 ~1.524 AU，偏心率 ~0.0934，倾角 ~1.850°，周期 ~687.0 天
 
-### 任务时间线（默认参数）
+### 任务时间线（动态窗口）
 
-- 地球→火星：~259 天
-- 火星停留：~454 天
-- 火星→地球：~259 天
-- 单次任务总时长：~972 天
+当前实现为“严格霍曼半椭圆外观 + 动态发射窗口/等待时长”，因此：
+
+- 单次任务的 **等待时长与总时长不再固定**
+- 后端 `GET /api/snapshot` / WebSocket `update` 会返回：
+  - `mission_duration`：该次任务总时长（天）
+  - `mission_schedule`：关键时间点（发射/到达/返航等）
+  - `timeline_horizon_end`：前端时间轴可用的当前上限（会随仿真自动扩展）
 
 ## 自定义与开发
 
@@ -139,9 +146,15 @@ mars_mission/
 编辑 `backend/orbit_engine.py`（例如）：
 
 ```python
-self.transfer_time_earth_mars = 259  # days
-self.transfer_time_mars_earth = 259  # days
-self.mars_wait_time = 454  # days
+# 发射窗口搜索范围/粒度
+self.launch_scan_window_days = 1400.0
+self.launch_coarse_step_days = 2.0
+self.launch_refine_window_days = 80.0
+self.launch_refine_step_days = 0.5
+
+# 转移段自洽迭代精度
+self.transfer_time_tol_days = 1e-6
+self.transfer_time_max_iter = 20
 ```
 
 ### 调整视觉效果

@@ -3,6 +3,7 @@
 Test script for Mars Mission 3D Visualization
 """
 
+import math
 import sys
 sys.path.insert(0, 'backend')
 
@@ -33,6 +34,42 @@ def test_orbit_engine():
         # Test mission info
         info = engine.get_mission_info(500)
         print(f"  ✅ Mission info at day 500: phase={info['phase']}")
+
+        # Regression: transfer legs are (a) prograde in x-y projection and (b) on an ellipse in x-y.
+        schedule = engine._get_schedule_for_time(0.0)
+        for leg in [schedule.leg_outbound, schedule.leg_inbound]:
+            samples = 25
+            times = [leg.t_depart + leg.duration * (i / samples) for i in range(samples + 1)]
+
+            angles = []
+            for t in times:
+                x, y, _z = engine._get_transfer_position(leg, t)
+                theta = math.atan2(y, x)
+                angles.append(theta)
+
+                r = math.hypot(x, y)
+                nu = (theta - leg.theta_peri) % (2 * math.pi)
+                expected_r = leg.p / (1.0 + leg.e * math.cos(nu))
+                if abs(expected_r - r) > 1e-4:
+                    raise AssertionError(
+                        f"Transfer leg deviates from ellipse: |r-expected|={abs(expected_r - r):.3e} at t={t:.3f}"
+                    )
+
+            # Unwrap angles and ensure monotonic non-decreasing (prograde).
+            unwrapped = [angles[0]]
+            for a in angles[1:]:
+                prev = unwrapped[-1]
+                while a - prev <= -math.pi:
+                    a += 2 * math.pi
+                while a - prev > math.pi:
+                    a -= 2 * math.pi
+                unwrapped.append(a)
+
+            min_delta = min(unwrapped[i + 1] - unwrapped[i] for i in range(len(unwrapped) - 1))
+            if min_delta < -1e-6:
+                raise AssertionError(f"Transfer leg is not prograde: min dθ={min_delta:.3e} rad")
+
+        print("  ✅ Transfer legs are prograde and elliptical (x-y projection)")
         
         print("✅ Orbit Engine tests passed!\n")
         return True

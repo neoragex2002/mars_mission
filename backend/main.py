@@ -6,7 +6,7 @@ import json
 import asyncio
 from typing import Dict
 from pathlib import Path
-from orbit_engine import OrbitEngine, MissionPhase
+from orbit_engine import OrbitEngine
 
 # Lifespan context manager
 @asynccontextmanager
@@ -56,18 +56,17 @@ async def get_root():
 
 @app.get("/api/mission/info")
 async def get_mission_info():
-    """Get general mission information"""
+    """Get model/timeline metadata for UI initialization."""
+    schedule_preview = orbit_engine.get_schedule_preview(3)
+    timeline_horizon_end = (
+        schedule_preview[-1]["t_arrival_earth"] if schedule_preview else orbit_engine.get_mission_info(0.0)["timeline_horizon_end"]
+    )
+
     return {
-        "total_duration": orbit_engine.single_mission_duration,
-        "transfer_time_earth_mars": orbit_engine.transfer_time_earth_mars,
-        "transfer_time_mars_earth": orbit_engine.transfer_time_mars_earth,
-        "mars_wait_time": orbit_engine.mars_wait_time,
-        "timeline": {
-            "launch": 0,
-            "arrival_mars": orbit_engine.earth_launch_wait_time + orbit_engine.transfer_time_earth_mars,
-            "departure_mars": orbit_engine.earth_launch_wait_time + orbit_engine.transfer_time_earth_mars + orbit_engine.mars_wait_time,
-            "arrival_earth": orbit_engine.single_mission_duration
-        }
+        "model": "dynamic_hohmann_v1",
+        "mu_sun": orbit_engine.mu_sun,
+        "schedule_preview": schedule_preview,
+        "timeline_horizon_end": timeline_horizon_end,
     }
 
 @app.get("/api/planets")
