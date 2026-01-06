@@ -282,12 +282,19 @@ class MarsMissionApp {
 
     setupLighting() {
         // Ambient light
-        const ambientLight = new THREE.AmbientLight(0x333333);
+        const ambientLight = new THREE.AmbientLight(0x151515);
         this.scene.add(ambientLight);
         
         // Point light from sun
         const sunLight = new THREE.PointLight(0xffffff, 2, 100);
         sunLight.position.set(0, 0, 0);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 0.5;
+        sunLight.shadow.camera.far = 500;
+        sunLight.shadow.camera.far = 500;
+        sunLight.shadow.bias = -0.0008;
         this.scene.add(sunLight);
     }
 
@@ -670,7 +677,7 @@ class MarsMissionApp {
                 void main() {
                     // BackSide rendering: edge dot is 0, center dot is -1
                     // We want intensity to be 1 at edge and 0 at center
-                    float intensity = pow(1.0 + dot(vNormal, vec3(0, 0, 1.0)), 6.0);
+                    float intensity = pow(1.0 + dot(vNormal, vec3(0, 0, 1.0)), 4.5);
                     gl_FragColor = vec4(glowColor, intensity);
                 }
             `,
@@ -697,53 +704,51 @@ class MarsMissionApp {
         
         let material;
         if (name === 'earth') {
-            const earthTexture = this.textureLoader.load('/static/assets/textures/earth/earthmap2k.jpg');
+            const earthTexture = this.textureLoader.load('/static/assets/textures/earth/earthmap4k.jpg');
             earthTexture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
             earthTexture.minFilter = THREE.LinearMipmapLinearFilter;
             earthTexture.magFilter = THREE.LinearFilter;
             
-            const earthBump = this.textureLoader.load('/static/assets/textures/earth/earthbump2k.jpg');
+            const earthBump = this.textureLoader.load('/static/assets/textures/earth/earthbump4k.jpg');
             earthBump.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
             earthBump.minFilter = THREE.LinearMipmapLinearFilter;
             earthBump.magFilter = THREE.LinearFilter;
             
-            const earthLights = this.textureLoader.load('/static/assets/textures/earth/earthlights2k.jpg');
+            const earthLights = this.textureLoader.load('/static/assets/textures/earth/earthlights4k.jpg');
             earthLights.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
             earthLights.minFilter = THREE.LinearMipmapLinearFilter;
             earthLights.magFilter = THREE.LinearFilter;
             
-            const earthSpec = this.textureLoader.load('/static/assets/textures/earth/earthspec2k.jpg');
+            const earthSpec = this.textureLoader.load('/static/assets/textures/earth/earthspec4k.jpg');
             earthSpec.minFilter = THREE.LinearFilter;
             earthSpec.magFilter = THREE.LinearFilter;
             
             material = new THREE.MeshStandardMaterial({
                 map: earthTexture,
                 bumpMap: earthBump,
-                bumpScale: 0.03,
+                bumpScale: 0.005,
                 emissiveMap: earthLights,
                 // FIX: Must use White (0xffffff) so the emissiveMap can be seen.
                 // Our custom shader mask will handle turning it off during the day.
                 emissive: new THREE.Color(0xffffff),
-                emissiveIntensity: 0.8,
+                emissiveIntensity: 1.5,
                 metalness: 0.0,
                 roughness: 1.0,
                 roughnessMap: earthSpec,
-                envMapIntensity: 0.2
+                envMapIntensity: 0.1
             });
 
-            // CUSTOM SHADER INJECTION: Day/Night Cycle for City Lights
-            // SAFE MODE: Use View Space calculation in Fragment Shader only. No Vertex mods.
             material.onBeforeCompile = (shader) => {
-                shader.uniforms.sunPositionView = { value: new THREE.Vector3(0, 0, 0) };
-                this.earthMaterialShader = shader;
+                 shader.uniforms.sunDirectionView = { value: new THREE.Vector3(0, 0, 1) };
+                 this.earthMaterialShader = shader;
 
                 shader.fragmentShader = shader.fragmentShader.replace(
-                    '#include <common>',
-                    `
-                    #include <common>
-                    uniform vec3 sunPositionView;
-                    `
-                );
+                     '#include <common>',
+                     `
+                     #include <common>
+                     uniform vec3 sunDirectionView;
+                     `
+                 );
 
                 shader.fragmentShader = shader.fragmentShader.replace(
                     '#include <roughnessmap_fragment>',
@@ -757,61 +762,49 @@ class MarsMissionApp {
                 );
                 
                 shader.fragmentShader = shader.fragmentShader.replace(
-                    '#include <emissivemap_fragment>',
-                    `
-                    #include <emissivemap_fragment>
-                    
-                    vec3 sunDirectionView = normalize(sunPositionView - vViewPosition);
-                    float dayNightDot = dot(normalize(vNormal), sunDirectionView);
-                    float dayFactor = smoothstep(-0.02, 0.02, dayNightDot);
-                    float lightsFactor = 1.0 - dayFactor;
-                    
-                    vec3 lightsColor = totalEmissiveRadiance * 3.0;
-                    lightsColor = pow(lightsColor, vec3(2));
-                    
-                    totalEmissiveRadiance = lightsColor * lightsFactor;
-                    `
-                );
+                        '#include <emissivemap_fragment>',
+                        `
+                        #include <emissivemap_fragment>
+                        
+                        vec3 lightDirView = normalize(sunDirectionView);
+                        float NdotL = dot(normalize(vNormal), lightDirView);
+                        
+                        #ifdef USE_EMISSIVEMAP
+                            float nightMask = smoothstep(-0.2, 0.2, NdotL);
+                            totalEmissiveRadiance *= nightMask;
+                        #endif
+                        `
+                    );
             };
 
             const cloudGeometry = new THREE.SphereGeometry(size * 1.02, 64, 64);
 
-            const cloudTexture = this.textureLoader.load('/static/assets/textures/earth/cloudmap1k.jpg');
-            cloudTexture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-            cloudTexture.minFilter = THREE.LinearMipmapLinearFilter;
-            cloudTexture.magFilter = THREE.LinearFilter;
-            
-            const cloudAlpha = this.textureLoader.load('/static/assets/textures/earth/cloudmap1k_trans.jpg');
-            cloudAlpha.minFilter = THREE.LinearFilter;
+            const cloudAlpha = this.textureLoader.load('/static/assets/textures/earth/cloudmap4k.jpg');
+            cloudAlpha.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+            cloudAlpha.minFilter = THREE.LinearMipmapLinearFilter;
             cloudAlpha.magFilter = THREE.LinearFilter;
-            
+
             const cloudMaterial = new THREE.MeshStandardMaterial({
-                map: cloudTexture,
+                color: 0xffffff,
                 alphaMap: cloudAlpha,
                 transparent: true,
-                opacity: 0.8,
+                opacity: 0.95,
                 metalness: 0.0,
-                roughness: 1.0,
-                envMapIntensity: 0.0,
-                depthWrite: false
+                roughness: 0.9,               // 稍微降低粗糙度
+                emissive: 0x222233,           // 微弱的自发光（深灰蓝）
+                emissiveIntensity: 0.5,       // 低强度
+                envMapIntensity: 1,           // 反射环境光
+                depthWrite: false,
+                side: THREE.DoubleSide        // 双面渲染
             });
 
-            cloudMaterial.onBeforeCompile = (shader) => {
-                shader.fragmentShader = shader.fragmentShader.replace(
-                    '#include <alphamap_fragment>',
-                    `
-                    #ifdef USE_ALPHAMAP
-                        vec4 texelAlpha = texture2D( alphaMap, vUv );
-                        diffuseColor.a *= ( 1.0 - texelAlpha.g );
-                    #endif
-                    `
-                );
-            };
-
             const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
+            // clouds.castShadow = true;
+            // clouds.receiveShadow = false;
             this.objects.earthClouds = clouds;
             
             this.objects[name] = new THREE.Mesh(geometry, material);
+            // this.objects[name].receiveShadow = true;
             this.objects[name].add(clouds);
         } else if (name === 'mars') {
             const marsTexture = this.textureLoader.load('/static/assets/textures/mars_1k_color.jpg');
@@ -1188,14 +1181,18 @@ class MarsMissionApp {
             this.objects.sun.rotation.y += 0.001;
             
             if (this.earthMaterialShader) {
-                const sunPos = new THREE.Vector3();
-                this.objects.sun.getWorldPosition(sunPos);
+                const sunPosWorld = new THREE.Vector3();
+                this.objects.sun.getWorldPosition(sunPosWorld);
                 
-                // Transform to View Space for Shader
-                // Now using the FRESH matrixWorldInverse we just calculated
-                sunPos.applyMatrix4(this.camera.matrixWorldInverse);
+                const earthPosWorld = new THREE.Vector3();
+                this.objects.earth.getWorldPosition(earthPosWorld);
                 
-                this.earthMaterialShader.uniforms.sunPositionView.value.copy(sunPos);
+                const lightDirWorld = new THREE.Vector3().subVectors(earthPosWorld, sunPosWorld).normalize();
+                
+                const lightDirView = lightDirWorld.clone();
+                lightDirView.transformDirection(this.camera.matrixWorldInverse);
+                
+                this.earthMaterialShader.uniforms.sunDirectionView.value.copy(lightDirView);
             }
         }
 
