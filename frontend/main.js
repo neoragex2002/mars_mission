@@ -706,15 +706,61 @@ class MarsMissionApp {
                 bumpMap: earthBump,
                 bumpScale: 0.03,
                 emissiveMap: earthLights,
-                // FIX: Remove global yellow emissive color. Use black so only the city light map glows.
-                emissive: new THREE.Color(0x000000),
+                // FIX: Must use White (0xffffff) so the emissiveMap can be seen.
+                // Our custom shader mask will handle turning it off during the day.
+                emissive: new THREE.Color(0xffffff),
                 emissiveIntensity: 0.8,
                 metalness: 0.0,
                 roughness: 0.92,
                 envMapIntensity: 0.2
             });
 
+            // CUSTOM SHADER INJECTION: Day/Night Cycle for City Lights
+            // SAFE MODE: Use View Space calculation in Fragment Shader only. No Vertex mods.
+            material.onBeforeCompile = (shader) => {
+                shader.uniforms.sunPositionView = { value: new THREE.Vector3(0, 0, 0) };
+                this.earthMaterialShader = shader;
+
+                // Fragment Shader Only Injection
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <common>',
+                    `
+                    #include <common>
+                    uniform vec3 sunPositionView;
+                    `
+                );
+                
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <emissivemap_fragment>',
+                    `
+                    #include <emissivemap_fragment>
+                    
+                    // Vector from Fragment to Sun (in View Space)
+                    // sunPositionView is passed from CPU (already in View Space)
+                    // vViewPosition is the fragment position in View Space
+                    vec3 sunDirectionView = normalize(sunPositionView - vViewPosition);
+                    
+                    // vNormal is the View Space normal
+                    float dayNightDot = dot(normalize(vNormal), sunDirectionView);
+                    
+                    // FIX: Harder transition (sharper terminator) as requested
+                    // Was [-0.1, 0.1], now [-0.02, 0.02] to simulate a "Texture Switch" feel
+                    float dayFactor = smoothstep(-0.02, 0.02, dayNightDot);
+                    float lightsFactor = 1.0 - dayFactor;
+                    
+                    // Boost & Sharpen: 
+                    // 1. Boost brightness (3.0x)
+                    // 2. Apply a power curve to remove low-light noise and make cities distinct
+                    vec3 lightsColor = totalEmissiveRadiance * 3.0;
+                    lightsColor = pow(lightsColor, vec3(2)); // Contrast boost
+                    
+                    totalEmissiveRadiance = lightsColor * lightsFactor;
+                    `
+                );
+            };
+
             const cloudGeometry = new THREE.SphereGeometry(size * 1.02, 64, 64);
+
             const cloudTexture = this.textureLoader.load('/static/assets/textures/earth_clouds_1024.png');
             const cloudMaterial = new THREE.MeshStandardMaterial({
                 map: cloudTexture,
@@ -953,8 +999,8 @@ class MarsMissionApp {
                 const distToFocus = this.controls.target.distanceTo(focusPoint);
                 
                 // Threshold to end transition
-                // FIX: Reduced threshold (0.1 -> 0.01) and added Hard Snap to prevent "jump" at end
-                if (distToTarget < 0.01 && distToFocus < 0.01) {
+                // FIX: Ultra-tight threshold (0.001) to make the snap invisible
+                if (distToTarget < 0.001 && distToFocus < 0.001) {
                     this.isTransitioning = false;
                     this.controls.target.copy(focusPoint);
                     this.camera.position.copy(idealCameraPos);
@@ -1096,8 +1142,24 @@ class MarsMissionApp {
 
         this.updateCamera();
 
+        // FIX: Manually update camera matrices to avoid 1-frame lag in lighting calculation
+        // The renderer usually does this, but we need it NOW to calculate sunPositionView correctly.
+        this.camera.updateMatrixWorld();
+        this.camera.matrixWorldInverse.copy(this.camera.matrixWorld).invert();
+
         if (this.objects.sun) {
             this.objects.sun.rotation.y += 0.001;
+            
+            if (this.earthMaterialShader) {
+                const sunPos = new THREE.Vector3();
+                this.objects.sun.getWorldPosition(sunPos);
+                
+                // Transform to View Space for Shader
+                // Now using the FRESH matrixWorldInverse we just calculated
+                sunPos.applyMatrix4(this.camera.matrixWorldInverse);
+                
+                this.earthMaterialShader.uniforms.sunPositionView.value.copy(sunPos);
+            }
         }
 
         if (this.objects.sunGlow) {

@@ -29,7 +29,7 @@ http://localhost:8712
 - **视觉效果**：
   - **影视级后期**：ACES 色调映射、胶片颗粒 (Film Grain)、色差 (Chromatic Aberration)、暗角 (Vignette)
   - **动态环境**：Bloom 泛光、智能日食光晕 (Lens Flare Occlusion)、动态星空视差 (Parallax Stars)
-  - **细节渲染**：大气 Fresnel、体积云、PBR 材质、20Hz 物理数据平滑插值
+  - **细节渲染**：智能日夜灯光切换 (Day/Night City Lights)、大气 Fresnel、体积云、PBR 材质、20Hz 物理数据平滑插值
 - **信息展示**：实时坐标、地火距离、速度与进度条，支持时间轴拖动回放
 
 ## 项目结构
@@ -115,7 +115,7 @@ mars_mission/
 ## 坐标与单位说明
 
 - 后端 `backend/orbit_engine.py` 输出坐标为 `(x, y, z)`，位置单位为 **AU**，时间单位为 **day**，速度为 **AU/day**（数值由差分估计）。
-- Three.js 默认 **Y 轴向上**。为使“轨道平面”视觉上更贴合直觉，前端渲染时会将后端坐标映射为 **`(x, z, y)`**（也就是把后端的 `z` 映射到 Three 的 `y`）。
+- Three.js 默认 **Y 轴向上**。为使"轨道平面"视觉上更贴合直觉，前端渲染时会将后端坐标映射为 **`(x, z, y)`**（也就是把后端的 `z` 映射到 Three 的 `y`）。
 - 信息面板（`frontend/ui.js`）展示的是后端原始 `(x, y, z)` 数据；渲染使用的是映射后的坐标。
 
 ## 技术细节
