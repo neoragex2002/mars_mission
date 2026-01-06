@@ -190,3 +190,8 @@ this.bloomPass = new THREE.UnrealBloomPass(
 ## 联系方式
 
 如有问题或建议，请在项目仓库提交 issue。 
+
+## 参考网站
+* https://planetpixelemporium.com/planets.html
+* https://github.com/dawidbil/solar-system
+* https://www.solarsystemscope.com
