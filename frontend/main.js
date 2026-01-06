@@ -698,9 +698,23 @@ class MarsMissionApp {
         let material;
         if (name === 'earth') {
             const earthTexture = this.textureLoader.load('/static/assets/textures/earth/earthmap2k.jpg');
+            earthTexture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+            earthTexture.minFilter = THREE.LinearMipmapLinearFilter;
+            earthTexture.magFilter = THREE.LinearFilter;
+            
             const earthBump = this.textureLoader.load('/static/assets/textures/earth/earthbump2k.jpg');
+            earthBump.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+            earthBump.minFilter = THREE.LinearMipmapLinearFilter;
+            earthBump.magFilter = THREE.LinearFilter;
+            
             const earthLights = this.textureLoader.load('/static/assets/textures/earth/earthlights2k.jpg');
+            earthLights.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+            earthLights.minFilter = THREE.LinearMipmapLinearFilter;
+            earthLights.magFilter = THREE.LinearFilter;
+            
             const earthSpec = this.textureLoader.load('/static/assets/textures/earth/earthspec2k.jpg');
+            earthSpec.minFilter = THREE.LinearFilter;
+            earthSpec.magFilter = THREE.LinearFilter;
             
             material = new THREE.MeshStandardMaterial({
                 map: earthTexture,
@@ -762,16 +776,38 @@ class MarsMissionApp {
 
             const cloudGeometry = new THREE.SphereGeometry(size * 1.02, 64, 64);
 
-            const cloudTexture = this.textureLoader.load('/static/assets/textures/earth_clouds_1024.png');
+            const cloudTexture = this.textureLoader.load('/static/assets/textures/earth/cloudmap1k.jpg');
+            cloudTexture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+            cloudTexture.minFilter = THREE.LinearMipmapLinearFilter;
+            cloudTexture.magFilter = THREE.LinearFilter;
+            
+            const cloudAlpha = this.textureLoader.load('/static/assets/textures/earth/cloudmap1k_trans.jpg');
+            cloudAlpha.minFilter = THREE.LinearFilter;
+            cloudAlpha.magFilter = THREE.LinearFilter;
+            
             const cloudMaterial = new THREE.MeshStandardMaterial({
                 map: cloudTexture,
+                alphaMap: cloudAlpha,
                 transparent: true,
-                opacity: 0.75,
+                opacity: 0.8,
                 metalness: 0.0,
                 roughness: 1.0,
                 envMapIntensity: 0.0,
                 depthWrite: false
             });
+
+            cloudMaterial.onBeforeCompile = (shader) => {
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <alphamap_fragment>',
+                    `
+                    #ifdef USE_ALPHAMAP
+                        vec4 texelAlpha = texture2D( alphaMap, vUv );
+                        diffuseColor.a *= ( 1.0 - texelAlpha.g );
+                    #endif
+                    `
+                );
+            };
+
             const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
             this.objects.earthClouds = clouds;
             
