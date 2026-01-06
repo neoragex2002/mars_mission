@@ -258,6 +258,16 @@ class MarsMissionApp {
         this.controls.minDistance = 0.3;
         this.controls.maxDistance = 50;
         this.controls.target.set(0, 0, 0);
+
+        this.isUserInteracting = false;
+        this.controls.addEventListener('start', () => {
+            this.isUserInteracting = true;
+            // Interrupt any ongoing transition immediately on interaction
+            this.isTransitioning = false;
+        });
+        this.controls.addEventListener('end', () => {
+            this.isUserInteracting = false;
+        });
     }
 
     setupPostProcessing() {
@@ -1006,51 +1016,39 @@ class MarsMissionApp {
 
             case 'top':
                 this.controls.enablePan = true;
-                // Special case for TOP view: always enforce position
-                this.controls.target.lerp(new THREE.Vector3(0, 0, 0), this.targetLerpFactor);
-                this.camera.position.lerp(new THREE.Vector3(0, 4, 0), this.camLerpFactor);
+                if (!this.isUserInteracting) {
+                    this.controls.target.lerp(new THREE.Vector3(0, 0, 0), this.targetLerpFactor);
+                    this.camera.position.lerp(new THREE.Vector3(0, 4, 0), this.camLerpFactor);
+                }
                 this.controls.update();
-                return; // Exit early for top view
+                return;
 
             case 'free':
             default:
                 this.controls.enablePan = true;
                 this.controls.update();
-                return; // Exit early for free view
+                return;
         }
 
         // 2. Handle Follow Logic (Earth/Mars/Spacecraft)
         if (focusPoint && idealOffset) {
+            const lastTarget = this.controls.target.clone();
             const idealCameraPos = focusPoint.clone().add(idealOffset);
             
-            // Check if we have arrived (Transition Complete)
-            if (this.isTransitioning) {
+            if (this.isTransitioning && !this.isUserInteracting) {
                 const distToTarget = this.camera.position.distanceTo(idealCameraPos);
                 const distToFocus = this.controls.target.distanceTo(focusPoint);
                 
-                // Threshold to end transition
-                // FIX: Ultra-tight threshold (0.001) to make the snap invisible
                 if (distToTarget < 0.001 && distToFocus < 0.001) {
                     this.isTransitioning = false;
                     this.controls.target.copy(focusPoint);
                     this.camera.position.copy(idealCameraPos);
-                    this.controls.update(); // Sync state immediately
-                    return;
+                } else {
+                    this.controls.target.lerp(focusPoint, this.targetLerpFactor);
+                    this.camera.position.lerp(idealCameraPos, this.camLerpFactor);
                 }
-                
-                // Transition Phase: Force camera to ideal position
-                this.controls.target.lerp(focusPoint, this.targetLerpFactor);
-                this.camera.position.lerp(idealCameraPos, this.camLerpFactor);
             } else {
-                // Locked Phase:
-                // A. Move target EXACTLY to focus point (lock center)
-                // We use a temp vector to calculate how much the target moved this frame
-                const lastTarget = this.controls.target.clone();
                 this.controls.target.copy(focusPoint);
-                
-                // B. Move camera by the SAME delta to maintain relative distance/angle
-                // This prevents "jitter" because we are not enforcing a specific angle,
-                // just carrying the camera along with the planet.
                 const delta = new THREE.Vector3().subVectors(this.controls.target, lastTarget);
                 this.camera.position.add(delta);
             }
@@ -1209,14 +1207,14 @@ class MarsMissionApp {
         }
 
         if (this.objects.earth) {
-            this.objects.earth.rotation.y += 0.005;
+            this.objects.earth.rotation.y -= 0.015;
         }
         if (this.objects.earthClouds) {
-            this.objects.earthClouds.rotation.y += 0.001;
+            this.objects.earthClouds.rotation.y -= 0.005;
         }
 
         if (this.objects.mars) {
-            this.objects.mars.rotation.y += 0.004;
+            this.objects.mars.rotation.y -= 0.01;
         }
 
         if (this.objects.stars) {
