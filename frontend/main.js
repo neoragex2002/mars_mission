@@ -70,6 +70,7 @@ class MarsMissionApp {
             marsOrbit: null,
             stars: null
         };
+        this.sunWorldPosition = new THREE.Vector3();
 
         this.ws = null;
         this.connected = false;
@@ -733,32 +734,85 @@ class MarsMissionApp {
         this.sunTexture = sunTexture;
     }
 
-    createAtmosphereMaterial(color) {
+    createAtmosphereMaterial({
+        rimColor,
+        hazeColor,
+        twilightColor,
+        intensity = 0.12,
+        twilightWidth = 0.05,
+        hazeStrength = 0.12,
+        twilightStrength = 0.25,
+        twilightAlpha = 0.55,
+        alphaScale = 0.9
+    }) {
         return new THREE.ShaderMaterial({
-            uniforms: { 
-                glowColor: { value: new THREE.Color(color) }
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.BackSide,
+            uniforms: {
+                rimColor: { value: rimColor.clone() },
+                hazeColor: { value: hazeColor.clone() },
+                twilightColor: { value: twilightColor.clone() },
+                sunDirection: { value: new THREE.Vector3(1, 0, 0) },
+                cameraFactor: { value: 0.0 },
+                rimPowerNear: { value: 5.0 },
+                rimPowerFar: { value: 3.5 },
+                rimIntensity: { value: intensity },
+                hazeStrength: { value: hazeStrength },
+                twilightWidth: { value: twilightWidth },
+                twilightStrength: { value: twilightStrength },
+                twilightAlpha: { value: twilightAlpha },
+                alphaScale: { value: alphaScale }
             },
             vertexShader: `
-                varying vec3 vNormal;
+                varying vec3 vWorldNormal;
+                varying vec3 vWorldPos;
                 void main() {
-                    vNormal = normalize(normalMatrix * normal);
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                    vWorldPos = worldPos.xyz;
+                    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+                    gl_Position = projectionMatrix * viewMatrix * worldPos;
                 }
             `,
             fragmentShader: `
-                uniform vec3 glowColor;
-                varying vec3 vNormal;
-                void main() {
-                    // BackSide rendering: edge dot is 0, center dot is -1
-                    // We want intensity to be 1 at edge and 0 at center
-                    float intensity = pow(1.0 + dot(vNormal, vec3(0, 0, 1.0)), 4.5);
-                    gl_FragColor = vec4(glowColor, intensity);
+                uniform vec3 rimColor;
+                uniform vec3 hazeColor;
+                uniform vec3 twilightColor;
+                uniform vec3 sunDirection;
+                uniform float cameraFactor;
+                uniform float rimPowerNear;
+                uniform float rimPowerFar;
+                uniform float rimIntensity;
+                uniform float hazeStrength;
+                uniform float twilightWidth;
+                uniform float twilightStrength;
+                uniform float twilightAlpha;
+                uniform float alphaScale;
+                varying vec3 vWorldNormal;
+                varying vec3 vWorldPos;
+
+	                void main() {
+	                    vec3 N = normalize(vWorldNormal);
+	                    vec3 V = normalize(cameraPosition - vWorldPos);
+	                    float ndv = abs(dot(N, V));
+	                    float fresnel = pow(1.0 - ndv, mix(rimPowerNear, rimPowerFar, cameraFactor));
+	                    float outerFade = smoothstep(0.0, mix(0.06, 0.02, cameraFactor), ndv);
+	                    fresnel *= outerFade;
+	                    float sunDot = dot(N, normalize(sunDirection));
+	                    float daySide = smoothstep(-0.2, 0.2, sunDot);
+	                    float rim = fresnel * rimIntensity * mix(0.35, 1.0, daySide);
+	                    float twilight = smoothstep(twilightWidth, 0.0, abs(sunDot));
+                    float dayMask = smoothstep(0.0, 0.35, sunDot);
+
+                    vec3 color = rim * rimColor;
+                    color += twilight * twilightColor * twilightStrength;
+                    color += hazeStrength * rim * mix(hazeColor, rimColor, dayMask);
+
+                    float alpha = clamp((rim + twilight * twilightAlpha) * alphaScale, 0.0, 1.0);
+                    gl_FragColor = vec4(color, alpha);
                 }
-            `,
-            side: THREE.BackSide,
-            blending: THREE.AdditiveBlending,
-            transparent: true,
-            depthWrite: false
+            `
         });
     }
 
@@ -851,7 +905,7 @@ class MarsMissionApp {
                     );
             };
 
-            const cloudGeometry = new THREE.SphereGeometry(size * 1.02, 64, 64);
+            const cloudGeometry = new THREE.SphereGeometry(size * 1.01, 64, 64);
 
             const cloudAlpha = this.textureLoader.load('/static/assets/textures/earth/cloudmap4k.jpg');
             cloudAlpha.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
@@ -869,7 +923,7 @@ class MarsMissionApp {
                 emissiveIntensity: 0.5,       // 低强度
                 envMapIntensity: 1,           // 反射环境光
                 depthWrite: false,
-                side: THREE.DoubleSide        // 双面渲染
+                //side: THREE.DoubleSide        // 双面渲染
             });
 
             const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
@@ -996,9 +1050,82 @@ class MarsMissionApp {
         glow.scale.set(size * 4, size * 4, 1.0);
         this.objects[name].add(glow);
 
-        const atmosphereGeometry = new THREE.SphereGeometry(size * 1.06, 64, 64);
-        const atmosphereMaterial = this.createAtmosphereMaterial(color);
+        const atmospherePreset = name === 'earth'
+            ? {
+                rimColor: new THREE.Color(0.75, 0.9, 1.0),
+                hazeColor: new THREE.Color(0.58, 0.80, 1.0),
+                twilightColor: new THREE.Color(0.75, 0.88, 1.0),
+                intensity: 0.85,
+                twilightWidth: 0.1,
+                hazeStrength: 0.2,
+                twilightStrength: 0.42,
+                twilightAlpha: 0.75,
+                alphaScale: 1.0
+            }
+            : name === 'mars'
+                ? {
+                    rimColor: new THREE.Color(0.90, 0.55, 0.35),
+                    hazeColor: new THREE.Color(0.75, 0.60, 0.45),
+                    twilightColor: new THREE.Color(1.0, 0.65, 0.40),
+                    intensity: 0.28,
+                    twilightWidth: 0.08,
+                    hazeStrength: 0.06,
+                    twilightStrength: 0.1,
+                    twilightAlpha: 0.25,
+                    alphaScale: 0.75
+                }
+                : {
+                    rimColor: new THREE.Color(color),
+                    hazeColor: new THREE.Color(color),
+                    twilightColor: new THREE.Color(color),
+                    intensity: 0.4,
+                    twilightWidth: 0.1,
+                    hazeStrength: 0.1,
+                    twilightStrength: 0.18,
+                    twilightAlpha: 0.4,
+                    alphaScale: 0.85
+                };
+
+        const atmosphereRadius = name === 'earth'
+            ? size * 1.02
+            : name === 'mars'
+                ? size * 1.01
+                : size * 1.01;
+
+        const atmosphereGeometry = new THREE.SphereGeometry(atmosphereRadius, 64, 64);
+        const atmosphereMaterial = this.createAtmosphereMaterial(atmospherePreset);
         const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+        atmosphere.userData.atmosphereRadius = atmosphereRadius;
+
+        const planetWorldPos = new THREE.Vector3();
+        const sunWorldPos = new THREE.Vector3();
+        const sunDirWorld = new THREE.Vector3();
+        const updateAtmosUniforms = (mesh, camera) => {
+            if (!mesh.material || !mesh.material.uniforms) return;
+            mesh.getWorldPosition(planetWorldPos);
+            sunWorldPos.copy(this.sunWorldPosition);
+            // Direction from planet -> sun (so N·L > 0 is the day side)
+            sunDirWorld.subVectors(sunWorldPos, planetWorldPos);
+            const len = sunDirWorld.length();
+            if (len > 0.0001) {
+                sunDirWorld.divideScalar(len);
+            } else {
+                sunDirWorld.set(1, 0, 0);
+            }
+            mesh.material.uniforms.sunDirection.value.copy(sunDirWorld);
+
+            const r = mesh.userData.atmosphereRadius || size;
+            const dist = camera.position.distanceTo(planetWorldPos);
+            const start = r * 1.05;
+            const end = r * 3.0;
+            mesh.material.uniforms.cameraFactor.value =
+                THREE.MathUtils.clamp((dist - start) / (end - start), 0, 1);
+        };
+
+        atmosphere.onBeforeRender = (renderer, scene, camera) => {
+            updateAtmosUniforms(atmosphere, camera);
+        };
+
         this.objects[name].add(atmosphere);
         
         const orbitGeometry = new THREE.BufferGeometry();
@@ -1363,16 +1490,15 @@ class MarsMissionApp {
 
         if (this.objects.sun) {
             this.objects.sun.rotation.y += 0.001;
+
+            this.objects.sun.getWorldPosition(this.sunWorldPosition);
             
-            if (this.earthMaterialShader) {
-                const sunPosWorld = new THREE.Vector3();
-                this.objects.sun.getWorldPosition(sunPosWorld);
-                
+            if (this.earthMaterialShader && this.objects.earth) {
                 const earthPosWorld = new THREE.Vector3();
                 this.objects.earth.getWorldPosition(earthPosWorld);
-                
-                const lightDirWorld = new THREE.Vector3().subVectors(earthPosWorld, sunPosWorld).normalize();
-                
+
+                const lightDirWorld = new THREE.Vector3().subVectors(earthPosWorld, this.sunWorldPosition).normalize();
+
                 const lightDirView = lightDirWorld.clone();
                 lightDirView.transformDirection(this.camera.matrixWorldInverse);
                 
