@@ -100,19 +100,36 @@ function setupViewModeControl() {
 function setupInfoModal() {
     const infoBtn = document.getElementById('info-btn');
     const modal = document.getElementById('info-modal');
-    const closeBtn = modal.querySelector('.close');
-    
-    infoBtn.addEventListener('click', () => {
-        modal.style.display = 'block';
-    });
-    
-    closeBtn.addEventListener('click', () => {
+    const closeBtn = modal ? modal.querySelector('.close') : null;
+
+    if (!infoBtn || !modal || !closeBtn) {
+        return;
+    }
+
+    const openModal = () => {
+        modal.style.display = 'flex';
+        modal.setAttribute('aria-hidden', 'false');
+        closeBtn.focus();
+    };
+
+    const closeModal = () => {
         modal.style.display = 'none';
-    });
-    
+        modal.setAttribute('aria-hidden', 'true');
+        infoBtn.focus();
+    };
+
+    infoBtn.addEventListener('click', openModal);
+    closeBtn.addEventListener('click', closeModal);
+
     window.addEventListener('click', (event) => {
         if (event.target === modal) {
-            modal.style.display = 'none';
+            closeModal();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && modal.style.display === 'flex') {
+            closeModal();
         }
     });
 }

@@ -16,7 +16,7 @@
             <!-- 1. Top Bar -->
             <header id="header">
                 <div class="brand">
-                    <h1>MARS MISSION <small style="font-size: 0.6rem; color: var(--accent); vertical-align: top;">V1.0</small></h1>
+                    <h1>MARS MISSION <span class="brand-version">V1.0</span></h1>
                 </div>
                 <div id="connection-status" class="status-indicator">
                     <span class="status-dot"></span>
@@ -37,9 +37,9 @@
 
                 <div class="data-item">
                     <div class="data-label">Mission Progress</div>
-                    <div class="progress-container" style="margin-top: 8px;">
+                    <div class="progress-container">
                         <div class="progress-bar">
-                            <div id="mission-progress" style="width: 0%"></div>
+                            <div id="mission-progress"></div>
                         </div>
                     </div>
                 </div>
@@ -49,13 +49,13 @@
                     <div id="earth-mars-dist" class="data-value">0.000 AU</div>
                 </div>
 
-                <div class="data-item" style="border-top: 1px solid var(--border); padding-top: 15px;">
+                <div class="data-item divider">
                     <div class="data-label">Telemetry (AU)</div>
                     <div class="data-row">
                         <span class="label earth">Earth</span>
                         <span id="earth-pos" class="data-value coord">(0.00, 0.00, 0.00)</span>
                     </div>
-                    <div class="data-row" style="margin-top: 8px;">
+                    <div class="data-row">
                         <span class="label mars">Mars</span>
                         <span id="mars-pos" class="data-value coord">(0.00, 0.00, 0.00)</span>
                     </div>
@@ -70,7 +70,7 @@
 
                 <div class="data-item">
                     <div class="data-label">Craft Position (AU)</div>
-                    <div id="ship-pos" class="data-value coord" style="color: var(--success); font-size: 1rem;">(0.00, 0.00, 0.00)</div>
+                    <div id="ship-pos" class="data-value coord highlight">(0.00, 0.00, 0.00)</div>
                 </div>
 
                 <div class="data-item">
@@ -79,13 +79,13 @@
                         <span class="label">Earth Rel</span>
                         <span id="earth-vel" class="data-value">0.0000</span>
                     </div>
-                    <div class="data-row" style="margin-top: 8px;">
+                    <div class="data-row">
                         <span class="label">Mars Rel</span>
-                        <span id="mars-vel" class="data-value" style="color: var(--danger);">0.0000</span>
+                        <span id="mars-vel" class="data-value danger">0.0000</span>
                     </div>
                 </div>
 
-                <div class="data-item" style="border-top: 1px solid var(--border); padding-top: 15px;">
+                <div class="data-item divider">
                     <div class="data-label">Camera Interface</div>
                     <select id="view-mode">
                         <option value="free">Tactical: Free Camera</option>
@@ -96,17 +96,17 @@
                     </select>
                 </div>
 
-                <div id="legend" style="margin-top: 20px;">
-                    <div class="data-label" style="margin-bottom: 8px;">Visual Legend</div>
-                    <div style="font-size: 0.7rem; color: var(--text-secondary); display: grid; gap: 5px;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="width: 8px; height: 8px; background: #ffff00; border-radius: 50%;"></span> Sun
+                <div id="legend" class="legend">
+                    <div class="data-label legend-title">Visual Legend</div>
+                    <div class="legend-list">
+                        <div class="legend-item">
+                            <span class="legend-dot sun"></span> Sun
                         </div>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="width: 8px; height: 8px; background: #4a90d9; border-radius: 50%;"></span> Earth
+                        <div class="legend-item">
+                            <span class="legend-dot earth"></span> Earth
                         </div>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="width: 8px; height: 8px; background: #e74c3c; border-radius: 50%;"></span> Mars
+                        <div class="legend-item">
+                            <span class="legend-dot mars"></span> Mars
                         </div>
                     </div>
                 </div>
@@ -129,31 +129,29 @@
                 </div>
 
                 <div class="view-select-container">
-                    <div class="data-label" style="margin-bottom: 0;">Warp</div>
-                    <span id="speed-value" style="font-family: var(--font-mono); font-size: 0.8rem; width: 30px; text-align: right;">0.5</span>
-                    <input type="range" id="time-speed" min="0.1" max="5" step="0.1" value="0.5" style="width: 80px;">
+                    <div class="data-label compact">Warp</div>
+                    <span id="speed-value" class="mono value-compact">0.5</span>
+                    <input type="range" id="time-speed" class="range--compact" min="0.1" max="5" step="0.1" value="0.5">
                 </div>
-            </footer >
+            </footer>
 
             <!-- 5. Utility -->
-            <button id="info-btn" class="btn-icon info-btn-fixed" title="Info">?</button>
+            <button id="info-btn" class="btn-icon info-btn-fixed" title="Info" aria-haspopup="dialog" aria-controls="info-modal">?</button>
         </div>
         
         <!-- Modal -->
-        <div id="info-modal" class="modal">
-            <div class="modal-content glass-panel" style="background: rgba(10, 15, 25, 0.95);">
-                <span class="close">&times;</span>
-                <h2 style="color: var(--accent); margin-bottom: 20px;">Mission Parameters</h2>
-                <div style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6;">
+        <div id="info-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-hidden="true">
+            <div class="modal-content glass-panel">
+                <button class="close" type="button" aria-label="Close">&times;</button>
+                <h2 id="modal-title" class="modal-title">Mission Parameters</h2>
+                <div class="modal-body">
                     <p>Dynamic 3D Hohmann Transfer simulation.</p>
-                    <ul style="margin: 15px 0; padding-left: 20px;">
-                        <li><strong style="color: var(--text-primary);">Phase 1:</strong> Earth to Mars (Prograde Ellipse)</li>
-                        <li><strong style="color: var(--text-primary);">Phase 2:</strong> Mars Surface Operations</li>
-                        <li><strong style="color: var(--text-primary);">Phase 3:</strong> Return to Earth</li>
+                    <ul class="modal-list">
+                        <li><strong class="text-strong">Phase 1:</strong> Earth to Mars (Prograde Ellipse)</li>
+                        <li><strong class="text-strong">Phase 2:</strong> Mars Surface Operations</li>
+                        <li><strong class="text-strong">Phase 3:</strong> Return to Earth</li>
                     </ul>
-                    <p style="font-size: 0.8rem; border-top: 1px solid var(--border); padding-top: 10px;">
-                        Interactive visualization powered by Three.js and FastAPI.
-                    </p>
+                    <p class="modal-footer">Interactive visualization powered by Three.js and FastAPI.</p>
                 </div>
             </div>
         </div>

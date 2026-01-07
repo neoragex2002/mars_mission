@@ -117,28 +117,18 @@ function formatTime(days) {
 function showToast(message, duration = 3000) {
     const toast = document.createElement('div');
     toast.className = 'toast';
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
     toast.textContent = message;
-    toast.style.cssText = `
-        position: fixed;
-        top: 80px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(74, 144, 217, 0.9);
-        color: white;
-        padding: 15px 25px;
-        border-radius: 5px;
-        z-index: 3000;
-        animation: fadeIn 0.3s ease;
-    `;
-    
+
     document.body.appendChild(toast);
-    
-    setTimeout(() => {
-        toast.style.animation = 'fadeOut 0.3s ease';
-        setTimeout(() => {
-            document.body.removeChild(toast);
-        }, 300);
-    }, duration);
+
+    const hide = () => {
+        toast.classList.add('is-hiding');
+        toast.addEventListener('animationend', () => toast.remove(), { once: true });
+    };
+
+    setTimeout(hide, duration);
 }
 
 function showLoadingIndicator() {
