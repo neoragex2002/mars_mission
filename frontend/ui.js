@@ -139,6 +139,10 @@ function showToast(message, duration = 3000) {
 }
 
 function showLoadingIndicator() {
+    if (document.getElementById('loading-indicator')) {
+        return;
+    }
+
     const indicator = document.createElement('div');
     indicator.id = 'loading-indicator';
     indicator.innerHTML = `
@@ -158,37 +162,41 @@ function showLoadingIndicator() {
         text-align: center;
         border: 1px solid rgba(255, 255, 255, 0.2);
     `;
-    
-    // Add spinner CSS
-    const style = document.createElement('style');
-    style.textContent = `
-        .spinner {
-            border: 3px solid rgba(255, 255, 255, 0.3);
-            border-top: 3px solid #4a90d9;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
-            to { opacity: 1; transform: translateX(-50%) translateY(0); }
-        }
-        
-        @keyframes fadeOut {
-            from { opacity: 1; }
-            to { opacity: 0; }
-        }
-    `;
-    document.head.appendChild(style);
-    
+
+    const styleId = 'loading-indicator-style';
+    let style = document.getElementById(styleId);
+    if (!style) {
+        style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+            .spinner {
+                border: 3px solid rgba(255, 255, 255, 0.3);
+                border-top: 3px solid #4a90d9;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 15px;
+            }
+
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+                to { opacity: 1; transform: translateX(-50%) translateY(0); }
+            }
+
+            @keyframes fadeOut {
+                from { opacity: 1; }
+                to { opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
     document.body.appendChild(indicator);
 }
 

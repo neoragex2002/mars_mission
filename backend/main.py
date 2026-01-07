@@ -1,7 +1,7 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 import json
 import asyncio
 from typing import Dict
@@ -12,10 +12,14 @@ from orbit_engine import OrbitEngine
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    asyncio.create_task(simulation_loop())
-    yield
-    # Shutdown
-    pass
+    simulation_task = asyncio.create_task(simulation_loop())
+    try:
+        yield
+    finally:
+        # Shutdown
+        simulation_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await simulation_task
 
 app = FastAPI(title="Mars Mission 3D Visualization", lifespan=lifespan)
 
@@ -113,26 +117,38 @@ async def get_snapshot():
 
 async def broadcast_to_clients(message: dict):
     """Send message to all connected clients"""
-    for connection in list(active_connections):
+
+    async def _send_one(connection: WebSocket):
         try:
-            await connection.send_json(message)
+            await asyncio.wait_for(connection.send_json(message), timeout=0.5)
+            return None
         except Exception:
-            try:
-                active_connections.remove(connection)
-            except ValueError:
-                pass
+            return connection
+
+    connections = list(active_connections)
+    if not connections:
+        return
+
+    results = await asyncio.gather(*(_send_one(connection) for connection in connections))
+    for dead in results:
+        if dead is None:
+            continue
+        try:
+            active_connections.remove(dead)
+        except ValueError:
+            pass
 
 async def simulation_loop():
     """Main simulation loop"""
-    while True:
-        if sim_state.is_running and not sim_state.paused:
-            # Update time
-            sim_state.current_time += sim_state.time_speed
-            
-            # Broadcast to all clients
-            await broadcast_to_clients(build_simulation_update("update"))
-        
-        await asyncio.sleep(0.05)  # 20 FPS
+    try:
+        while True:
+            if sim_state.is_running and not sim_state.paused:
+                sim_state.current_time += sim_state.time_speed
+                await broadcast_to_clients(build_simulation_update("update"))
+
+            await asyncio.sleep(0.05)  # 20 FPS
+    except asyncio.CancelledError:
+        return
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -174,11 +190,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 await broadcast_to_clients(build_simulation_update("update"))
             
             elif command == "set_speed":
-                sim_state.time_speed = float(data.get("speed", 1.0))
+                sim_state.time_speed = max(0.0, float(data.get("speed", 1.0)))
                 await broadcast_to_clients(build_simulation_update("update"))
             
             elif command == "set_time":
-                sim_state.current_time = float(data.get("time", 0.0))
+                sim_state.current_time = max(0.0, float(data.get("time", 0.0)))
                 await broadcast_to_clients(build_simulation_update("update"))
             
             elif command == "get_snapshot":

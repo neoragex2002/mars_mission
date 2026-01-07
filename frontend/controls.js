@@ -55,13 +55,33 @@ function setupTimeSpeedControl() {
 
 function setupTimelineControl() {
     const timeline = document.getElementById('timeline');
-    
-    timeline.addEventListener('input', (event) => {
-        const time = parseFloat(event.target.value);
-        
-        if (app) {
+
+    let pendingTime = null;
+    let sendTimer = null;
+
+    const flush = () => {
+        sendTimer = null;
+        const time = pendingTime;
+        pendingTime = null;
+        if (app && typeof time === 'number' && Number.isFinite(time)) {
             app.setTime(time);
         }
+    };
+
+    timeline.addEventListener('input', (event) => {
+        pendingTime = parseFloat(event.target.value);
+        if (sendTimer === null) {
+            sendTimer = setTimeout(flush, 80);
+        }
+    });
+
+    timeline.addEventListener('change', (event) => {
+        pendingTime = parseFloat(event.target.value);
+        if (sendTimer !== null) {
+            clearTimeout(sendTimer);
+            sendTimer = null;
+        }
+        flush();
     });
 }
 

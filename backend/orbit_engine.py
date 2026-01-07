@@ -542,6 +542,7 @@ class OrbitEngine:
         return np.sqrt((pos1[0] - pos2[0])**2 + (pos1[1] - pos2[1])**2 + (pos1[2] - pos2[2])**2)
 
     def get_mission_info(self, time_days: float) -> Dict:
+        time_days = float(max(0.0, time_days))
         earth_pos = self.get_planet_position('earth', time_days)
         mars_pos = self.get_planet_position('mars', time_days)
         ship_pos = self.get_spacecraft_position(time_days)
@@ -580,7 +581,7 @@ class OrbitEngine:
             'earth_mars_distance': self.calculate_distance(earth_pos, mars_pos),
             'earth_velocity': earth_velocity,
             'mars_velocity': mars_velocity,
-            'progress': 0.0 if mission_duration <= 0 else min(1.0, time_in_mission / mission_duration)
+            'progress': 0.0 if mission_duration <= 0 else max(0.0, min(1.0, time_in_mission / mission_duration))
         }
 
     def get_schedule_preview(self, num_missions: int = 3) -> List[Dict]:

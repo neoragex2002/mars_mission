@@ -93,7 +93,14 @@ def test_dependencies():
         print(f"  ✅ Uvicorn version: {uvicorn.__version__}")
         
         import websockets
-        print(f"  ✅ WebSockets version: {websockets.__version__}")
+        ws_version = getattr(websockets, "__version__", None)
+        if not ws_version:
+            try:
+                from importlib.metadata import version as pkg_version
+                ws_version = pkg_version("websockets")
+            except Exception:
+                ws_version = "unknown"
+        print(f"  ✅ WebSockets version: {ws_version}")
         
         print("✅ All dependencies installed!\n")
         return True

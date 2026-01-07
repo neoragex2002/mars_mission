@@ -340,7 +340,6 @@ class MarsMissionApp {
         sunLight.shadow.mapSize.height = 2048;
         sunLight.shadow.camera.near = 0.5;
         sunLight.shadow.camera.far = 500;
-        sunLight.shadow.camera.far = 500;
         sunLight.shadow.bias = -0.0008;
         this.scene.add(sunLight);
     }
