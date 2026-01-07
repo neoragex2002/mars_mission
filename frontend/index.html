@@ -3,179 +3,163 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mars Mission 3D Visualization</title>
+    <title>Mars Mission | Command Center</title>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
     <div id="container">
-        <!-- 3D Canvas Container -->
+        <!-- 3D Canvas -->
         <div id="canvas-container"></div>
         
-        <!-- UI Overlay -->
+        <!-- UI Overlay: Grid Layout -->
         <div id="ui-overlay">
-            <!-- Header -->
-            <div id="header">
-                <h1>🚀 Mars Mission 3D Visualization</h1>
-                <div id="connection-status" class="status disconnected">● Disconnected</div>
-            </div>
-            
-            <!-- Control Panel -->
-            <div id="control-panel">
-                <h3>⚙️ Mission Controls</h3>
-                
-                <!-- Playback Controls -->
-                <div class="control-group">
-                    <label>Playback</label>
-                    <div class="button-group">
-                        <button id="btn-start" class="btn btn-primary">▶ Start</button>
-                        <button id="btn-pause" class="btn btn-warning">⏸ Pause</button>
-                        <button id="btn-stop" class="btn btn-danger">⏹ Stop</button>
-                    </div>
+            <!-- 1. Top Bar -->
+            <header id="header">
+                <div class="brand">
+                    <h1>MARS MISSION <small style="font-size: 0.6rem; color: var(--accent); vertical-align: top;">V1.0</small></h1>
+                </div>
+                <div id="connection-status" class="status-indicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">System Offline</span>
+                </div>
+            </header>
+
+            <!-- 2. Left Panel: Mission Intelligence -->
+            <aside id="left-panel" class="glass-panel">
+                <div class="panel-header">
+                    <h3>Mission Intelligence</h3>
                 </div>
                 
-                <!-- Time Speed Control -->
-                <div class="control-group">
-                    <label>Time Speed: <span id="speed-value">0.5</span>x</label>
-                    <input type="range" id="time-speed" min="0.1" max="5" step="0.1" value="0.5">
+                <div class="data-item">
+                    <div class="data-label">Current Phase</div>
+                    <div id="phase-badge" class="phase-badge">Detecting...</div>
                 </div>
-                
-                <!-- Timeline -->
-                <div class="control-group">
-                    <label>Timeline: Day <span id="current-day">0</span> / <span id="total-days">0</span></label>
-                    <input type="range" id="timeline" min="0" max="1000" step="1" value="0">
-                    <div class="timeline-labels">
-                        <span>Launch</span>
-                        <span>Mars Arrival</span>
-                        <span>Mars Departure</span>
-                        <span>Earth Return</span>
-                    </div>
-                </div>
-                
-                <!-- View Mode -->
-                <div class="control-group">
-                    <label>View Mode</label>
-                    <select id="view-mode">
-                        <option value="free">Free Camera</option>
-                        <option value="earth">Follow Earth</option>
-                        <option value="mars">Follow Mars</option>
-                        <option value="spacecraft">Follow Spacecraft</option>
-                        <option value="top">Top View</option>
-                    </select>
-                </div>
-            </div>
-            
-            <!-- Data Panel -->
-            <div id="data-panel">
-                <h3>📊 Mission Data</h3>
-                
-                <div class="data-section">
-                    <h4>Mission Phase</h4>
-                    <div id="phase-display" class="phase-badge pre-launch">Mission 1: Pre-Launch</div>
-                </div>
-                
-                <div class="data-section">
-                    <h4>Positions (AU)</h4>
-                    <div class="data-row">
-                        <span class="label earth">🌍 Earth:</span>
-                        <span id="earth-pos">(0.00, 0.00, 0.00)</span>
-                    </div>
-                    <div class="data-row">
-                        <span class="label mars">🔴 Mars:</span>
-                        <span id="mars-pos">(0.00, 0.00, 0.00)</span>
-                    </div>
-                    <div class="data-row">
-                        <span class="label ship">🚀 Spacecraft:</span>
-                        <span id="ship-pos">(0.00, 0.00, 0.00)</span>
-                    </div>
-                </div>
-                
-                <div class="data-section">
-                    <h4>Distances (AU)</h4>
-                    <div class="data-row">
-                        <span class="label">Earth-Mars:</span>
-                        <span id="earth-mars-dist">0.00 AU</span>
-                    </div>
-                    <div class="data-row">
-                        <span class="label">Mission Progress:</span>
+
+                <div class="data-item">
+                    <div class="data-label">Mission Progress</div>
+                    <div class="progress-container" style="margin-top: 8px;">
                         <div class="progress-bar">
                             <div id="mission-progress" style="width: 0%"></div>
                         </div>
                     </div>
                 </div>
-                
-                <div class="data-section">
-                    <h4>Velocities (AU/day)</h4>
+
+                <div class="data-item">
+                    <div class="data-label">Earth-Mars Distance</div>
+                    <div id="earth-mars-dist" class="data-value">0.000 AU</div>
+                </div>
+
+                <div class="data-item" style="border-top: 1px solid var(--border); padding-top: 15px;">
+                    <div class="data-label">Telemetry (AU)</div>
                     <div class="data-row">
-                        <span class="label earth">Earth:</span>
-                        <span id="earth-vel">0.00</span>
+                        <span class="label earth">Earth</span>
+                        <span id="earth-pos" class="data-value coord">(0.00, 0.00, 0.00)</span>
                     </div>
+                    <div class="data-row" style="margin-top: 8px;">
+                        <span class="label mars">Mars</span>
+                        <span id="mars-pos" class="data-value coord">(0.00, 0.00, 0.00)</span>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 3. Right Panel: Craft Telemetry -->
+            <aside id="right-panel" class="glass-panel">
+                <div class="panel-header">
+                    <h3>Craft Telemetry</h3>
+                </div>
+
+                <div class="data-item">
+                    <div class="data-label">Craft Position (AU)</div>
+                    <div id="ship-pos" class="data-value coord" style="color: var(--success); font-size: 1rem;">(0.00, 0.00, 0.00)</div>
+                </div>
+
+                <div class="data-item">
+                    <div class="data-label">Environmental Velocity</div>
                     <div class="data-row">
-                        <span class="label mars">Mars:</span>
-                        <span id="mars-vel">0.00</span>
+                        <span class="label">Earth Rel</span>
+                        <span id="earth-vel" class="data-value">0.0000</span>
+                    </div>
+                    <div class="data-row" style="margin-top: 8px;">
+                        <span class="label">Mars Rel</span>
+                        <span id="mars-vel" class="data-value" style="color: var(--danger);">0.0000</span>
                     </div>
                 </div>
-            </div>
-            
-            <!-- Legend -->
-            <div id="legend">
-                <h3>🎨 Legend</h3>
-                <div class="legend-item">
-                    <span class="legend-color" style="background: #ffff00;"></span>
-                    <span>Sun</span>
+
+                <div class="data-item" style="border-top: 1px solid var(--border); padding-top: 15px;">
+                    <div class="data-label">Camera Interface</div>
+                    <select id="view-mode">
+                        <option value="free">Tactical: Free Camera</option>
+                        <option value="earth">Focus: Earth Orbit</option>
+                        <option value="mars">Focus: Mars Orbit</option>
+                        <option value="spacecraft">Focus: Spacecraft</option>
+                        <option value="top">Orrery: Top Down</option>
+                    </select>
                 </div>
-                <div class="legend-item">
-                    <span class="legend-color" style="background: #4169e1;"></span>
-                    <span>Earth</span>
+
+                <div id="legend" style="margin-top: 20px;">
+                    <div class="data-label" style="margin-bottom: 8px;">Visual Legend</div>
+                    <div style="font-size: 0.7rem; color: var(--text-secondary); display: grid; gap: 5px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="width: 8px; height: 8px; background: #ffff00; border-radius: 50%;"></span> Sun
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="width: 8px; height: 8px; background: #4a90d9; border-radius: 50%;"></span> Earth
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="width: 8px; height: 8px; background: #e74c3c; border-radius: 50%;"></span> Mars
+                        </div>
+                    </div>
                 </div>
-                <div class="legend-item">
-                    <span class="legend-color" style="background: #dc143c;"></span>
-                    <span>Mars</span>
+            </aside>
+
+            <!-- 4. Bottom Center: Cinema Bar -->
+            <footer id="bottom-bar" class="glass-panel">
+                <div class="playback-group">
+                    <button id="btn-start" class="btn-icon" title="Start">▶</button>
+                    <button id="btn-pause" class="btn-icon" title="Pause">⏸</button>
+                    <button id="btn-stop" class="btn-icon" title="Reset">⏹</button>
                 </div>
-                <div class="legend-item">
-                    <span class="legend-color" style="background: #00ff00;"></span>
-                    <span>Spacecraft</span>
+
+                <div class="timeline-container">
+                    <div class="timeline-info">
+                        <span>T+ Day <span id="current-day">0</span></span>
+                        <span>Horizon Limit: <span id="total-days">0</span> Days</span>
+                    </div>
+                    <input type="range" id="timeline" min="0" max="1000" step="1" value="0">
                 </div>
-                <div class="legend-item">
-                    <span class="legend-color" style="background: rgba(255, 255, 255, 0.3);"></span>
-                    <span>Orbit Paths</span>
+
+                <div class="view-select-container">
+                    <div class="data-label" style="margin-bottom: 0;">Warp</div>
+                    <span id="speed-value" style="font-family: var(--font-mono); font-size: 0.8rem; width: 30px; text-align: right;">0.5</span>
+                    <input type="range" id="time-speed" min="0.1" max="5" step="0.1" value="0.5" style="width: 80px;">
                 </div>
-            </div>
-            
-            <!-- Info Button -->
-            <button id="info-btn" class="info-button">ℹ️</button>
+            </footer >
+
+            <!-- 5. Utility -->
+            <button id="info-btn" class="btn-icon info-btn-fixed" title="Info">?</button>
         </div>
         
-        <!-- Info Modal -->
+        <!-- Modal -->
         <div id="info-modal" class="modal">
-            <div class="modal-content">
+            <div class="modal-content glass-panel" style="background: rgba(10, 15, 25, 0.95);">
                 <span class="close">&times;</span>
-                <h2>Mars Mission 3D Visualization</h2>
-                <p>This interactive 3D visualization demonstrates a round-trip Mars mission using real orbital mechanics.</p>
-                
-                <h3>Mission Phases:</h3>
-                <ul>
-                    <li><strong>Pre-Launch:</strong> Spacecraft on Earth</li>
-                    <li><strong>Earth-Mars Transfer:</strong> ~259 days using Hohmann transfer</li>
-                    <li><strong>On Mars:</strong> ~454 days waiting for optimal return window</li>
-                    <li><strong>Mars-Earth Transfer:</strong> ~259 days return journey</li>
-                </ul>
-                
-                <h3>Controls:</h3>
-                <ul>
-                    <li><strong>Left Mouse:</strong> Rotate view</li>
-                    <li><strong>Right Mouse:</strong> Pan view</li>
-                    <li><strong>Scroll:</strong> Zoom in/out</li>
-                    <li><strong>Time Speed:</strong> Adjust simulation speed</li>
-                    <li><strong>View Mode:</strong> Change camera perspective</li>
-                </ul>
-                
-                <h3>Technical Details:</h3>
-                <p>Uses real planetary orbital parameters from JPL data including eccentricity, inclination, and semi-major axis. Transfer orbits follow Hohmann trajectory calculations.</p>
+                <h2 style="color: var(--accent); margin-bottom: 20px;">Mission Parameters</h2>
+                <div style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6;">
+                    <p>Dynamic 3D Hohmann Transfer simulation.</p>
+                    <ul style="margin: 15px 0; padding-left: 20px;">
+                        <li><strong style="color: var(--text-primary);">Phase 1:</strong> Earth to Mars (Prograde Ellipse)</li>
+                        <li><strong style="color: var(--text-primary);">Phase 2:</strong> Mars Surface Operations</li>
+                        <li><strong style="color: var(--text-primary);">Phase 3:</strong> Return to Earth</li>
+                    </ul>
+                    <p style="font-size: 0.8rem; border-top: 1px solid var(--border); padding-top: 10px;">
+                        Interactive visualization powered by Three.js and FastAPI.
+                    </p>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Three.js libraries -->
+    <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
@@ -185,9 +169,9 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
 
-    <script src="/static/spacecraft.js?v=10"></script>
+    <script src="/static/spacecraft.js?v=11"></script>
     <script src="/static/orbit.js"></script>
-    <script src="/static/main.js?v=6"></script>
+    <script src="/static/main.js?v=7"></script>
     <script src="/static/controls.js"></script>
     <script src="/static/ui.js"></script>
 </body>

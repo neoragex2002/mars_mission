@@ -1384,13 +1384,12 @@ class MarsMissionApp {
     }
 
     updateConnectionStatus(connected) {
-        const statusElement = document.getElementById('connection-status');
-        if (connected) {
-            statusElement.textContent = '● Connected';
-            statusElement.className = 'status connected';
-        } else {
-            statusElement.textContent = '● Disconnected';
-            statusElement.className = 'status disconnected';
+        if (typeof updateStatusIndicator === 'function') {
+            if (connected) {
+                updateStatusIndicator('System Online', 'connected');
+            } else {
+                updateStatusIndicator('System Offline', 'disconnected');
+            }
         }
     }
 

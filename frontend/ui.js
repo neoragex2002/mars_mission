@@ -6,15 +6,18 @@ function updateMissionInfo(missionInfo) {
 
 function updateDataPanel(data) {
     // Update phase display
-    const phaseDisplay = document.getElementById('phase-display');
+    const phaseDisplay = document.getElementById('phase-badge');
     const phase = data.phase || '';
     const cssPhase = phase.replace(/_/g, '-');
     const missionNumber =
         typeof data.mission_number === 'number' ? data.mission_number + 1 : undefined;
     const phaseText = formatPhase(phase);
-    phaseDisplay.textContent =
-        missionNumber !== undefined ? `Mission ${missionNumber}: ${phaseText}` : phaseText;
-    phaseDisplay.className = `phase-badge ${cssPhase}`;
+    
+    if (phaseDisplay) {
+        phaseDisplay.textContent =
+            missionNumber !== undefined ? `Mission ${missionNumber}: ${phaseText}` : phaseText;
+        phaseDisplay.className = `phase-badge ${cssPhase}`;
+    }
     
     // Update positions
     if (data.earth_position) {
@@ -147,55 +150,21 @@ function showLoadingIndicator() {
     indicator.id = 'loading-indicator';
     indicator.innerHTML = `
         <div class="spinner"></div>
-        <p>Loading simulation...</p>
+        <p>Initializing Command Center...</p>
     `;
     indicator.style.cssText = `
         position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.9);
+        inset: 0;
+        background: rgba(5, 10, 20, 0.9);
+        backdrop-filter: blur(10px);
         color: white;
-        padding: 30px;
-        border-radius: 10px;
-        z-index: 3000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 5000;
         text-align: center;
-        border: 1px solid rgba(255, 255, 255, 0.2);
     `;
-
-    const styleId = 'loading-indicator-style';
-    let style = document.getElementById(styleId);
-    if (!style) {
-        style = document.createElement('style');
-        style.id = styleId;
-        style.textContent = `
-            .spinner {
-                border: 3px solid rgba(255, 255, 255, 0.3);
-                border-top: 3px solid #4a90d9;
-                border-radius: 50%;
-                width: 40px;
-                height: 40px;
-                animation: spin 1s linear infinite;
-                margin: 0 auto 15px;
-            }
-
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-            }
-
-            @keyframes fadeIn {
-                from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
-                to { opacity: 1; transform: translateX(-50%) translateY(0); }
-            }
-
-            @keyframes fadeOut {
-                from { opacity: 1; }
-                to { opacity: 0; }
-            }
-        `;
-        document.head.appendChild(style);
-    }
 
     document.body.appendChild(indicator);
 }
@@ -225,8 +194,9 @@ function updateButtonState(buttonId, state) {
 function updateStatusIndicator(message, status) {
     const statusElement = document.getElementById('connection-status');
     if (statusElement) {
-        statusElement.textContent = '● ' + message;
-        statusElement.className = 'status ' + status;
+        const textElement = statusElement.querySelector('.status-text');
+        if (textElement) textElement.textContent = message;
+        statusElement.className = 'status-indicator ' + status;
     }
 }
 
