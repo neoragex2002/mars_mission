@@ -6,31 +6,42 @@ Vibe Programming实现的交互式 3D 火星往返任务可视化演示：后端
 
 ## 快速开始
 
-```bash
-# 安装依赖
-pip install -r requirements.txt
+下面以 **macOS / Linux / WSL** 为例（Windows 原生同理）。推荐使用虚拟环境，避免污染全局 Python。
 
-# 运行自检（可选但推荐）
+```bash
+# 1) 创建虚拟环境（推荐）
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 2) 安装依赖
+python3 -m pip install -r requirements.txt
+
+# 3) 运行自检（推荐）
 python3 test.py
 
-# 启动服务（会自动寻找可用端口，默认从 8712 开始）
+# 4) 启动服务（会自动寻找可用端口，默认从 8712 开始）
 ./start.sh
 
-# 浏览器打开（以控制台输出的端口为准）
+# 5) 浏览器打开（以控制台输出的端口为准）
 http://localhost:8712
 ```
 
+注意：前端 Three.js/字体使用 CDN（`frontend/index.html`、`frontend/styles.css`），首次加载需要能访问外网资源。
+
 ## 功能特性
 
-- **真实（近似）轨道参数**：使用 JPL 数据的近似轨道根数（偏心率/倾角/周期等）计算地球与火星位置
-- **任务阶段**：发射等待 → 地火转移 → 火星停留 → 火地转移（循环执行多次任务）
+- **真实（近似）轨道参数**：使用近似轨道根数（偏心率/倾角/周期等）计算地球与火星位置
+- **任务阶段**：发射等待 → 地火转移 → 火星停留 → 火地转移（可连续生成多次任务时间表）
 - **实时仿真**：WebSocket 推送 `update`/`snapshot`，前端即时更新渲染与信息面板
 - **交互式 3D**：鼠标旋转/平移/缩放，多种视角跟随（地球/火星/飞船/俯视/自由），支持平滑插值过渡
-- **视觉效果**：
-  - **影视级后期**：ACES 色调映射、胶片颗粒 (Film Grain)、色差 (Chromatic Aberration)、暗角 (Vignette)
-  - **动态环境**：Bloom 泛光、智能日食光晕 (Lens Flare Occlusion)、动态星空视差 (Parallax Stars)
-  - **细节渲染**：智能日夜灯光切换 (Day/Night City Lights)、大气 Fresnel、体积云、PBR 材质、20Hz 物理数据平滑插值
-- **信息展示**：实时坐标、地火距离、速度与进度条，支持时间轴拖动回放
+- **视觉效果（Three.js）**：
+  - 高清晰度地球、晨昏线、大气辉光、大气云层 ...
+  - ACES 色调映射、胶片颗粒、色差、暗角、泛光、镜头光斑 ...
+- **任务控制台 UI**：
+  - 底部“Cinema Bar”控制条：播放/暂停/复位、时间轴、速度
+  - 左右面板可折叠 + 右上角 HUD 沉浸模式
+  - 时间轴关键节点刻度 + 拖动预览提示
+- **信息展示**：实时坐标、地火距离、速度与进度条
 
 ## 项目结构
 
@@ -54,9 +65,15 @@ mars_mission/
 
 ## 安装与运行
 
+### 环境要求
+- Python 3.10+（建议）
+- 浏览器：Chrome / Firefox
+
+### 安装依赖
+
 1. 安装 Python 依赖：
    ```bash
-   pip install -r requirements.txt
+   python3 -m pip install -r requirements.txt
    ```
 
 2. 启动服务（推荐）：
@@ -64,7 +81,7 @@ mars_mission/
    ./start.sh
    ```
 
-   或手动指定端口：
+   或手动指定端口（注意：需从 `backend/` 目录运行，才能正确 `import orbit_engine`）：
    ```bash
    cd backend
    python3 main.py --port 9000
@@ -82,20 +99,30 @@ mars_mission/
 - 右键拖动：平移
 - 滚轮：缩放
 
-**仿真控件：**
-- Start：开始仿真
-- Pause：暂停/继续
-- Stop：复位到初始状态
-- Time Speed：调整仿真推进速度
+**仿真控件（底部控制条）：**
+- `▶` Start：开始仿真
+- `⏸` Pause：暂停/继续
+- `⏹` Reset：复位到初始状态
+- Warp：调整仿真推进速度（Time Speed）
 - Timeline：拖动时间轴进行回放/快进
-- View Mode：切换视角（自由/跟随地球/跟随火星/跟随飞船/俯视）
+  - 时间轴上会显示关键节点刻度（Launch / Mars Arrival / Mars Departure / Earth Return），可点击跳转
+  - 拖动时会出现短暂的时间预览提示（当前天数 + 所处阶段）
+
+**视角（右侧 Camera Interface）：**
+- View Mode：切换视角（自由 / 跟随地球 / 跟随火星 / 跟随飞船 / 俯视）
+
+**HUD 与面板：**
+- 右上角 `HUD`：切换“沉浸模式”（隐藏左右面板/信息按钮，仅保留底部控制条）
+- 左/右面板标题栏的 `◂/▸`：折叠/展开对应面板
+- 上述布局偏好会保存在浏览器 `localStorage`，刷新页面后仍会保持
 
 **键盘快捷键：**
-- Space：暂停/继续
-- ← / →：按天回退/前进
-- R：复位
-- C：切换视角（循环）
-- F：全屏切换
+- `Space`：暂停/继续
+- `← / →`：按天回退/前进
+- `R`：复位
+- `C`：切换视角（循环）
+- `F`：全屏切换
+- `H`：切换 HUD（沉浸模式）
 
 ## 接口
 
@@ -138,6 +165,23 @@ mars_mission/
   - `mission_duration`：该次任务总时长（天）
   - `mission_schedule`：关键时间点（发射/到达/返航等）
   - `timeline_horizon_end`：前端时间轴可用的当前上限（会随仿真自动扩展）
+
+## 测试
+
+本项目没有使用 pytest，而是提供了一个轻量的自检脚本：
+
+- 运行全套自检：
+  ```bash
+  python3 test.py
+  ```
+
+- 只运行单个检查函数（避免 `import test` 的模块名冲突，推荐这种写法）：
+  ```bash
+  python3 -c "import runpy; ns=runpy.run_path('test.py'); ns['test_dependencies']()"
+  python3 -c "import runpy; ns=runpy.run_path('test.py'); ns['test_frontend_files']()"
+  python3 -c "import runpy; ns=runpy.run_path('test.py'); ns['test_orbit_engine']()"
+  python3 -c "import runpy; ns=runpy.run_path('test.py'); ns['test_fastapi_import']()"
+  ```
 
 ## 自定义与开发
 
@@ -182,6 +226,7 @@ this.bloomPass = new THREE.UnrealBloomPass(
 
 - 打开浏览器控制台查看报错
 - 确认浏览器允许加载脚本（Three.js 等库通过 CDN 引入）
+- `frontend/styles.css` 通过 Google Fonts 引入字体；如果网络受限，字体会回退到系统字体（不影响功能）
 - 建议使用 Chrome / Firefox
 
 ### 性能问题

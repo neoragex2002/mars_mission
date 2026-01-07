@@ -246,23 +246,6 @@ input[type="range"]::-moz-range-thumb {
     border: 2px solid rgba(8, 12, 18, 0.6);
 }
 
-input[type="range"]:hover {
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.2) 100%);
-}
-
-input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 12px;
-    height: 12px;
-    background: var(--accent);
-    border-radius: 50%;
-    box-shadow: 0 0 10px var(--accent);
-    transition: transform 0.2s;
-}
-
-input[type="range"]::-webkit-slider-thumb:hover {
-    transform: scale(1.3);
-}
 
 /* Playback Controls */
 .playback-group {
@@ -668,6 +651,161 @@ input[type="range"]:focus-visible,
 
 .legend-dot.mars {
     background: #ff7a6b;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.btn-icon--small {
+    width: auto;
+    height: 32px;
+    border-radius: 999px;
+    padding: 0 12px;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+}
+
+.panel-header--with-actions {
+    justify-content: space-between;
+}
+
+.panel-toggle {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(8, 12, 18, 0.6);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.panel-toggle:hover {
+    border-color: var(--accent);
+    background: rgba(125, 211, 252, 0.12);
+    color: var(--text-primary);
+}
+
+#left-panel,
+#right-panel {
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+#ui-overlay.is-cinema #left-panel,
+#ui-overlay.is-cinema #right-panel,
+#ui-overlay.is-cinema #info-btn {
+    opacity: 0;
+    transform: translateY(6px);
+    pointer-events: none;
+}
+
+#ui-overlay.is-left-collapsed {
+    grid-template-columns: 64px 1fr 320px;
+}
+
+#ui-overlay.is-left-collapsed #left-panel {
+    padding: 12px 10px;
+}
+
+#ui-overlay.is-left-collapsed #left-panel .panel-header {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+    justify-content: center;
+}
+
+#ui-overlay.is-left-collapsed #left-panel .panel-header h3,
+#ui-overlay.is-left-collapsed #left-panel .data-item {
+    display: none;
+}
+
+#ui-overlay.is-right-collapsed {
+    grid-template-columns: 320px 1fr 64px;
+}
+
+#ui-overlay.is-left-collapsed.is-right-collapsed {
+    grid-template-columns: 64px 1fr 64px;
+}
+
+#ui-overlay.is-right-collapsed #right-panel {
+    padding: 12px 10px;
+}
+
+#ui-overlay.is-right-collapsed #right-panel .panel-header {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+    justify-content: center;
+}
+
+#ui-overlay.is-right-collapsed #right-panel .panel-header h3,
+#ui-overlay.is-right-collapsed #right-panel .data-item {
+    display: none;
+}
+
+.timeline-track {
+    position: relative;
+    width: 100%;
+}
+
+.timeline-track input[type="range"] {
+    position: relative;
+    z-index: 2;
+}
+
+.timeline-markers {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 18px;
+    height: 16px;
+    z-index: 3;
+    pointer-events: none;
+}
+
+.timeline-marker {
+    position: absolute;
+    top: 4px;
+    width: 8px;
+    height: 8px;
+    transform: translateX(-50%) rotate(45deg);
+    border-radius: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(185, 197, 214, 0.35);
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.timeline-marker:hover {
+    border-color: var(--accent);
+    background: rgba(125, 211, 252, 0.55);
+}
+
+.timeline-tooltip {
+    position: absolute;
+    top: -30px;
+    transform: translateX(-50%) translateY(2px);
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(11, 16, 24, 0.92);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.timeline-tooltip.is-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
 }
 
 /* Responsive adjustments */

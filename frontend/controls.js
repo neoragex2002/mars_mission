@@ -1,15 +1,42 @@
 // controls.js - User interaction and controls
 
+const UI_PREFS_KEY = 'mm_ui_prefs_v1';
+
+function loadUiPrefs() {
+    try {
+        const raw = localStorage.getItem(UI_PREFS_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveUiPrefs(prefs) {
+    try {
+        localStorage.setItem(UI_PREFS_KEY, JSON.stringify(prefs));
+    } catch (e) {
+        return;
+    }
+}
+
+function setOverlayFlag(overlay, className, enabled) {
+    if (!overlay) return;
+    if (enabled) {
+        overlay.classList.add(className);
+    } else {
+        overlay.classList.remove(className);
+    }
+}
+
 function setupControls() {
-    console.log('Setting up controls...');
-    
     setupPlaybackControls();
     setupTimeSpeedControl();
     setupTimelineControl();
     setupViewModeControl();
     setupInfoModal();
-    
-    console.log('Controls setup complete');
+    setupUiToggles();
 }
 
 function setupPlaybackControls() {
@@ -20,21 +47,18 @@ function setupPlaybackControls() {
     startBtn.addEventListener('click', () => {
         if (app) {
             app.startSimulation();
-            console.log('Start simulation');
         }
     });
     
     pauseBtn.addEventListener('click', () => {
         if (app) {
             app.pauseSimulation();
-            console.log('Pause simulation');
         }
     });
     
     stopBtn.addEventListener('click', () => {
         if (app) {
             app.stopSimulation();
-            console.log('Stop simulation');
         }
     });
 }
@@ -97,6 +121,71 @@ function setupViewModeControl() {
     });
 }
 
+function applyUiPrefs(prefs) {
+    const overlay = document.getElementById('ui-overlay');
+    const hudBtn = document.getElementById('btn-hud');
+    const leftBtn = document.getElementById('btn-left-panel');
+    const rightBtn = document.getElementById('btn-right-panel');
+
+    const cinema = !!prefs.cinema;
+    const leftCollapsed = !!prefs.leftCollapsed;
+    const rightCollapsed = !!prefs.rightCollapsed;
+
+    setOverlayFlag(overlay, 'is-cinema', cinema);
+    setOverlayFlag(overlay, 'is-left-collapsed', leftCollapsed);
+    setOverlayFlag(overlay, 'is-right-collapsed', rightCollapsed);
+
+    if (hudBtn) hudBtn.setAttribute('aria-pressed', cinema ? 'true' : 'false');
+
+    if (leftBtn) {
+        leftBtn.setAttribute('aria-expanded', leftCollapsed ? 'false' : 'true');
+        leftBtn.textContent = leftCollapsed ? '▸' : '◂';
+    }
+
+    if (rightBtn) {
+        rightBtn.setAttribute('aria-expanded', rightCollapsed ? 'false' : 'true');
+        rightBtn.textContent = rightCollapsed ? '◂' : '▸';
+    }
+
+    return { cinema, leftCollapsed, rightCollapsed };
+}
+
+function setupUiToggles() {
+    const overlay = document.getElementById('ui-overlay');
+    const hudBtn = document.getElementById('btn-hud');
+    const leftBtn = document.getElementById('btn-left-panel');
+    const rightBtn = document.getElementById('btn-right-panel');
+
+    if (!overlay) return;
+
+    let prefs = loadUiPrefs();
+    prefs = applyUiPrefs(prefs);
+
+    if (hudBtn) {
+        hudBtn.addEventListener('click', () => {
+            prefs.cinema = !prefs.cinema;
+            applyUiPrefs(prefs);
+            saveUiPrefs(prefs);
+        });
+    }
+
+    if (leftBtn) {
+        leftBtn.addEventListener('click', () => {
+            prefs.leftCollapsed = !prefs.leftCollapsed;
+            applyUiPrefs(prefs);
+            saveUiPrefs(prefs);
+        });
+    }
+
+    if (rightBtn) {
+        rightBtn.addEventListener('click', () => {
+            prefs.rightCollapsed = !prefs.rightCollapsed;
+            applyUiPrefs(prefs);
+            saveUiPrefs(prefs);
+        });
+    }
+}
+
 function setupInfoModal() {
     const infoBtn = document.getElementById('info-btn');
     const modal = document.getElementById('info-modal');
@@ -152,7 +241,8 @@ function setupKeyboardControls() {
             case 'ArrowLeft':
                 // Step backward
                 if (app) {
-                    const currentTime = parseFloat(document.getElementById('timeline').value);
+                    const timeline = document.getElementById('timeline');
+                    const currentTime = timeline ? parseFloat(timeline.value) : 0;
                     app.setTime(Math.max(0, currentTime - 1));
                 }
                 break;
@@ -160,8 +250,9 @@ function setupKeyboardControls() {
             case 'ArrowRight':
                 // Step forward
                 if (app) {
-                    const currentTime = parseFloat(document.getElementById('timeline').value);
-                    const maxTime = parseFloat(document.getElementById('timeline').max);
+                    const timeline = document.getElementById('timeline');
+                    const currentTime = timeline ? parseFloat(timeline.value) : 0;
+                    const maxTime = timeline ? parseFloat(timeline.max) : 0;
                     app.setTime(Math.min(maxTime, currentTime + 1));
                 }
                 break;
@@ -174,6 +265,15 @@ function setupKeyboardControls() {
                 }
                 break;
             
+            case 'h':
+            case 'H':
+                event.preventDefault();
+                {
+                    const hudBtn = document.getElementById('btn-hud');
+                    if (hudBtn) hudBtn.click();
+                }
+                break;
+
             case 'f':
             case 'F':
                 event.preventDefault();

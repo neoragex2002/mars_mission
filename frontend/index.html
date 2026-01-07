@@ -18,16 +18,20 @@
                 <div class="brand">
                     <h1>MARS MISSION <span class="brand-version">V1.0</span></h1>
                 </div>
-                <div id="connection-status" class="status-indicator">
-                    <span class="status-dot"></span>
-                    <span class="status-text">System Offline</span>
+                <div class="header-right">
+                    <div id="connection-status" class="status-indicator">
+                        <span class="status-dot"></span>
+                        <span class="status-text">System Offline</span>
+                    </div>
+                    <button id="btn-hud" class="btn-icon btn-icon--small" type="button" title="Toggle HUD (H)" aria-pressed="false">HUD</button>
                 </div>
             </header>
 
             <!-- 2. Left Panel: Mission Intelligence -->
             <aside id="left-panel" class="glass-panel">
-                <div class="panel-header">
+                <div class="panel-header panel-header--with-actions">
                     <h3>Mission Intelligence</h3>
+                    <button id="btn-left-panel" class="panel-toggle" type="button" aria-expanded="true" title="Toggle Mission panel">◂</button>
                 </div>
                 
                 <div class="data-item">
@@ -64,8 +68,9 @@
 
             <!-- 3. Right Panel: Craft Telemetry -->
             <aside id="right-panel" class="glass-panel">
-                <div class="panel-header">
+                <div class="panel-header panel-header--with-actions">
                     <h3>Craft Telemetry</h3>
+                    <button id="btn-right-panel" class="panel-toggle" type="button" aria-expanded="true" title="Toggle Telemetry panel">▸</button>
                 </div>
 
                 <div class="data-item">
@@ -120,12 +125,16 @@
                     <button id="btn-stop" class="btn-icon" title="Reset">⏹</button>
                 </div>
 
-                <div class="timeline-container">
+                <div class="timeline-container" id="timeline-container">
                     <div class="timeline-info">
                         <span>T+ Day <span id="current-day">0</span></span>
                         <span>Horizon Limit: <span id="total-days">0</span> Days</span>
                     </div>
-                    <input type="range" id="timeline" min="0" max="1000" step="1" value="0">
+                    <div class="timeline-track">
+                        <input type="range" id="timeline" min="0" max="1000" step="1" value="0" aria-label="Mission timeline">
+                        <div id="timeline-markers" class="timeline-markers" aria-hidden="true"></div>
+                        <div id="timeline-tooltip" class="timeline-tooltip" aria-hidden="true"></div>
+                    </div>
                 </div>
 
                 <div class="view-select-container">

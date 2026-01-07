@@ -1,7 +1,123 @@
 // ui.js - UI updates and data display
 
+let lastMissionSchedule = null;
+let lastPhaseLabel = '';
+let lastMissionNumber = null;
+let lastTimelineMax = null;
+let timelineTooltipHideTimer = null;
+let lastTimelineMarkersKey = null;
+
 function updateMissionInfo(missionInfo) {
-    console.log('Updating mission info:', missionInfo);
+    return;
+}
+
+function setMissionSchedule(schedule) {
+    if (schedule && typeof schedule === 'object') {
+        lastMissionSchedule = schedule;
+        lastTimelineMarkersKey = null;
+        renderTimelineMarkers();
+    }
+}
+
+function getFiniteNumber(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    return null;
+}
+
+function getTimelineMaxDays() {
+    if (lastTimelineMax !== null) return lastTimelineMax;
+    const timeline = document.getElementById('timeline');
+    if (!timeline) return null;
+    const max = parseFloat(timeline.max || '0');
+    return Number.isFinite(max) ? max : null;
+}
+
+function getPhaseLabelForTime(timeDays) {
+    const t = getFiniteNumber(timeDays);
+    if (t === null) return '';
+
+    const s = lastMissionSchedule;
+    if (!s || typeof s !== 'object') return lastPhaseLabel || '';
+
+    const tStart = getFiniteNumber(s.t_start);
+    const tLaunch = getFiniteNumber(s.t_launch_earth);
+    const tArrMars = getFiniteNumber(s.t_arrival_mars);
+    const tDepMars = getFiniteNumber(s.t_depart_mars);
+    const tArrEarth = getFiniteNumber(s.t_arrival_earth);
+
+    if ([tStart, tLaunch, tArrMars, tDepMars, tArrEarth].some(v => v === null)) {
+        return lastPhaseLabel || '';
+    }
+
+    if (t < tLaunch) return 'Pre-Launch';
+    if (t < tArrMars) return 'Earth → Mars Transfer';
+    if (t < tDepMars) return 'On Mars Surface';
+    if (t <= tArrEarth) return 'Mars → Earth Transfer';
+
+    return '';
+}
+
+function renderTimelineMarkers() {
+    const container = document.getElementById('timeline-markers');
+    if (!container) return;
+
+    const max = getTimelineMaxDays();
+    if (max === null || max <= 0) return;
+
+    const s = lastMissionSchedule;
+    if (!s || typeof s !== 'object') return;
+
+    const times = [
+        getFiniteNumber(s.t_launch_earth),
+        getFiniteNumber(s.t_arrival_mars),
+        getFiniteNumber(s.t_depart_mars),
+        getFiniteNumber(s.t_arrival_earth),
+    ];
+
+    if (times.some(v => v === null)) {
+        return;
+    }
+
+    const key = `${max}|${times.map(v => v.toFixed(6)).join('|')}`;
+    if (lastTimelineMarkersKey === key) {
+        return;
+    }
+    lastTimelineMarkersKey = key;
+
+    container.textContent = '';
+
+    const markers = [
+        { key: 'Launch', time: times[0] },
+        { key: 'Mars Arrival', time: times[1] },
+        { key: 'Mars Departure', time: times[2] },
+        { key: 'Earth Return', time: times[3] },
+    ];
+
+    const timeline = document.getElementById('timeline');
+
+    for (const marker of markers) {
+        if (marker.time < 0 || marker.time > max) continue;
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'timeline-marker';
+        button.style.left = `${(marker.time / max) * 100}%`;
+        button.setAttribute('aria-label', marker.key);
+
+        button.addEventListener('click', () => {
+            const t = marker.time;
+            if (timeline) {
+                timeline.value = String(t);
+                const currentDay = document.getElementById('current-day');
+                if (currentDay) currentDay.textContent = String(Math.round(t));
+            }
+            if (typeof app !== 'undefined' && app) {
+                app.setTime(t);
+            }
+        });
+
+        container.appendChild(button);
+    }
 }
 
 function updateDataPanel(data) {
@@ -12,6 +128,13 @@ function updateDataPanel(data) {
     const missionNumber =
         typeof data.mission_number === 'number' ? data.mission_number + 1 : undefined;
     const phaseText = formatPhase(phase);
+
+    lastPhaseLabel = phaseText;
+    lastMissionNumber = missionNumber !== undefined ? missionNumber : null;
+
+    if (data.mission_schedule && typeof data.mission_schedule === 'object') {
+        setMissionSchedule(data.mission_schedule);
+    }
     
     if (phaseDisplay) {
         phaseDisplay.textContent =
@@ -71,6 +194,19 @@ function updateTimeline(time, horizonEnd) {
             totalDays.textContent = Math.round(nextMax);
         }
     }
+
+    const nextMax = parseFloat(timeline.max || '0');
+    if (Number.isFinite(nextMax)) {
+        if (lastTimelineMax !== nextMax) {
+            lastTimelineMax = nextMax;
+            lastTimelineMarkersKey = null;
+        }
+    } else {
+        lastTimelineMax = null;
+        lastTimelineMarkersKey = null;
+    }
+
+    renderTimelineMarkers();
 
     document.getElementById('current-day').textContent = Math.round(time);
     timeline.value = time;
@@ -208,6 +344,54 @@ function animateUI(timestamp) {
 
 // Start UI animation loop
 requestAnimationFrame(animateUI);
+
+function showTimelineTooltip(timeDays) {
+    const timeline = document.getElementById('timeline');
+    const tooltip = document.getElementById('timeline-tooltip');
+    if (!timeline || !tooltip) return;
+
+    const max = getTimelineMaxDays();
+    const t = getFiniteNumber(timeDays);
+    if (max === null || max <= 0 || t === null) return;
+
+    const percent = Math.min(1, Math.max(0, t / max));
+    tooltip.style.left = `${percent * 100}%`;
+
+    const label = getPhaseLabelForTime(t);
+    tooltip.textContent = label ? `${Math.round(t)}d • ${label}` : `${Math.round(t)}d`;
+
+    tooltip.classList.add('is-visible');
+    tooltip.setAttribute('aria-hidden', 'false');
+
+    if (timelineTooltipHideTimer) {
+        clearTimeout(timelineTooltipHideTimer);
+        timelineTooltipHideTimer = null;
+    }
+    timelineTooltipHideTimer = setTimeout(() => {
+        tooltip.classList.remove('is-visible');
+        tooltip.setAttribute('aria-hidden', 'true');
+    }, 900);
+}
+
+function setupTimelinePreview() {
+    const timeline = document.getElementById('timeline');
+    if (!timeline) return;
+
+    timeline.addEventListener('input', (event) => {
+        const value = parseFloat(event.target.value);
+        showTimelineTooltip(value);
+    });
+
+    timeline.addEventListener('pointerdown', () => {
+        showTimelineTooltip(parseFloat(timeline.value));
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupTimelinePreview);
+} else {
+    setupTimelinePreview();
+}
 
 // Export functions for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
