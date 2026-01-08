@@ -57,14 +57,14 @@ const CinematicShader = {
 const TEXTURE_PATHS = Object.freeze({
     sunMap: '/static/assets/textures/sunmap.jpg',
 
-    earthMap: '/static/assets/textures/earth/earthmap4k.jpg',
-    earthBump: '/static/assets/textures/earth/earthbump4k.jpg',
-    earthLights: '/static/assets/textures/earth/earthlights4k.jpg',
-    earthSpec: '/static/assets/textures/earth/earthspec4k.jpg',
-    earthCloudAlpha: '/static/assets/textures/earth/cloudmap4k.jpg',
+    earthMap: '/static/assets/textures/earth/4k/earth_day.jpg',
+    earthBump: '/static/assets/textures/earth/4k/earth_bump.jpg',
+    earthLights: '/static/assets/textures/earth/4k/earth_night.jpg',
+    earthSpec: '/static/assets/textures/earth/4k/earth_spec.jpg',
+    earthCloudAlpha: '/static/assets/textures/earth/4k/earth_clouds.jpg',
 
-    marsMap: '/static/assets/textures/mars/mars_2k_color.png',
-    marsNormal: '/static/assets/textures/mars/mars_2k_normal.png',
+    marsMap: '/static/assets/textures/mars/2k/mars_diffuse.png',
+    marsNormal: '/static/assets/textures/mars/2k/mars_norm.png',
     marsClouds: '/static/assets/textures/mars/mars_clouds.png'
 });
 
@@ -183,9 +183,14 @@ class MarsMissionApp {
         // Visual spin rates (radians per simulated day)
         // Chosen to roughly match the previous on-screen speed at default time_speed.
         this.earthSpinRate = 0.09;
-        this.earthCloudSpinRate = 0.03;
+        this.earthCloudSpinRate = -0.01;
         this.marsSpinRate = 0.06;
-        this.marsCloudSpinRate = 0.02;
+        this.marsCloudSpinRate = -0.007;
+
+        this.cloudIdleSpinRadPerSec = 0.045;
+        this.earthCloudRotationOffset = 0.0;
+        this.marsCloudRotationOffset = 0.0;
+        this.lastRenderMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
 
         this.init();
     }
@@ -389,21 +394,58 @@ class MarsMissionApp {
     }
 
     setupPostProcessing() {
-        this.bloomComposer = new THREE.EffectComposer(this.renderer);
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        let renderTargetType = (typeof THREE.UnsignedByteType !== 'undefined')
+            ? THREE.UnsignedByteType
+            : undefined;
+
+        const supportsHalfFloat =
+            !!(this.renderer && this.renderer.capabilities && this.renderer.capabilities.isWebGL2) &&
+            !!(this.renderer && this.renderer.extensions && typeof this.renderer.extensions.has === 'function') &&
+            (this.renderer.extensions.has('EXT_color_buffer_float') || this.renderer.extensions.has('EXT_color_buffer_half_float'));
+
+        if (supportsHalfFloat && typeof THREE.HalfFloatType !== 'undefined') {
+            renderTargetType = THREE.HalfFloatType;
+        }
+
+        const createRenderTarget = () => new THREE.WebGLRenderTarget(width, height, {
+            minFilter: THREE.LinearFilter,
+            magFilter: THREE.LinearFilter,
+            format: THREE.RGBAFormat,
+            type: renderTargetType,
+            depthBuffer: true,
+            stencilBuffer: false
+        });
+
+        const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
+            ? this.renderer.getPixelRatio()
+            : (window.devicePixelRatio || 1);
+
+        this.bloomComposer = new THREE.EffectComposer(this.renderer, createRenderTarget());
+        if (typeof this.bloomComposer.setPixelRatio === 'function') {
+            this.bloomComposer.setPixelRatio(pixelRatio);
+        }
+        this.bloomComposer.setSize(width, height);
         this.bloomComposer.renderToScreen = false;
 
         const bloomRenderPass = new THREE.RenderPass(this.scene, this.camera);
         this.bloomComposer.addPass(bloomRenderPass);
 
         this.bloomPass = new THREE.UnrealBloomPass(
-            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            new THREE.Vector2(width * pixelRatio, height * pixelRatio),
             0.95,
             0.42,
             0.82
         );
         this.bloomComposer.addPass(this.bloomPass);
 
-        this.finalComposer = new THREE.EffectComposer(this.renderer);
+        this.finalComposer = new THREE.EffectComposer(this.renderer, createRenderTarget());
+        if (typeof this.finalComposer.setPixelRatio === 'function') {
+            this.finalComposer.setPixelRatio(pixelRatio);
+        }
+        this.finalComposer.setSize(width, height);
 
         const baseRenderPass = new THREE.RenderPass(this.scene, this.camera);
         this.finalComposer.addPass(baseRenderPass);
@@ -424,7 +466,7 @@ class MarsMissionApp {
         this.scene.add(ambientLight);
         
         // Point light from sun
-        const sunLight = new THREE.PointLight(0xf2fbff, 3.1, 100);
+        const sunLight = new THREE.PointLight(0xf2fbff, 4.5, 100);
         sunLight.position.set(0, 0, 0);
         sunLight.castShadow = true;
         sunLight.shadow.mapSize.width = 2048;
@@ -914,7 +956,7 @@ class MarsMissionApp {
         const material = new THREE.MeshStandardMaterial({
             map: sunTexture,
             emissive: 0xffaa00,
-            emissiveIntensity: 6.0,
+            emissiveIntensity: 9.2,
             emissiveMap: sunTexture,
             toneMapped: false,
             depthWrite: true
@@ -928,26 +970,26 @@ class MarsMissionApp {
             map: glowTexture,
             color: 0xffd2a3,
             transparent: true,
-            opacity: 0.45,
+            opacity: 0.5,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
             toneMapped: false
         });
         const sprite1 = new THREE.Sprite(spriteMaterial1);
-        sprite1.scale.set(0.8, 0.8, 1.0);
+        sprite1.scale.set(0.85, 0.85, 1.0);
         this.objects.sun.add(sprite1);
 
         const spriteMaterial2 = new THREE.SpriteMaterial({
             map: glowTexture,
             color: 0xff9c63,
             transparent: true,
-            opacity: 0.18,
+            opacity: 0.21,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
             toneMapped: false
         });
         const sprite2 = new THREE.Sprite(spriteMaterial2);
-        sprite2.scale.set(1.6, 1.6, 1.0);
+        sprite2.scale.set(1.7, 1.7, 1.0);
         this.objects.sun.add(sprite2);
 
         this.objects.sunGlow = [sprite1, sprite2];
@@ -1184,7 +1226,7 @@ class MarsMissionApp {
             const earthLightsMaterial = new THREE.MeshStandardMaterial({
                 color: 0x000000,
                 emissive: new THREE.Color(0xffffff),
-                emissiveIntensity: 1.0,
+                emissiveIntensity: 1.8,
                 emissiveMap: earthLights,
                 transparent: true,
                 blending: THREE.AdditiveBlending,
@@ -1197,6 +1239,7 @@ class MarsMissionApp {
 
             earthLightsMaterial.onBeforeCompile = (shader) => {
                 shader.uniforms.sunPositionView = { value: new THREE.Vector3(0, 0, 0) };
+                shader.uniforms.time = { value: 0.0 };
                 this.earthLightsShader = shader;
 
                 shader.fragmentShader = shader.fragmentShader.replace(
@@ -1204,6 +1247,7 @@ class MarsMissionApp {
                     `
                     #include <common>
                     uniform vec3 sunPositionView;
+                    uniform float time;
                     `
                 );
 
@@ -1214,14 +1258,21 @@ class MarsMissionApp {
                         vec3 emissiveTexel = emissiveMapTexelToLinear(texture2D(emissiveMap, vUv)).rgb;
                         float luminance = dot(emissiveTexel, vec3(0.2126, 0.7152, 0.0722));
 
-                        float baseMask = smoothstep(0.01, 0.22, luminance);
+                        float baseMask = smoothstep(0.05, 0.3, luminance);
                         float baseGlow = pow(clamp(luminance, 0.0, 1.0), 0.65) * baseMask;
 
-                        float cityMask = smoothstep(0.25, 0.60, luminance);
-                        cityMask = pow(cityMask, 2.2);
+                        float cityMask = smoothstep(0.02, 0.1, luminance);
+                        cityMask = pow(cityMask, 2.3);
 
-                        vec3 baseColor = vec3(1.0, 0.95, 0.88) * (baseGlow * 0.9);
-                        vec3 cityColor = vec3(1.0, 0.78, 0.55) * (cityMask * 1.0);
+                        vec3 baseColor = vec3(1.0, 0.95, 0.88) * (baseGlow * 1.0);
+
+                        vec2 cellUv = floor(vUv * vec2(2048.0, 1024.0));
+                        float seed = dot(cellUv, vec2(12.9898, 78.233));
+                        float rnd = fract(sin(seed) * 43758.5453123);
+                        float wave = 0.5 + 0.5 * sin(time * 2.2 + rnd * 6.28318530718);
+                        float sparkle = 1.0 + cityMask * 0.35 * wave;
+
+                        vec3 cityColor = vec3(1.0, 0.78, 0.55) * (cityMask * 1.) * sparkle;
 
                         totalEmissiveRadiance = baseColor + cityColor;
                     #endif
@@ -1732,15 +1783,27 @@ class MarsMissionApp {
     onWindowResize() {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
+            ? this.renderer.getPixelRatio()
+            : (window.devicePixelRatio || 1);
+
+        this.renderer.setSize(width, height);
         if (this.bloomComposer) {
-            this.bloomComposer.setSize(window.innerWidth, window.innerHeight);
+            if (typeof this.bloomComposer.setPixelRatio === 'function') {
+                this.bloomComposer.setPixelRatio(pixelRatio);
+            }
+            this.bloomComposer.setSize(width, height);
         }
         if (this.finalComposer) {
-            this.finalComposer.setSize(window.innerWidth, window.innerHeight);
+            if (typeof this.finalComposer.setPixelRatio === 'function') {
+                this.finalComposer.setPixelRatio(pixelRatio);
+            }
+            this.finalComposer.setSize(width, height);
         }
         if (this.bloomPass) {
-            this.bloomPass.resolution.set(window.innerWidth, window.innerHeight);
+            this.bloomPass.resolution.set(width * pixelRatio, height * pixelRatio);
         }
     }
 
@@ -1871,14 +1934,17 @@ class MarsMissionApp {
             }
             if (this.earthLightsShader && this.earthLightsShader.uniforms.sunPositionView) {
                 this.earthLightsShader.uniforms.sunPositionView.value.copy(this.sunViewPosition);
+                if (this.earthLightsShader.uniforms.time) {
+                    this.earthLightsShader.uniforms.time.value = Date.now() * 0.001;
+                }
             }
         }
 
         if (this.objects.sunGlow) {
             const time = Date.now() * 0.002;
             const pulse = 1.0 + Math.sin(time) * 0.08;
-            this.objects.sunGlow[0].scale.set(0.8 * pulse, 0.8 * pulse, 1.0);
-            this.objects.sunGlow[1].scale.set(1.6 * (1.0 + Math.sin(time * 0.5) * 0.12), 1.6 * (1.0 + Math.sin(time * 0.5) * 0.12), 1.0);
+            this.objects.sunGlow[0].scale.set(0.85 * pulse, 0.85 * pulse, 1.0);
+            this.objects.sunGlow[1].scale.set(1.7 * (1.0 + Math.sin(time * 0.5) * 0.12), 1.7 * (1.0 + Math.sin(time * 0.5) * 0.12), 1.0);
         }
 
         if (this.sunTexture) {
@@ -1886,20 +1952,33 @@ class MarsMissionApp {
             this.sunTexture.offset.y += 0.0002;
         }
 
+        const nowMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+        const dtSec = Math.max(0.0, Math.min(0.2, (nowMs - this.lastRenderMs) / 1000.0));
+        this.lastRenderMs = nowMs;
+
         // Planet self-rotation: bind to (interpolated) simulation time so it respects time speed and pause.
         const simDays = this.getDisplaySimulationTimeDays();
         const twoPi = Math.PI * 2;
         if (this.objects.earth) {
             this.objects.earth.rotation.y = (simDays * this.earthSpinRate) % twoPi;
         }
-        if (this.objects.earthClouds) {
-            this.objects.earthClouds.rotation.y = (simDays * this.earthCloudSpinRate) % twoPi;
-        }
         if (this.objects.mars) {
             this.objects.mars.rotation.y = (simDays * this.marsSpinRate) % twoPi;
         }
+
+        const isRunning = !!(this.simulationState && this.simulationState.is_running);
+        const isPaused = !!(this.simulationState && this.simulationState.paused);
+        if (!isRunning || isPaused) {
+            const idleDelta = this.cloudIdleSpinRadPerSec * dtSec;
+            this.earthCloudRotationOffset = (this.earthCloudRotationOffset + idleDelta) % twoPi;
+            this.marsCloudRotationOffset = (this.marsCloudRotationOffset + idleDelta) % twoPi;
+        }
+
+        if (this.objects.earthClouds) {
+            this.objects.earthClouds.rotation.y = (simDays * this.earthCloudSpinRate + this.earthCloudRotationOffset) % twoPi;
+        }
         if (this.objects.marsClouds) {
-            this.objects.marsClouds.rotation.y = (simDays * this.marsCloudSpinRate) % twoPi;
+            this.objects.marsClouds.rotation.y = (simDays * this.marsCloudSpinRate + this.marsCloudRotationOffset) % twoPi;
         }
 
         if (this.objects.stars) {
