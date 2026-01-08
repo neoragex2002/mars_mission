@@ -285,6 +285,14 @@ function setupKeyboardControls() {
                 }
                 break;
 
+            case 't':
+            case 'T':
+                event.preventDefault();
+                if (app && typeof app.toggleTextureColorMode === 'function') {
+                    app.toggleTextureColorMode();
+                }
+                break;
+
             case 'c':
             case 'C':
                 event.preventDefault();

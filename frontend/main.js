@@ -43,11 +43,68 @@ const CinematicShader = {
             float noise = random(uv + time);
             color += (noise - 0.5) * grainIntensity;
 
+            color *= vec3(0.98, 1.0, 1.02);
+
             // 3. Simple Vignette (Darker corners)
             float vignette = 1.0 - dist * 0.5;
             color *= vignette;
 
             gl_FragColor = vec4(color, 1.0);
+        }
+    `
+};
+
+const TEXTURE_PATHS = Object.freeze({
+    sunMap: '/static/assets/textures/sunmap.jpg',
+
+    earthMap: '/static/assets/textures/earth/earthmap4k.jpg',
+    earthBump: '/static/assets/textures/earth/earthbump4k.jpg',
+    earthLights: '/static/assets/textures/earth/earthlights4k.jpg',
+    earthSpec: '/static/assets/textures/earth/earthspec4k.jpg',
+    earthCloudAlpha: '/static/assets/textures/earth/cloudmap4k.jpg',
+
+    marsMap: '/static/assets/textures/mars/mars_2k_color.png',
+    marsNormal: '/static/assets/textures/mars/mars_2k_normal.png',
+    marsClouds: '/static/assets/textures/mars/mars_clouds.png'
+});
+
+const TEXTURE_PATH_LIST = Object.freeze([
+    TEXTURE_PATHS.sunMap,
+    TEXTURE_PATHS.earthMap,
+    TEXTURE_PATHS.earthBump,
+    TEXTURE_PATHS.earthLights,
+    TEXTURE_PATHS.earthSpec,
+    TEXTURE_PATHS.earthCloudAlpha,
+    TEXTURE_PATHS.marsMap,
+    TEXTURE_PATHS.marsNormal,
+    TEXTURE_PATHS.marsClouds
+]);
+
+const BLOOM_LAYER = 1;
+
+const AdditiveBlendShader = {
+    uniforms: {
+        tDiffuse: { value: null },
+        tBloom: { value: null },
+        bloomStrength: { value: 1.0 }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform sampler2D tBloom;
+        uniform float bloomStrength;
+        varying vec2 vUv;
+
+        void main() {
+            vec4 baseColor = texture2D(tDiffuse, vUv);
+            vec4 bloomColor = texture2D(tBloom, vUv);
+            gl_FragColor = baseColor + bloomColor * bloomStrength;
         }
     `
 };
@@ -58,7 +115,11 @@ class MarsMissionApp {
         this.camera = null;
         this.renderer = null;
         this.controls = null;
-        this.composer = null;
+        this.bloomComposer = null;
+        this.finalComposer = null;
+        this.additivePass = null;
+        this.bloomPass = null;
+        this.cinematicPass = null;
         this.raycaster = new THREE.Raycaster(); // For lens flare occlusion
 
         this.objects = {
@@ -71,6 +132,10 @@ class MarsMissionApp {
             stars: null
         };
         this.sunWorldPosition = new THREE.Vector3();
+        this.sunViewPosition = new THREE.Vector3();
+        this.earthDayShader = null;
+        this.earthNightShader = null;
+        this.earthLightsShader = null;
 
         this.ws = null;
         this.connected = false;
@@ -79,7 +144,17 @@ class MarsMissionApp {
         this.viewMode = 'free';
         this.animationId = null;
         this.sharedTextures = {};
-        
+        this.textureRegistry = { color: new Set(), data: new Set() };
+        this.textureColorMode = 'srgb';
+
+        this.lensFlareOccluders = { earth: [], mars: null };
+
+        this.bloomLayer = new THREE.Layers();
+        this.bloomLayer.set(BLOOM_LAYER);
+        this.bloomOcclusionMaterials = new Map();
+        this.bloomHiddenObjects = new Map();
+        this.darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
         // Camera smoothing
         this.camLerpFactor = 0.05;
         this.targetLerpFactor = 0.05;
@@ -214,10 +289,14 @@ class MarsMissionApp {
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
+
+        if (typeof THREE.sRGBEncoding !== 'undefined') {
+            this.renderer.outputEncoding = THREE.sRGBEncoding;
+        }
+
         // Switch to ACES Filmic Tone Mapping for cinematic look
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        // Adjusted: Lower exposure slightly to prevent blowout on sunlit sides
-        this.renderer.toneMappingExposure = 0.9;
+        this.renderer.toneMappingExposure = 1.05;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         container.appendChild(this.renderer.domElement);
@@ -239,8 +318,8 @@ class MarsMissionApp {
         const nebulaColors = [
             'rgba(80, 60, 150, 0.26)',
             'rgba(20, 90, 140, 0.22)',
-            'rgba(140, 40, 90, 0.20)',
-            'rgba(200, 130, 60, 0.16)'
+            'rgba(60, 90, 160, 0.20)',
+            'rgba(70, 150, 190, 0.16)'
         ];
 
         for (let i = 0; i < 14; i++) {
@@ -256,7 +335,7 @@ class MarsMissionApp {
 
         const highlights = [
             { x: canvas.width * 0.22, y: canvas.height * 0.25, r: 260, c0: 'rgba(255, 255, 255, 0.85)', c1: 'rgba(255, 255, 255, 0.25)' },
-            { x: canvas.width * 0.78, y: canvas.height * 0.20, r: 220, c0: 'rgba(255, 245, 230, 0.80)', c1: 'rgba(255, 245, 230, 0.22)' },
+            { x: canvas.width * 0.78, y: canvas.height * 0.20, r: 220, c0: 'rgba(232, 248, 255, 0.82)', c1: 'rgba(232, 248, 255, 0.24)' },
             { x: canvas.width * 0.62, y: canvas.height * 0.78, r: 280, c0: 'rgba(210, 230, 255, 0.75)', c1: 'rgba(210, 230, 255, 0.20)' }
         ];
 
@@ -272,6 +351,7 @@ class MarsMissionApp {
         const texture = new THREE.CanvasTexture(canvas);
         texture.mapping = THREE.EquirectangularReflectionMapping;
         texture.needsUpdate = true;
+        this.registerColorTexture(texture);
         return texture;
     }
 
@@ -285,6 +365,7 @@ class MarsMissionApp {
         this.environmentRenderTarget = envRenderTarget;
 
         environmentTexture.dispose();
+        this.textureRegistry.color.delete(environmentTexture);
         pmremGenerator.dispose();
     }
 
@@ -308,32 +389,42 @@ class MarsMissionApp {
     }
 
     setupPostProcessing() {
-        this.composer = new THREE.EffectComposer(this.renderer);
+        this.bloomComposer = new THREE.EffectComposer(this.renderer);
+        this.bloomComposer.renderToScreen = false;
 
-        const renderPass = new THREE.RenderPass(this.scene, this.camera);
-        this.composer.addPass(renderPass);
+        const bloomRenderPass = new THREE.RenderPass(this.scene, this.camera);
+        this.bloomComposer.addPass(bloomRenderPass);
 
         this.bloomPass = new THREE.UnrealBloomPass(
             new THREE.Vector2(window.innerWidth, window.innerHeight),
-            2.0,
-            0.8,
-            0.85 // Raised threshold: Only sun/lights glow, not the planet surface
+            0.95,
+            0.42,
+            0.82
         );
-        this.composer.addPass(this.bloomPass);
+        this.bloomComposer.addPass(this.bloomPass);
 
-        // Add Cinematic Pass (Grain + Chromatic Aberration)
+        this.finalComposer = new THREE.EffectComposer(this.renderer);
+
+        const baseRenderPass = new THREE.RenderPass(this.scene, this.camera);
+        this.finalComposer.addPass(baseRenderPass);
+
+        this.additivePass = new THREE.ShaderPass(AdditiveBlendShader);
+        this.additivePass.uniforms.tBloom.value = null;
+        this.additivePass.uniforms.bloomStrength.value = 1.0;
+        this.finalComposer.addPass(this.additivePass);
+
         this.cinematicPass = new THREE.ShaderPass(CinematicShader);
         this.cinematicPass.renderToScreen = true;
-        this.composer.addPass(this.cinematicPass);
+        this.finalComposer.addPass(this.cinematicPass);
     }
 
     setupLighting() {
         // Ambient light
-        const ambientLight = new THREE.AmbientLight(0x151515);
+        const ambientLight = new THREE.AmbientLight(0x223744, 1.1);
         this.scene.add(ambientLight);
         
         // Point light from sun
-        const sunLight = new THREE.PointLight(0xffffff, 2, 100);
+        const sunLight = new THREE.PointLight(0xf2fbff, 3.1, 100);
         sunLight.position.set(0, 0, 0);
         sunLight.castShadow = true;
         sunLight.shadow.mapSize.width = 2048;
@@ -355,7 +446,11 @@ class MarsMissionApp {
         gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
         context.fillStyle = gradient;
         context.fillRect(0, 0, 256, 256);
-        return new THREE.CanvasTexture(canvas);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        this.registerColorTexture(texture);
+        return texture;
     }
 
     setupNebulae() {
@@ -488,6 +583,7 @@ class MarsMissionApp {
 
     createGlowTexture() {
         if (this.sharedTextures.glow) {
+            this.registerColorTexture(this.sharedTextures.glow);
             return this.sharedTextures.glow;
         }
 
@@ -511,11 +607,13 @@ class MarsMissionApp {
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
         this.sharedTextures.glow = texture;
+        this.registerColorTexture(texture);
         return texture;
     }
 
     createRadialTexture() {
         if (this.sharedTextures.radial) {
+            this.registerColorTexture(this.sharedTextures.radial);
             return this.sharedTextures.radial;
         }
 
@@ -536,72 +634,193 @@ class MarsMissionApp {
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
         this.sharedTextures.radial = texture;
+        this.registerColorTexture(texture);
         return texture;
     }
 
-    loadTextureWithFallback(primaryUrl, fallbackUrl, onLoad) {
-        const texture = this.textureLoader.load(
-            primaryUrl,
-            (loadedTexture) => {
-                if (onLoad) onLoad(loadedTexture);
-            },
-            undefined,
-            () => {
-                if (!fallbackUrl) return;
-                this.textureLoader.load(
-                    fallbackUrl,
-                    (fallbackTexture) => {
-                        // Keep the original texture object so materials don't need to be updated.
-                        texture.image = fallbackTexture.image;
-                        texture.needsUpdate = true;
-                        if (onLoad) onLoad(texture);
-                        fallbackTexture.dispose();
-                    },
-                    undefined,
-                    (err) => {
-                        console.warn('Failed to load texture and fallback:', primaryUrl, fallbackUrl, err);
-                    }
-                );
-            }
-        );
-        return texture;
-    }
+     loadTextureWithFallback(primaryUrl, fallbackUrl, onLoad) {
+         const texture = this.textureLoader.load(
+             primaryUrl,
+             (loadedTexture) => {
+                 if (onLoad) onLoad(loadedTexture);
+             },
+             undefined,
+             () => {
+                 if (!fallbackUrl) return;
+                 this.textureLoader.load(
+                     fallbackUrl,
+                     (fallbackTexture) => {
+                         texture.image = fallbackTexture.image;
+                         texture.needsUpdate = true;
+                         if (onLoad) onLoad(texture);
+                         fallbackTexture.dispose();
+                     },
+                     undefined,
+                     (err) => {
+                         console.warn('Failed to load texture and fallback:', primaryUrl, fallbackUrl, err);
+                     }
+                 );
+             }
+         );
+         return texture;
+     }
+
+     registerColorTexture(texture) {
+         if (!texture) return texture;
+         this.textureRegistry.color.add(texture);
+         this.applyTextureColorMode(texture);
+         return texture;
+     }
+
+     registerDataTexture(texture) {
+         if (!texture) return texture;
+         this.textureRegistry.data.add(texture);
+         this.applyDataTextureEncoding(texture);
+         return texture;
+     }
+
+     applyDataTextureEncoding(texture) {
+         if (!texture) return;
+         if (typeof THREE.LinearEncoding === 'undefined') return;
+
+         if (texture.encoding !== THREE.LinearEncoding) {
+             texture.encoding = THREE.LinearEncoding;
+             texture.needsUpdate = true;
+         }
+     }
+
+     applyTextureColorMode(texture) {
+         if (!texture) return;
+         if (typeof THREE.sRGBEncoding === 'undefined') return;
+
+         const encoding = (this.textureColorMode === 'linear' && typeof THREE.LinearEncoding !== 'undefined')
+             ? THREE.LinearEncoding
+             : THREE.sRGBEncoding;
+
+         if (texture.encoding !== encoding) {
+             texture.encoding = encoding;
+             texture.needsUpdate = true;
+         }
+     }
+
+     applyPlanetTextureColorMode() {
+         for (const texture of this.textureRegistry.color) {
+             this.applyTextureColorMode(texture);
+         }
+
+         for (const texture of this.textureRegistry.data) {
+             this.applyDataTextureEncoding(texture);
+         }
+
+         if (this.scene && typeof this.scene.traverse === 'function') {
+             this.scene.traverse((child) => {
+                 if (child && child.material) {
+                     child.material.needsUpdate = true;
+                 }
+             });
+         }
+     }
+
+     toggleTextureColorMode() {
+         this.textureColorMode = (this.textureColorMode === 'srgb') ? 'linear' : 'srgb';
+         this.applyPlanetTextureColorMode();
+         console.info('Texture color mode:', this.textureColorMode);
+     }
+
 
     disposeObject(obj) {
         if (!obj) return;
-        
-        if (obj.geometry) {
-            obj.geometry.dispose();
-        }
-        
-        if (obj.material) {
-            if (Array.isArray(obj.material)) {
-                obj.material.forEach(material => {
-                    if (material.map) material.map.dispose();
-                    if (material.lightMap) material.lightMap.dispose();
-                    if (material.bumpMap) material.bumpMap.dispose();
-                    if (material.normalMap) material.normalMap.dispose();
-                    if (material.specularMap) material.specularMap.dispose();
-                    if (material.emissiveMap) material.emissiveMap.dispose();
-                    material.dispose();
-                });
-            } else {
-                if (obj.material.map) obj.material.map.dispose();
-                if (obj.material.lightMap) obj.material.lightMap.dispose();
-                if (obj.material.bumpMap) obj.material.bumpMap.dispose();
-                if (obj.material.normalMap) obj.material.normalMap.dispose();
-                if (obj.material.specularMap) obj.material.specularMap.dispose();
-                if (obj.material.emissiveMap) obj.material.emissiveMap.dispose();
-                obj.material.dispose();
+
+        const disposedTextures = new Set();
+        const disposedMaterials = new Set();
+        const disposedGeometries = new Set();
+
+        const disposeTexture = (texture) => {
+            if (!texture) return;
+            if (disposedTextures.has(texture)) return;
+            disposedTextures.add(texture);
+
+            if (this.textureRegistry) {
+                this.textureRegistry.color.delete(texture);
+                this.textureRegistry.data.delete(texture);
             }
-        }
-        
-        if (obj.children) {
-            while (obj.children.length > 0) {
-                this.disposeObject(obj.children[0]);
-                obj.remove(obj.children[0]);
+
+            if (this.sharedTextures) {
+                for (const key of Object.keys(this.sharedTextures)) {
+                    if (this.sharedTextures[key] === texture) {
+                        delete this.sharedTextures[key];
+                    }
+                }
             }
-        }
+
+            if (this.sunTexture === texture) {
+                this.sunTexture = null;
+            }
+
+            texture.dispose();
+        };
+
+        const disposeMaterial = (material) => {
+            if (!material) return;
+            if (disposedMaterials.has(material)) return;
+            disposedMaterials.add(material);
+
+            const textureKeys = [
+                'map',
+                'alphaMap',
+                'aoMap',
+                'bumpMap',
+                'displacementMap',
+                'emissiveMap',
+                'envMap',
+                'lightMap',
+                'metalnessMap',
+                'normalMap',
+                'roughnessMap',
+                'specularMap'
+            ];
+
+            for (const key of textureKeys) {
+                if (material[key]) {
+                    disposeTexture(material[key]);
+                }
+            }
+
+            material.dispose();
+        };
+
+        const disposeGeometry = (geometry) => {
+            if (!geometry) return;
+            if (disposedGeometries.has(geometry)) return;
+            disposedGeometries.add(geometry);
+            geometry.dispose();
+        };
+
+        const disposeNode = (node) => {
+            if (!node) return;
+
+            if (node.geometry) {
+                disposeGeometry(node.geometry);
+            }
+
+            if (node.material) {
+                if (Array.isArray(node.material)) {
+                    node.material.forEach(disposeMaterial);
+                } else {
+                    disposeMaterial(node.material);
+                }
+            }
+
+            if (node.children && node.children.length > 0) {
+                const children = node.children.slice();
+                for (const child of children) {
+                    disposeNode(child);
+                    node.remove(child);
+                }
+            }
+        };
+
+        disposeNode(obj);
     }
 
     createFlareTexture(type) {
@@ -640,6 +859,7 @@ class MarsMissionApp {
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
+        this.registerColorTexture(texture);
         return texture;
     }
 
@@ -653,13 +873,13 @@ class MarsMissionApp {
         this.flareElements = [];
         
         const flareConfigs = [
-            { dist: 0.0, size: 1.0, opacity: 0.4, color: 0xffffff, tex: 'main' },
-            { dist: 0.2, size: 0.15, opacity: 0.2, color: 0xffccaa, tex: 'hexagon' },
-            { dist: 0.4, size: 0.08, opacity: 0.15, color: 0xffaaaa, tex: 'hexagon' },
-            { dist: 0.5, size: 0.3, opacity: 0.1, color: 0xffffff, tex: 'ring' },
-            { dist: 0.6, size: 0.1, opacity: 0.15, color: 0xaaaaff, tex: 'hexagon' },
-            { dist: 0.8, size: 0.2, opacity: 0.1, color: 0xffffff, tex: 'ring' },
-            { dist: 1.1, size: 0.3, opacity: 0.15, color: 0xffccaa, tex: 'hexagon' }
+            { dist: 0.0, size: 1.0, opacity: 0.32, color: 0xffd6a5, tex: 'main' },
+            { dist: 0.2, size: 0.15, opacity: 0.18, color: 0xffb27a, tex: 'hexagon' },
+            { dist: 0.4, size: 0.08, opacity: 0.10, color: 0x8ec1ff, tex: 'hexagon' },
+            { dist: 0.5, size: 0.3, opacity: 0.06, color: 0xb8d7ff, tex: 'ring' },
+            { dist: 0.6, size: 0.1, opacity: 0.10, color: 0x8ec1ff, tex: 'hexagon' },
+            { dist: 0.8, size: 0.2, opacity: 0.05, color: 0xb8d7ff, tex: 'ring' },
+            { dist: 1.1, size: 0.3, opacity: 0.08, color: 0xffb27a, tex: 'hexagon' }
         ];
 
         flareConfigs.forEach(cfg => {
@@ -687,16 +907,17 @@ class MarsMissionApp {
         }
 
         const geometry = new THREE.SphereGeometry(0.2, 64, 64);
-        const sunTexture = this.textureLoader.load('/static/assets/textures/sunmap.jpg');
+        const sunTexture = this.textureLoader.load(TEXTURE_PATHS.sunMap);
+        this.registerColorTexture(sunTexture);
         sunTexture.wrapS = sunTexture.wrapT = THREE.RepeatWrapping;
         
         const material = new THREE.MeshStandardMaterial({
             map: sunTexture,
             emissive: 0xffaa00,
-            emissiveIntensity: 0.5,
+            emissiveIntensity: 6.0,
             emissiveMap: sunTexture,
             toneMapped: false,
-            depthWrite: false
+            depthWrite: true
         });
         
         this.objects.sun = new THREE.Mesh(geometry, material);
@@ -705,29 +926,35 @@ class MarsMissionApp {
         
         const spriteMaterial1 = new THREE.SpriteMaterial({
             map: glowTexture,
-            color: 0xffddaa,
+            color: 0xffd2a3,
             transparent: true,
-            opacity: 0.5,
+            opacity: 0.45,
             blending: THREE.AdditiveBlending,
-            depthWrite: false
+            depthWrite: false,
+            toneMapped: false
         });
         const sprite1 = new THREE.Sprite(spriteMaterial1);
-        sprite1.scale.set(1.2, 1.2, 1.0);
+        sprite1.scale.set(0.8, 0.8, 1.0);
         this.objects.sun.add(sprite1);
 
         const spriteMaterial2 = new THREE.SpriteMaterial({
             map: glowTexture,
-            color: 0xffaa66,
+            color: 0xff9c63,
             transparent: true,
-            opacity: 0.22,
+            opacity: 0.18,
             blending: THREE.AdditiveBlending,
-            depthWrite: false
+            depthWrite: false,
+            toneMapped: false
         });
         const sprite2 = new THREE.Sprite(spriteMaterial2);
-        sprite2.scale.set(2.5, 2.5, 1.0);
+        sprite2.scale.set(1.6, 1.6, 1.0);
         this.objects.sun.add(sprite2);
 
         this.objects.sunGlow = [sprite1, sprite2];
+
+        this.objects.sun.layers.enable(BLOOM_LAYER);
+        sprite1.layers.enable(BLOOM_LAYER);
+        sprite2.layers.enable(BLOOM_LAYER);
         
         this.scene.add(this.objects.sun);
         this.sunTexture = sunTexture;
@@ -831,51 +1058,66 @@ class MarsMissionApp {
         
         let material;
         if (name === 'earth') {
-            const earthTexture = this.textureLoader.load('/static/assets/textures/earth/earthmap4k.jpg');
+            const earthTexture = this.textureLoader.load(TEXTURE_PATHS.earthMap);
             earthTexture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
             earthTexture.minFilter = THREE.LinearMipmapLinearFilter;
             earthTexture.magFilter = THREE.LinearFilter;
+            this.registerColorTexture(earthTexture);
             
-            const earthBump = this.textureLoader.load('/static/assets/textures/earth/earthbump4k.jpg');
+            const earthBump = this.textureLoader.load(TEXTURE_PATHS.earthBump);
             earthBump.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
             earthBump.minFilter = THREE.LinearMipmapLinearFilter;
             earthBump.magFilter = THREE.LinearFilter;
+            this.registerDataTexture(earthBump);
             
-            const earthLights = this.textureLoader.load('/static/assets/textures/earth/earthlights4k.jpg');
+            const earthLights = this.textureLoader.load(TEXTURE_PATHS.earthLights);
             earthLights.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
             earthLights.minFilter = THREE.LinearMipmapLinearFilter;
             earthLights.magFilter = THREE.LinearFilter;
+            this.registerColorTexture(earthLights);
             
-            const earthSpec = this.textureLoader.load('/static/assets/textures/earth/earthspec4k.jpg');
+            const earthSpec = this.textureLoader.load(TEXTURE_PATHS.earthSpec);
             earthSpec.minFilter = THREE.LinearFilter;
             earthSpec.magFilter = THREE.LinearFilter;
+            this.registerDataTexture(earthSpec);
             
-            material = new THREE.MeshStandardMaterial({
+            const earthNightMaterial = new THREE.MeshStandardMaterial({
                 map: earthTexture,
                 bumpMap: earthBump,
-                bumpScale: 0.005,
-                emissiveMap: earthLights,
-                // FIX: Must use White (0xffffff) so the emissiveMap can be seen.
-                // Our custom shader mask will handle turning it off during the day.
-                emissive: new THREE.Color(0xffffff),
-                emissiveIntensity: 1.5,
+                bumpScale: 0.0,
+                emissive: new THREE.Color(0x000000),
+                emissiveIntensity: 0,
                 metalness: 0.0,
                 roughness: 1.0,
                 roughnessMap: earthSpec,
-                envMapIntensity: 0.1
+                envMapIntensity: 0.02
             });
 
-            material.onBeforeCompile = (shader) => {
-                 shader.uniforms.sunDirectionView = { value: new THREE.Vector3(0, 0, 1) };
-                 this.earthMaterialShader = shader;
+            const earthDayMaterial = new THREE.MeshStandardMaterial({
+                map: earthTexture,
+                bumpMap: earthBump,
+                bumpScale: 0.003,
+                emissive: new THREE.Color(0x000000),
+                emissiveIntensity: 0,
+                metalness: 0.0,
+                roughness: 1.0,
+                roughnessMap: earthSpec,
+                envMapIntensity: 0.02
+            });
+
+            material = earthNightMaterial;
+
+            earthDayMaterial.onBeforeCompile = (shader) => {
+                shader.uniforms.sunPositionView = { value: new THREE.Vector3(0, 0, 0) };
+                this.earthDayShader = shader;
 
                 shader.fragmentShader = shader.fragmentShader.replace(
-                     '#include <common>',
-                     `
-                     #include <common>
-                     uniform vec3 sunDirectionView;
-                     `
-                 );
+                    '#include <common>',
+                    `
+                    #include <common>
+                    uniform vec3 sunPositionView;
+                    `
+                );
 
                 shader.fragmentShader = shader.fragmentShader.replace(
                     '#include <roughnessmap_fragment>',
@@ -887,39 +1129,140 @@ class MarsMissionApp {
                     #endif
                     `
                 );
-                
+
                 shader.fragmentShader = shader.fragmentShader.replace(
-                        '#include <emissivemap_fragment>',
-                        `
-                        #include <emissivemap_fragment>
-                        
-                        vec3 lightDirView = normalize(sunDirectionView);
-                        float NdotL = dot(normalize(vNormal), lightDirView);
-                        
-                        #ifdef USE_EMISSIVEMAP
-                            float nightMask = smoothstep(-0.2, 0.2, NdotL);
-                            totalEmissiveRadiance *= nightMask;
-                        #endif
-                        `
-                    );
+                    '#include <dithering_fragment>',
+                    `
+                    vec3 fragPosView = -vViewPosition;
+                    vec3 sunDirView = normalize(sunPositionView - fragPosView);
+                    float ndl = dot(normalize(vNormal), sunDirView);
+                    float dayFactor = smoothstep(0.03, 0.12, ndl);
+                    float noise = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453123);
+                    if (noise >= dayFactor) discard;
+                    #include <dithering_fragment>
+                    `
+                );
             };
+
+            material.onBeforeCompile = (shader) => {
+                shader.uniforms.sunPositionView = { value: new THREE.Vector3(0, 0, 0) };
+                this.earthNightShader = shader;
+
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <common>',
+                    `
+                    #include <common>
+                    uniform vec3 sunPositionView;
+                    `
+                );
+
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <roughnessmap_fragment>',
+                    `
+                    float roughnessFactor = roughness;
+                    #ifdef USE_ROUGHNESSMAP
+                        vec4 texelRoughness = texture2D( roughnessMap, vUv );
+                        roughnessFactor *= (1.0 - texelRoughness.g);
+                    #endif
+                    `
+                );
+
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <dithering_fragment>',
+                    `
+                    vec3 fragPosView = -vViewPosition;
+                    vec3 sunDirView = normalize(sunPositionView - fragPosView);
+                    float ndl = dot(normalize(vNormal), sunDirView);
+                    float dayFactor = smoothstep(0.03, 0.12, ndl);
+                    float noise = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453123);
+                    if (noise < dayFactor) discard;
+                    #include <dithering_fragment>
+                    `
+                );
+            };
+
+            const earthLightsMaterial = new THREE.MeshStandardMaterial({
+                color: 0x000000,
+                emissive: new THREE.Color(0xffffff),
+                emissiveIntensity: 1.0,
+                emissiveMap: earthLights,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                metalness: 0.0,
+                roughness: 1.0,
+                envMapIntensity: 0.0,
+                toneMapped: false
+            });
+
+            earthLightsMaterial.onBeforeCompile = (shader) => {
+                shader.uniforms.sunPositionView = { value: new THREE.Vector3(0, 0, 0) };
+                this.earthLightsShader = shader;
+
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <common>',
+                    `
+                    #include <common>
+                    uniform vec3 sunPositionView;
+                    `
+                );
+
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <emissivemap_fragment>',
+                    `
+                    #ifdef USE_EMISSIVEMAP
+                        vec3 emissiveTexel = emissiveMapTexelToLinear(texture2D(emissiveMap, vUv)).rgb;
+                        float luminance = dot(emissiveTexel, vec3(0.2126, 0.7152, 0.0722));
+
+                        float baseMask = smoothstep(0.01, 0.22, luminance);
+                        float baseGlow = pow(clamp(luminance, 0.0, 1.0), 0.65) * baseMask;
+
+                        float cityMask = smoothstep(0.25, 0.60, luminance);
+                        cityMask = pow(cityMask, 2.2);
+
+                        vec3 baseColor = vec3(1.0, 0.95, 0.88) * (baseGlow * 0.9);
+                        vec3 cityColor = vec3(1.0, 0.78, 0.55) * (cityMask * 1.0);
+
+                        totalEmissiveRadiance = baseColor + cityColor;
+                    #endif
+                    `
+                );
+
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <dithering_fragment>',
+                    `
+                    vec3 fragPosView = -vViewPosition;
+                    vec3 sunDirView = normalize(sunPositionView - fragPosView);
+                    float ndl = dot(normalize(vNormal), sunDirView);
+                    float dayFactor = smoothstep(0.03, 0.12, ndl);
+                    float noise = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453123);
+                    if (noise < dayFactor) discard;
+                    #include <dithering_fragment>
+                    `
+                );
+            };
+
+            const lightsGeometry = new THREE.SphereGeometry(size * 1.001, 64, 64);
+            const lightsMesh = new THREE.Mesh(lightsGeometry, earthLightsMaterial);
+            lightsMesh.layers.enable(BLOOM_LAYER);
 
             const cloudGeometry = new THREE.SphereGeometry(size * 1.01, 64, 64);
 
-            const cloudAlpha = this.textureLoader.load('/static/assets/textures/earth/cloudmap4k.jpg');
+            const cloudAlpha = this.textureLoader.load(TEXTURE_PATHS.earthCloudAlpha);
             cloudAlpha.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
             cloudAlpha.minFilter = THREE.LinearMipmapLinearFilter;
             cloudAlpha.magFilter = THREE.LinearFilter;
+            this.registerDataTexture(cloudAlpha);
 
             const cloudMaterial = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 alphaMap: cloudAlpha,
                 transparent: true,
-                opacity: 0.95,
+                opacity: 0.6,
                 metalness: 0.0,
                 roughness: 0.9,               // 稍微降低粗糙度
-                emissive: 0x222233,           // 微弱的自发光（深灰蓝）
-                emissiveIntensity: 0.5,       // 低强度
+                emissive: 0x000000,
+                emissiveIntensity: 0.0,
                 envMapIntensity: 1,           // 反射环境光
                 depthWrite: false,
                 //side: THREE.DoubleSide        // 双面渲染
@@ -930,23 +1273,34 @@ class MarsMissionApp {
             // clouds.receiveShadow = false;
             this.objects.earthClouds = clouds;
             
-            this.objects[name] = new THREE.Mesh(geometry, material);
-            // this.objects[name].receiveShadow = true;
-            this.objects[name].add(clouds);
+            const earthGroup = new THREE.Group();
+
+            const earthDayMesh = new THREE.Mesh(geometry, earthDayMaterial);
+            const earthNightMesh = new THREE.Mesh(geometry, material);
+
+            earthGroup.add(earthDayMesh);
+            earthGroup.add(earthNightMesh);
+            earthGroup.add(lightsMesh);
+            earthGroup.add(clouds);
+
+            this.objects[name] = earthGroup;
+            this.lensFlareOccluders.earth = [earthDayMesh, earthNightMesh];
         } else if (name === 'mars') {
             const marsTexture = this.loadTextureWithFallback(
-                '/static/assets/textures/mars/mars_2k_color.png'
+                TEXTURE_PATHS.marsMap
             );
             marsTexture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
             marsTexture.minFilter = THREE.LinearMipmapLinearFilter;
             marsTexture.magFilter = THREE.LinearFilter;
+            this.registerColorTexture(marsTexture);
 
             const marsNormal = this.loadTextureWithFallback(
-                '/static/assets/textures/mars/mars_2k_normal.png'
+                TEXTURE_PATHS.marsNormal
             );
             marsNormal.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
             marsNormal.minFilter = THREE.LinearMipmapLinearFilter;
             marsNormal.magFilter = THREE.LinearFilter;
+            this.registerDataTexture(marsNormal);
             
             material = new THREE.MeshStandardMaterial({
                 map: marsTexture,
@@ -958,11 +1312,12 @@ class MarsMissionApp {
                 envMapIntensity: 0.15
             });
             this.objects[name] = new THREE.Mesh(geometry, material);
+            this.lensFlareOccluders.mars = this.objects[name];
 
             // Mars clouds (separate transparent shell)
             const cloudGeometry = new THREE.SphereGeometry(size * 1.018, 64, 64);
             const marsClouds = this.textureLoader.load(
-                '/static/assets/textures/mars/mars_clouds.png',
+                TEXTURE_PATHS.marsClouds,
                 (texture) => {
                     // The provided mars_clouds.png has a very low alpha range (0..~42).
                     // Boost it at load time so the cloud layer is actually visible.
@@ -1005,19 +1360,20 @@ class MarsMissionApp {
             marsClouds.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
             marsClouds.minFilter = THREE.LinearMipmapLinearFilter;
             marsClouds.magFilter = THREE.LinearFilter;
+            this.registerColorTexture(marsClouds);
 
             const cloudMaterial = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: marsClouds,
                 transparent: true,
-                opacity: 0.2,
+                opacity: 0.12,
                 metalness: 0.0,
                 roughness: 1.0,
-                emissive: 0x111111,
-                emissiveIntensity: 0.25,
+                emissive: 0x050505,
+                emissiveIntensity: 0.1,
                 envMapIntensity: 0.2,
                 depthWrite: false,
-                side: THREE.DoubleSide
+                // side: THREE.DoubleSide
             });
 
             const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
@@ -1377,7 +1733,12 @@ class MarsMissionApp {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.composer.setSize(window.innerWidth, window.innerHeight);
+        if (this.bloomComposer) {
+            this.bloomComposer.setSize(window.innerWidth, window.innerHeight);
+        }
+        if (this.finalComposer) {
+            this.finalComposer.setSize(window.innerWidth, window.innerHeight);
+        }
         if (this.bloomPass) {
             this.bloomPass.resolution.set(window.innerWidth, window.innerHeight);
         }
@@ -1412,10 +1773,18 @@ class MarsMissionApp {
             const direction = sunPos.clone().sub(this.camera.position).normalize();
             this.raycaster.set(this.camera.position, direction);
             
-            // Reuse explicit array to avoid GC and ensure we only hit the solid planetary body
-            // recursive: false is intentional! We don't want clouds/atmosphere to trigger occlusion.
-            const obstacles = [this.objects.earth, this.objects.mars].filter(obj => obj !== null);
-            
+            const obstacles = [];
+            if (this.lensFlareOccluders && Array.isArray(this.lensFlareOccluders.earth)) {
+                obstacles.push(...this.lensFlareOccluders.earth);
+            } else if (this.objects.earth) {
+                obstacles.push(this.objects.earth);
+            }
+            if (this.lensFlareOccluders && this.lensFlareOccluders.mars) {
+                obstacles.push(this.lensFlareOccluders.mars);
+            } else if (this.objects.mars) {
+                obstacles.push(this.objects.mars);
+            }
+
             const intersects = this.raycaster.intersectObjects(obstacles, false);
             
             // If obstacle is closer than the sun, it's an occlusion
@@ -1491,24 +1860,25 @@ class MarsMissionApp {
 
             this.objects.sun.getWorldPosition(this.sunWorldPosition);
             
-            if (this.earthMaterialShader && this.objects.earth) {
-                const earthPosWorld = new THREE.Vector3();
-                this.objects.earth.getWorldPosition(earthPosWorld);
+            this.sunViewPosition.copy(this.sunWorldPosition);
+            this.sunViewPosition.applyMatrix4(this.camera.matrixWorldInverse);
 
-                const lightDirWorld = new THREE.Vector3().subVectors(earthPosWorld, this.sunWorldPosition).normalize();
-
-                const lightDirView = lightDirWorld.clone();
-                lightDirView.transformDirection(this.camera.matrixWorldInverse);
-                
-                this.earthMaterialShader.uniforms.sunDirectionView.value.copy(lightDirView);
+            if (this.earthDayShader && this.earthDayShader.uniforms.sunPositionView) {
+                this.earthDayShader.uniforms.sunPositionView.value.copy(this.sunViewPosition);
+            }
+            if (this.earthNightShader && this.earthNightShader.uniforms.sunPositionView) {
+                this.earthNightShader.uniforms.sunPositionView.value.copy(this.sunViewPosition);
+            }
+            if (this.earthLightsShader && this.earthLightsShader.uniforms.sunPositionView) {
+                this.earthLightsShader.uniforms.sunPositionView.value.copy(this.sunViewPosition);
             }
         }
 
         if (this.objects.sunGlow) {
             const time = Date.now() * 0.002;
             const pulse = 1.0 + Math.sin(time) * 0.08;
-            this.objects.sunGlow[0].scale.set(1.2 * pulse, 1.2 * pulse, 1.0);
-            this.objects.sunGlow[1].scale.set(2.5 * (1.0 + Math.sin(time * 0.5) * 0.12), 2.5 * (1.0 + Math.sin(time * 0.5) * 0.12), 1.0);
+            this.objects.sunGlow[0].scale.set(0.8 * pulse, 0.8 * pulse, 1.0);
+            this.objects.sunGlow[1].scale.set(1.6 * (1.0 + Math.sin(time * 0.5) * 0.12), 1.6 * (1.0 + Math.sin(time * 0.5) * 0.12), 1.0);
         }
 
         if (this.sunTexture) {
@@ -1549,7 +1919,77 @@ class MarsMissionApp {
 
         this.updateLensFlare();
 
-        this.composer.render();
+        if (
+            this.bloomComposer &&
+            this.finalComposer &&
+            this.darkMaterial &&
+            this.bloomOcclusionMaterials &&
+            this.bloomHiddenObjects
+        ) {
+            const priorMask = this.camera.layers.mask;
+            this.camera.layers.mask = priorMask;
+            this.camera.layers.enable(BLOOM_LAYER);
+
+            this.bloomOcclusionMaterials.clear();
+            this.bloomHiddenObjects.clear();
+
+            if (this.scene && typeof this.scene.traverse === 'function') {
+                this.scene.traverse((obj) => {
+                    if (!obj) return;
+                    if (obj === this.scene) return;
+                    if (obj.isLight === true) return;
+                    if (obj.isCamera === true) return;
+
+                    const inBloomLayer = !!(obj.layers && obj.layers.test && obj.layers.test(this.bloomLayer));
+                    const isRenderable = obj.isMesh === true || obj.isPoints === true || obj.isLine === true || obj.isSprite === true;
+
+                    if (!isRenderable || inBloomLayer) {
+                        return;
+                    }
+
+                    if (obj.isMesh === true && obj.material) {
+                        const material = obj.material;
+                        const isTransparent = Array.isArray(material)
+                            ? material.some((m) => m && m.transparent)
+                            : !!material.transparent;
+                        const depthWriteDisabled = Array.isArray(material)
+                            ? material.some((m) => m && m.depthWrite === false)
+                            : material.depthWrite === false;
+
+                        if (!isTransparent && !depthWriteDisabled) {
+                            this.bloomOcclusionMaterials.set(obj, material);
+                            obj.material = this.darkMaterial;
+                            return;
+                        }
+                    }
+
+                    this.bloomHiddenObjects.set(obj, obj.visible);
+                    obj.visible = false;
+                });
+            }
+
+            this.bloomComposer.render();
+
+            for (const [obj, material] of this.bloomOcclusionMaterials.entries()) {
+                obj.material = material;
+            }
+            this.bloomOcclusionMaterials.clear();
+
+            for (const [obj, visible] of this.bloomHiddenObjects.entries()) {
+                obj.visible = visible;
+            }
+            this.bloomHiddenObjects.clear();
+
+            this.camera.layers.mask = priorMask;
+
+            if (this.additivePass && this.bloomComposer.readBuffer) {
+                this.additivePass.uniforms.tBloom.value = this.bloomComposer.readBuffer.texture;
+            }
+
+            this.finalComposer.render();
+        } else if (this.renderer && this.scene && this.camera) {
+            this.renderer.render(this.scene, this.camera);
+        }
     }
 
     // Methods for sending commands to backend
