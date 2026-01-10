@@ -8,7 +8,14 @@ let timelineTooltipHideTimer = null;
 let lastTimelineMarkersKey = null;
 
 function updateMissionInfo(missionInfo) {
-    return;
+    // Reserved for future richer mission metadata rendering.
+    // For now, wire mission schedule preview (if present) into the timeline marker system.
+    if (!missionInfo || typeof missionInfo !== 'object') return;
+
+    const schedule = missionInfo.mission_schedule;
+    if (schedule && typeof schedule === 'object') {
+        setMissionSchedule(schedule);
+    }
 }
 
 function setMissionSchedule(schedule) {

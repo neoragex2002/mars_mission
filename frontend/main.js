@@ -1214,10 +1214,22 @@ class MarsMissionApp {
                     `
                     vec3 fragPosView = -vViewPosition;
                     vec3 sunDirView = normalize(sunPositionView - fragPosView);
-                    float ndl = dot(normalize(vNormal), sunDirView);
-                    float dayFactor = smoothstep(0.03, 0.12, ndl);
-                    float noise = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453123);
-                    if (noise < dayFactor) discard;
+                    vec3 N = normalize(vNormal);
+                    float ndl = dot(N, sunDirView);
+
+                    // Night visibility mask (soft terminator): 0 on day side, 1 on deep night.
+                    float nightMask = 1.0 - smoothstep(0.02, 0.18, ndl);
+
+                    // Horizon fade: suppress lights near the limb to avoid a "ring" and reduce aliasing.
+                    vec3 V = normalize(-vViewPosition);
+                    float ndv = abs(dot(N, V));
+                    float limbFade = smoothstep(0.02, 0.10, ndv);
+
+                    float visible = clamp(nightMask * limbFade, 0.0, 1.0);
+                    totalEmissiveRadiance *= visible;
+
+                    if (visible <= 0.001) discard;
+
                     #include <dithering_fragment>
                     `
                 );
@@ -1258,21 +1270,24 @@ class MarsMissionApp {
                         vec3 emissiveTexel = emissiveMapTexelToLinear(texture2D(emissiveMap, vUv)).rgb;
                         float luminance = dot(emissiveTexel, vec3(0.2126, 0.7152, 0.0722));
 
-                        float baseMask = smoothstep(0.05, 0.3, luminance);
+                        // Base intensity curve (keeps bright metro areas bright, dims noise).
+                        float baseMask = smoothstep(0.05, 0.30, luminance);
                         float baseGlow = pow(clamp(luminance, 0.0, 1.0), 0.65) * baseMask;
 
-                        float cityMask = smoothstep(0.02, 0.1, luminance);
+                        // City sparkle mask biased toward higher-luminance texels.
+                        float cityMask = smoothstep(0.02, 0.10, luminance);
                         cityMask = pow(cityMask, 2.3);
 
-                        vec3 baseColor = vec3(1.0, 0.95, 0.88) * (baseGlow * 1.0);
+                        vec3 baseColor = vec3(1.0, 0.95, 0.88) * baseGlow;
 
+                        // Stable per-texel flicker (avoid gl_FragCoord-based shimmer).
                         vec2 cellUv = floor(vUv * vec2(2048.0, 1024.0));
                         float seed = dot(cellUv, vec2(12.9898, 78.233));
                         float rnd = fract(sin(seed) * 43758.5453123);
                         float wave = 0.5 + 0.5 * sin(time * 2.2 + rnd * 6.28318530718);
                         float sparkle = 1.0 + cityMask * 0.35 * wave;
 
-                        vec3 cityColor = vec3(1.0, 0.78, 0.55) * (cityMask * 1.) * sparkle;
+                        vec3 cityColor = vec3(1.0, 0.78, 0.55) * (cityMask * sparkle);
 
                         totalEmissiveRadiance = baseColor + cityColor;
                     #endif
@@ -1687,7 +1702,37 @@ class MarsMissionApp {
     }
 
     setViewMode(mode) {
+        // Switching between preset modes and free OrbitControls can cause jumps if OrbitControls'
+        // internal state (spherical/pan deltas) is out of sync with the camera/target we set.
+        // Keep it stable by forcing a sync on mode changes.
+        const prevMode = this.viewMode;
         this.viewMode = mode;
+
+        if (!this.controls) return;
+
+        if ((prevMode === 'top' && mode === 'free') || (prevMode === 'free' && mode === 'top')) {
+            try {
+                // Clear any residual inertial deltas that could be applied next update.
+                if (this.controls.sphericalDelta && typeof this.controls.sphericalDelta.set === 'function') {
+                    this.controls.sphericalDelta.set(0, 0, 0);
+                }
+                if (this.controls.panOffset && typeof this.controls.panOffset.set === 'function') {
+                    this.controls.panOffset.set(0, 0, 0);
+                }
+                if (typeof this.controls.scale === 'number') {
+                    this.controls.scale = 1;
+                }
+                if (typeof this.controls.zoomChanged === 'boolean') {
+                    this.controls.zoomChanged = false;
+                }
+            } catch (e) {
+                // Ignore: OrbitControls internals vary by three.js version.
+            }
+
+            // Force OrbitControls to recompute its internal spherical state from the current
+            // camera.position and controls.target (which updateCamera() manipulates directly).
+            this.controls.update();
+        }
     }
 
     updateCamera() {

@@ -462,7 +462,14 @@ class OrbitEngine:
     def _get_schedule_for_time(self, time_days: float) -> MissionSchedule:
         self._ensure_schedules(time_days, lookahead_missions=2)
         ends = [s.leg_inbound.t_arrive for s in self._schedules]
-        idx = bisect_right(ends, float(max(0.0, time_days)))
+        t = float(max(0.0, time_days))
+        idx = bisect_right(ends, t)
+
+        # If t lands exactly on the last end time, bisect_right returns len(ends).
+        # Clamp to a valid schedule index to avoid IndexError.
+        if idx >= len(self._schedules):
+            idx = len(self._schedules) - 1
+
         return self._schedules[idx]
 
     def _get_transfer_position(self, leg: TransferLeg, time_days: float) -> Tuple[float, float, float]:

@@ -190,19 +190,46 @@ async def websocket_endpoint(websocket: WebSocket):
                 await broadcast_to_clients(build_simulation_update("update"))
             
             elif command == "set_speed":
-                sim_state.time_speed = max(0.0, float(data.get("speed", 1.0)))
-                await broadcast_to_clients(build_simulation_update("update"))
+                raw_speed = data.get("speed", 1.0)
+                try:
+                    speed = float(raw_speed)
+                except (TypeError, ValueError):
+                    await websocket.send_json({
+                        "type": "error",
+                        "command": command,
+                        "message": f"Invalid speed: {raw_speed!r}",
+                    })
+                else:
+                    sim_state.time_speed = max(0.0, speed)
+                    await broadcast_to_clients(build_simulation_update("update"))
             
             elif command == "set_time":
-                sim_state.current_time = max(0.0, float(data.get("time", 0.0)))
-                await broadcast_to_clients(build_simulation_update("update"))
+                raw_time = data.get("time", 0.0)
+                try:
+                    t = float(raw_time)
+                except (TypeError, ValueError):
+                    await websocket.send_json({
+                        "type": "error",
+                        "command": command,
+                        "message": f"Invalid time: {raw_time!r}",
+                    })
+                else:
+                    sim_state.current_time = max(0.0, t)
+                    await broadcast_to_clients(build_simulation_update("update"))
             
             elif command == "get_snapshot":
                 snapshot = await get_snapshot()
                 await websocket.send_json({"type": "snapshot", "data": snapshot})
             
-            # Acknowledge command
-            await websocket.send_json({"type": "ack", "command": command})
+            # Acknowledge command (only if recognized)
+            if command in {"start", "pause", "stop", "set_speed", "set_time", "get_snapshot"}:
+                await websocket.send_json({"type": "ack", "command": command})
+            else:
+                await websocket.send_json({
+                    "type": "error",
+                    "command": command,
+                    "message": "Unknown command",
+                })
             
     except WebSocketDisconnect:
         pass
