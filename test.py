@@ -20,12 +20,32 @@ def test_orbit_engine():
         print(f"  ✅ Earth position at t=0: {earth_pos}")
         print(f"  ✅ Mars position at t=0: {mars_pos}")
         
-        # Test mission phases
-        phases = []
-        for t in [0, 100, 300, 700, 900]:
+        # Test mission phases (relative to the dynamically generated schedule).
+        schedule = engine._get_schedule_for_time(0.0)
+        t_start = schedule.t_start
+        t_launch = schedule.leg_outbound.t_depart
+        t_arr_mars = schedule.leg_outbound.t_arrive
+        t_dep_mars = schedule.leg_inbound.t_depart
+        t_arr_earth = schedule.leg_inbound.t_arrive
+
+        if not (t_start <= t_launch <= t_arr_mars <= t_dep_mars <= t_arr_earth):
+            raise AssertionError(
+                "Mission schedule timestamps are not monotone: "
+                f"t_start={t_start:.3f}, t_launch={t_launch:.3f}, t_arr_mars={t_arr_mars:.3f}, "
+                f"t_dep_mars={t_dep_mars:.3f}, t_arr_earth={t_arr_earth:.3f}"
+            )
+
+        sample_times = [
+            t_start,
+            max(t_start, t_launch - 1.0),
+            t_launch + 1.0,
+            t_arr_mars + 1.0,
+            t_dep_mars + 1.0,
+            max(t_start, t_arr_earth - 1.0),
+        ]
+        for t in sample_times:
             phase, mission_number, time_in_mission = engine.get_mission_phase(t)
-            phases.append((t, phase.value))
-            print(f"  ✅ Phase at day {t}: {phase.value} (mission={mission_number}, t={time_in_mission:.1f})")
+            print(f"  ✅ Phase at day {t:.1f}: {phase.value} (mission={mission_number}, t={time_in_mission:.1f})")
         
         # Test spacecraft position
         ship_pos = engine.get_spacecraft_position(100)
@@ -35,9 +55,19 @@ def test_orbit_engine():
         info = engine.get_mission_info(500)
         print(f"  ✅ Mission info at day 500: phase={info['phase']}")
 
-        # Regression: transfer legs are (a) prograde in x-y projection and (b) on an ellipse in x-y.
-        schedule = engine._get_schedule_for_time(0.0)
+        def dist3(a, b):
+            dx = a[0] - b[0]
+            dy = a[1] - b[1]
+            dz = a[2] - b[2]
+            return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+        # Regression: Lambert legs (a) reach endpoints and (b) stay prograde in x-y.
         for leg in [schedule.leg_outbound, schedule.leg_inbound]:
+            end_pos, _end_vel = engine._propagate_two_body(leg.pos_depart, leg.vel_depart, leg.duration)
+            miss = dist3(end_pos, leg.pos_arrive)
+            if miss > 5e-4:
+                raise AssertionError(f"Lambert propagation misses endpoint by {miss:.3e} AU")
+
             samples = 25
             times = [leg.t_depart + leg.duration * (i / samples) for i in range(samples + 1)]
 
@@ -47,15 +77,6 @@ def test_orbit_engine():
                 theta = math.atan2(y, x)
                 angles.append(theta)
 
-                r = math.hypot(x, y)
-                nu = (theta - leg.theta_peri) % (2 * math.pi)
-                expected_r = leg.p / (1.0 + leg.e * math.cos(nu))
-                if abs(expected_r - r) > 1e-4:
-                    raise AssertionError(
-                        f"Transfer leg deviates from ellipse: |r-expected|={abs(expected_r - r):.3e} at t={t:.3f}"
-                    )
-
-            # Unwrap angles and ensure monotonic non-decreasing (prograde).
             unwrapped = [angles[0]]
             for a in angles[1:]:
                 prev = unwrapped[-1]
@@ -69,7 +90,44 @@ def test_orbit_engine():
             if min_delta < -1e-6:
                 raise AssertionError(f"Transfer leg is not prograde: min dθ={min_delta:.3e} rad")
 
-        print("  ✅ Transfer legs are prograde and elliptical (x-y projection)")
+
+        r_excl_earth = engine.earth_visual_r + engine.safety_margin + engine.spacecraft_collision_r
+        r_excl_mars = engine.mars_visual_r + engine.safety_margin + engine.spacecraft_collision_r
+
+
+        def assert_leg_clearance(leg, dt_days):
+            dt_days = float(max(1e-6, dt_days))
+            t0 = float(leg.t_depart)
+            t1 = float(leg.t_arrive)
+            if t1 <= t0:
+                return
+
+            steps = int(math.ceil((t1 - t0) / dt_days))
+            steps = max(1, steps)
+            for i in range(steps + 1):
+                t = t0 + (t1 - t0) * (i / steps)
+                ship = engine._get_transfer_position(leg, t)
+                earth = engine.get_planet_position('earth', t)
+                mars = engine.get_planet_position('mars', t)
+
+                de = dist3(ship, earth)
+                dm = dist3(ship, mars)
+
+                if de < r_excl_earth:
+                    raise AssertionError(
+                        f"Collision with Earth during transfer at t={t:.3f}: d={de:.4f} < r_excl={r_excl_earth:.4f}"
+                    )
+                if dm < r_excl_mars:
+                    raise AssertionError(
+                        f"Collision with Mars during transfer at t={t:.3f}: d={dm:.4f} < r_excl={r_excl_mars:.4f}"
+                    )
+
+        dt_clear = getattr(engine, 'clearance_check_dt_days', 0.25)
+        assert_leg_clearance(schedule.leg_outbound, dt_clear)
+        assert_leg_clearance(schedule.leg_inbound, dt_clear)
+
+        print("  ✅ Transfer legs are prograde and collision-free (Lambert)")
+
         
         print("✅ Orbit Engine tests passed!\n")
         return True

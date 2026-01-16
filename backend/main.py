@@ -28,8 +28,26 @@ app.mount("/static", StaticFiles(directory=str(frontend_dir)), name="static")
 # Initialize orbit engine
 orbit_engine = OrbitEngine()
 
+_orbit_points_cache: dict[tuple[str, int], dict] = {}
+
+
+def _get_orbit_points_cached(planet: str, num_points: int) -> dict:
+    key = (planet, int(num_points))
+    cached = _orbit_points_cache.get(key)
+    if cached is not None:
+        return cached
+
+    points = orbit_engine.generate_orbit_points(planet, num_points)
+    payload = {"planet": planet, "points": points}
+
+    if num_points == 360:
+        _orbit_points_cache[key] = payload
+
+    return payload
+ 
 # Store active WebSocket connections
 active_connections: list[WebSocket] = []
+
 
 class SimulationState:
     def __init__(self):
@@ -65,7 +83,7 @@ async def get_mission_info():
     )
 
     return {
-        "model": "dynamic_hohmann_v1",
+        "model": "kepler_parking_v2",
         "mu_sun": orbit_engine.mu_sun,
         "schedule_preview": schedule_preview,
         "timeline_horizon_end": timeline_horizon_end,
@@ -98,8 +116,7 @@ async def get_orbit_points(planet: str, num_points: int = 360):
     if num_points < 4 or num_points > 5000:
         return {"error": "Invalid num_points (expected 4..5000)"}
 
-    points = orbit_engine.generate_orbit_points(planet, num_points)
-    return {"planet": planet, "points": points}
+    return _get_orbit_points_cached(planet, num_points)
 
 @app.get("/api/state")
 async def get_simulation_state():
@@ -164,11 +181,14 @@ async def websocket_endpoint(websocket: WebSocket):
             "mission_info": await get_mission_info(),
             "planets": await get_planets(),
             "simulation_state": await get_simulation_state(),
-            "earth_orbit": await get_orbit_points("earth", 360),
-            "mars_orbit": await get_orbit_points("mars", 360),
+            "earth_orbit": _get_orbit_points_cached("earth", 360),
+            "mars_orbit": _get_orbit_points_cached("mars", 360),
             "current_snapshot": await get_snapshot()
         }
-        await websocket.send_json(initial_data)
+        try:
+            await websocket.send_json(initial_data)
+        except Exception:
+            return
         
         # Listen for client commands
         while True:

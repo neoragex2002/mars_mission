@@ -191,6 +191,8 @@ class MarsMissionApp {
         this.earthCloudRotationOffset = 0.0;
         this.marsCloudRotationOffset = 0.0;
         this.lastRenderMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+        this.orientationBlendTauSec = 0.25;
+        this.orientationBlendW = 0.0;
 
         this.init();
     }
@@ -1688,6 +1690,18 @@ class MarsMissionApp {
         if (missionInfo.phase && this.lastPhase !== missionInfo.phase) {
             this.clearSpacecraftTrail();
             this.lastPhase = missionInfo.phase;
+            this.lastSpacecraftPosition = null;
+            if (this.objects.spacecraft) {
+                const mesh = this.objects.spacecraft.getMesh();
+                if (mesh) {
+                    mesh.userData.lookTarget = null;
+                    if (mesh.userData.prevRenderPos) {
+                        mesh.userData.prevRenderPos.copy(mesh.position);
+                    } else {
+                        mesh.userData.prevRenderPos = mesh.position.clone();
+                    }
+                }
+            }
         }
         
         if (missionInfo.earth_position && this.objects.earth) {
@@ -1717,25 +1731,6 @@ class MarsMissionApp {
                     this.updateSpacecraftTrail([mappedX, mappedY, mappedZ]);
                 }
 
-                if (this.lastSpacecraftPosition && Array.isArray(this.lastSpacecraftPosition)) {
-                    const [lastX, lastY, lastZ] = this.lastSpacecraftPosition;
-                    const rawDirection = new THREE.Vector3(
-                        mappedX - lastX,
-                        mappedY - lastY,
-                        mappedZ - lastZ
-                    );
-
-                    if (rawDirection.length() > 0.001) {
-                        const direction = rawDirection.normalize();
-                        const target = new THREE.Vector3(
-                            mappedX + direction.x,
-                            mappedY + direction.y,
-                            mappedZ + direction.z
-                        );
-                        mesh.userData.lookTarget = target;
-                    }
-                }
-                this.lastSpacecraftPosition = [mappedX, mappedY, mappedZ];
             } else {
                 console.warn('Invalid spacecraft_position payload:', missionInfo.spacecraft_position);
             }
@@ -1971,31 +1966,148 @@ class MarsMissionApp {
     animate() {
         this.animationId = requestAnimationFrame(() => this.animate());
 
+        const nowMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+        const dtSec = Math.max(0.0, Math.min(0.2, (nowMs - this.lastRenderMs) / 1000.0));
+        this.lastRenderMs = nowMs;
+
         // Interpolate planet/ship positions
         const lerpAlpha = 0.1;
-        
-        if (this.objects.earth && this.objects.earth.userData.targetPos) {
-            this.objects.earth.position.lerp(this.objects.earth.userData.targetPos, lerpAlpha);
+
+        if (this.objects.earth) {
+            const earth = this.objects.earth;
+            if (earth.userData.targetPos) {
+                earth.position.lerp(earth.userData.targetPos, lerpAlpha);
+            }
+            if (!earth.userData.prevRenderPos) {
+                earth.userData.prevRenderPos = earth.position.clone();
+            }
+            if (!earth.userData.renderDelta) {
+                earth.userData.renderDelta = new THREE.Vector3();
+            }
+            earth.userData.renderDelta.copy(earth.position).sub(earth.userData.prevRenderPos);
+            earth.userData.prevRenderPos.copy(earth.position);
         }
-        
-        if (this.objects.mars && this.objects.mars.userData.targetPos) {
-            this.objects.mars.position.lerp(this.objects.mars.userData.targetPos, lerpAlpha);
+
+        if (this.objects.mars) {
+            const mars = this.objects.mars;
+            if (mars.userData.targetPos) {
+                mars.position.lerp(mars.userData.targetPos, lerpAlpha);
+            }
+            if (!mars.userData.prevRenderPos) {
+                mars.userData.prevRenderPos = mars.position.clone();
+            }
+            if (!mars.userData.renderDelta) {
+                mars.userData.renderDelta = new THREE.Vector3();
+            }
+            mars.userData.renderDelta.copy(mars.position).sub(mars.userData.prevRenderPos);
+            mars.userData.prevRenderPos.copy(mars.position);
         }
-        
+
         if (this.objects.spacecraft) {
             const mesh = this.objects.spacecraft.getMesh();
+
+            if (!mesh.userData.prevRenderPos) {
+                mesh.userData.prevRenderPos = mesh.position.clone();
+            }
+            if (!mesh.userData.renderDelta) {
+                mesh.userData.renderDelta = new THREE.Vector3();
+            }
+            if (!mesh.userData.forwardDir) {
+                mesh.userData.forwardDir = new THREE.Vector3();
+            }
+
             if (mesh.userData.targetPos) {
                 mesh.position.lerp(mesh.userData.targetPos, lerpAlpha);
             }
-            
-            if (mesh.userData.lookTarget) {
-                // Smooth lookAt
-                const currentQuat = mesh.quaternion.clone();
-                mesh.lookAt(mesh.userData.lookTarget);
-                const targetQuat = mesh.quaternion.clone();
-                mesh.quaternion.copy(currentQuat).slerp(targetQuat, lerpAlpha);
+
+            const phase = this.lastPhase;
+            const isEarthStay = phase === 'earth_orbit_stay';
+            const isMarsStay = phase === 'mars_orbit_stay';
+            const isParking = isEarthStay || isMarsStay;
+            const targetW = isParking ? 1.0 : 0.0;
+            const blendTau = (typeof this.orientationBlendTauSec === 'number' && this.orientationBlendTauSec > 0)
+                ? this.orientationBlendTauSec
+                : 0.0;
+            const blendAlpha = blendTau > 0 ? (1 - Math.exp(-dtSec / blendTau)) : 1.0;
+            this.orientationBlendW = this.orientationBlendW + (targetW - this.orientationBlendW) * blendAlpha;
+            if (this.orientationBlendW < 0) {
+                this.orientationBlendW = 0;
+            } else if (this.orientationBlendW > 1) {
+                this.orientationBlendW = 1;
             }
-            
+            const w = this.orientationBlendW;
+            const lookAlpha = isParking ? 0.2 : lerpAlpha;
+
+            mesh.userData.renderDelta.copy(mesh.position).sub(mesh.userData.prevRenderPos);
+            if (mesh.userData.renderDelta.lengthSq() > 1e-10) {
+                if (!mesh.userData.lookTarget) {
+                    mesh.userData.lookTarget = new THREE.Vector3();
+                }
+                if (!mesh.userData.inertialDir) {
+                    mesh.userData.inertialDir = new THREE.Vector3();
+                }
+                if (!mesh.userData.relativeDir) {
+                    mesh.userData.relativeDir = new THREE.Vector3();
+                }
+                if (!mesh.userData.mixedDir) {
+                    mesh.userData.mixedDir = new THREE.Vector3();
+                }
+
+                const planetDelta = isEarthStay && this.objects.earth
+                    ? this.objects.earth.userData.renderDelta
+                    : (isMarsStay && this.objects.mars ? this.objects.mars.userData.renderDelta : null);
+
+                mesh.userData.inertialDir.copy(mesh.userData.renderDelta);
+                if (planetDelta) {
+                    mesh.userData.relativeDir.copy(mesh.userData.renderDelta).sub(planetDelta);
+                } else {
+                    mesh.userData.relativeDir.copy(mesh.userData.renderDelta);
+                }
+
+                const inertialLenSq = mesh.userData.inertialDir.lengthSq();
+                const relativeLenSq = mesh.userData.relativeDir.lengthSq();
+                const hasInertial = inertialLenSq > 1e-10;
+                const hasRelative = relativeLenSq > 1e-10;
+
+                if (hasInertial) {
+                    mesh.userData.inertialDir.normalize();
+                }
+                if (hasRelative) {
+                    mesh.userData.relativeDir.normalize();
+                }
+
+                if (hasInertial && hasRelative) {
+                    mesh.userData.mixedDir.copy(mesh.userData.inertialDir).multiplyScalar(1 - w);
+                    mesh.userData.mixedDir.addScaledVector(mesh.userData.relativeDir, w);
+                    if (mesh.userData.mixedDir.lengthSq() <= 1e-10) {
+                        mesh.userData.mixedDir.copy(w >= 0.5 ? mesh.userData.relativeDir : mesh.userData.inertialDir);
+                    }
+                } else if (hasInertial) {
+                    mesh.userData.mixedDir.copy(mesh.userData.inertialDir);
+                } else if (hasRelative) {
+                    mesh.userData.mixedDir.copy(mesh.userData.relativeDir);
+                }
+
+                if (mesh.userData.mixedDir.lengthSq() > 1e-10) {
+                    mesh.userData.forwardDir.copy(mesh.userData.mixedDir).normalize();
+                    mesh.userData.lookTarget.copy(mesh.position).add(mesh.userData.forwardDir);
+                }
+            }
+            mesh.userData.prevRenderPos.copy(mesh.position);
+
+            if (mesh.userData.lookTarget) {
+                if (!mesh.userData._q0) {
+                    mesh.userData._q0 = new THREE.Quaternion();
+                }
+                if (!mesh.userData._q1) {
+                    mesh.userData._q1 = new THREE.Quaternion();
+                }
+                const currentQuat = mesh.userData._q0.copy(mesh.quaternion);
+                mesh.lookAt(mesh.userData.lookTarget);
+                const targetQuat = mesh.userData._q1.copy(mesh.quaternion);
+                mesh.quaternion.copy(currentQuat).slerp(targetQuat, lookAlpha);
+            }
+
             const time = Date.now();
             this.objects.spacecraft.update(time);
         }
@@ -2040,10 +2152,6 @@ class MarsMissionApp {
             this.sunTexture.offset.x += 0.0005;
             this.sunTexture.offset.y += 0.0002;
         }
-
-        const nowMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-        const dtSec = Math.max(0.0, Math.min(0.2, (nowMs - this.lastRenderMs) / 1000.0));
-        this.lastRenderMs = nowMs;
 
         // Planet self-rotation: bind to (interpolated) simulation time so it respects time speed and pause.
         const simDays = this.getDisplaySimulationTimeDays();

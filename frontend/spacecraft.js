@@ -56,6 +56,7 @@ class Spacecraft {
 
     createSpacecraft() {
         this.mesh = new THREE.Group();
+        this.mesh.scale.set(0.54, 0.54, 0.54);
         
         this.createBody();
         this.createCockpit();

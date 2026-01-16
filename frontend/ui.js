@@ -65,9 +65,9 @@ function getPhaseLabelForTime(timeDays) {
         return lastPhaseLabel || '';
     }
 
-    if (t < tLaunch) return 'Pre-Launch';
+    if (t < tLaunch) return 'Earth Orbit Stay';
     if (t < tArrMars) return 'Earth → Mars Transfer';
-    if (t < tDepMars) return 'On Mars Surface';
+    if (t < tDepMars) return 'Mars Orbit Stay';
     if (t <= tArrEarth) return 'Mars → Earth Transfer';
 
     return '';
@@ -140,7 +140,7 @@ function updateDataPanel(data) {
     // Update phase display
     const phaseDisplay = document.getElementById('phase-badge');
     const phase = data.phase || '';
-    const cssPhase = phase.replace(/_/g, '-');
+    const cssPhase = getPhaseCssClass(phase);
     const missionNumber =
         typeof data.mission_number === 'number' ? data.mission_number + 1 : undefined;
     const phaseText = formatPhase(phase);
@@ -247,12 +247,21 @@ function updateTimeline(time, horizonEnd) {
     }
 }
 
+function getPhaseCssClass(phase) {
+    const normalized = typeof phase === 'string' ? phase : '';
+    if (normalized === 'earth_orbit_stay') return 'pre-launch';
+    if (normalized === 'mars_orbit_stay') return 'on-mars';
+    return normalized.replace(/_/g, '-');
+}
+
 function formatPhase(phase) {
     const phaseMap = {
-        'pre_launch': 'Pre-Launch',
+        'earth_orbit_stay': 'Earth Orbit Stay',
         'transfer_to_mars': 'Earth → Mars Transfer',
-        'on_mars': 'On Mars Surface',
-        'transfer_to_earth': 'Mars → Earth Transfer'
+        'mars_orbit_stay': 'Mars Orbit Stay',
+        'transfer_to_earth': 'Mars → Earth Transfer',
+        'pre_launch': 'Pre-Launch',
+        'on_mars': 'On Mars Surface'
     };
     
     return phaseMap[phase] || phase;
