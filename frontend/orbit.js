@@ -35,15 +35,22 @@ class OrbitManager {
     }
 
     updateOrbit(planetName, newOrbitData) {
-        if (this.orbits[planetName]) {
-            this.scene.remove(this.orbits[planetName]);
+        const existingOrbit = this.orbits[planetName];
+        const existingColor = (existingOrbit && existingOrbit.material && existingOrbit.material.color)
+            ? existingOrbit.material.color.getHex()
+            : null;
+
+        if (existingOrbit) {
+            this.scene.remove(existingOrbit);
+            if (existingOrbit.geometry) existingOrbit.geometry.dispose();
+            if (existingOrbit.material) existingOrbit.material.dispose();
+            delete this.orbits[planetName];
         }
-        
-        // Get color from existing orbit or default
-        const existingColor = this.orbits[planetName]?.material.color;
-        const color = existingColor || 
-            (planetName === 'earth' ? 0x4a90d9 : 0xe74c3c);
-        
+
+        const color = (typeof existingColor === 'number')
+            ? existingColor
+            : (planetName === 'earth' ? 0x4a90d9 : 0xe74c3c);
+
         return this.createOrbit(planetName, newOrbitData, color);
     }
 
@@ -118,15 +125,21 @@ class OrbitManager {
     }
 
     removeOrbit(planetName) {
-        if (this.orbits[planetName]) {
-            this.scene.remove(this.orbits[planetName]);
+        const orbit = this.orbits[planetName];
+        if (orbit) {
+            this.scene.remove(orbit);
+            if (orbit.geometry) orbit.geometry.dispose();
+            if (orbit.material) orbit.material.dispose();
             delete this.orbits[planetName];
         }
     }
 
     removeTrail(objectName) {
-        if (this.trails[objectName]) {
-            this.scene.remove(this.trails[objectName].line);
+        const trail = this.trails[objectName];
+        if (trail) {
+            this.scene.remove(trail.line);
+            if (trail.line.geometry) trail.line.geometry.dispose();
+            if (trail.line.material) trail.line.material.dispose();
             delete this.trails[objectName];
         }
     }

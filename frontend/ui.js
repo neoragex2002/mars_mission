@@ -15,6 +15,15 @@ function updateMissionInfo(missionInfo) {
     const schedule = missionInfo.mission_schedule;
     if (schedule && typeof schedule === 'object') {
         setMissionSchedule(schedule);
+        return;
+    }
+
+    const preview = missionInfo.schedule_preview;
+    if (Array.isArray(preview) && preview.length > 0) {
+        const entry = preview[0];
+        if (entry && typeof entry === 'object') {
+            setMissionSchedule(entry);
+        }
     }
 }
 
@@ -151,41 +160,55 @@ function updateDataPanel(data) {
     
     // Update positions
     if (data.earth_position) {
-        document.getElementById('earth-pos').textContent = 
-            formatPosition(data.earth_position);
+        const earthPos = document.getElementById('earth-pos');
+        if (earthPos) {
+            earthPos.textContent = formatPosition(data.earth_position);
+        }
     }
-    
+
     if (data.mars_position) {
-        document.getElementById('mars-pos').textContent = 
-            formatPosition(data.mars_position);
+        const marsPos = document.getElementById('mars-pos');
+        if (marsPos) {
+            marsPos.textContent = formatPosition(data.mars_position);
+        }
     }
-    
+
     if (data.spacecraft_position) {
-        document.getElementById('ship-pos').textContent = 
-            formatPosition(data.spacecraft_position);
+        const shipPos = document.getElementById('ship-pos');
+        if (shipPos) {
+            shipPos.textContent = formatPosition(data.spacecraft_position);
+        }
     }
-    
+
     // Update distances
     if (data.earth_mars_distance !== undefined) {
-        document.getElementById('earth-mars-dist').textContent = 
-            data.earth_mars_distance.toFixed(3) + ' AU';
+        const earthMarsDist = document.getElementById('earth-mars-dist');
+        if (earthMarsDist) {
+            earthMarsDist.textContent = data.earth_mars_distance.toFixed(3) + ' AU';
+        }
     }
-    
+
     // Update progress
     if (data.progress !== undefined) {
         const progressBar = document.getElementById('mission-progress');
-        progressBar.style.width = (data.progress * 100) + '%';
+        if (progressBar) {
+            progressBar.style.width = (data.progress * 100) + '%';
+        }
     }
-    
+
     // Update velocities
     if (data.earth_velocity) {
-        document.getElementById('earth-vel').textContent = 
-            calculateSpeed(data.earth_velocity).toFixed(4);
+        const earthVel = document.getElementById('earth-vel');
+        if (earthVel) {
+            earthVel.textContent = calculateSpeed(data.earth_velocity).toFixed(4);
+        }
     }
-    
+
     if (data.mars_velocity) {
-        document.getElementById('mars-vel').textContent = 
-            calculateSpeed(data.mars_velocity).toFixed(4);
+        const marsVel = document.getElementById('mars-vel');
+        if (marsVel) {
+            marsVel.textContent = calculateSpeed(data.mars_velocity).toFixed(4);
+        }
     }
 }
 
@@ -193,7 +216,7 @@ function updateTimeline(time, horizonEnd) {
     const timeline = document.getElementById('timeline');
     const totalDays = document.getElementById('total-days');
 
-    if (typeof horizonEnd === 'number' && Number.isFinite(horizonEnd)) {
+    if (timeline && totalDays && typeof horizonEnd === 'number' && Number.isFinite(horizonEnd)) {
         const currentMax = parseFloat(timeline.max || '0');
         const nextMax = Math.ceil(Math.max(currentMax, horizonEnd));
         if (nextMax !== currentMax) {
@@ -202,7 +225,7 @@ function updateTimeline(time, horizonEnd) {
         }
     }
 
-    const nextMax = parseFloat(timeline.max || '0');
+    const nextMax = timeline ? parseFloat(timeline.max || '0') : NaN;
     if (Number.isFinite(nextMax)) {
         if (lastTimelineMax !== nextMax) {
             lastTimelineMax = nextMax;
@@ -215,8 +238,13 @@ function updateTimeline(time, horizonEnd) {
 
     renderTimelineMarkers();
 
-    document.getElementById('current-day').textContent = Math.round(time);
-    timeline.value = time;
+    const currentDay = document.getElementById('current-day');
+    if (currentDay) {
+        currentDay.textContent = Math.round(time);
+    }
+    if (timeline) {
+        timeline.value = time;
+    }
 }
 
 function formatPhase(phase) {

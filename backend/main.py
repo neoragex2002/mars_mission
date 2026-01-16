@@ -2,9 +2,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager, suppress
-import json
 import asyncio
-from typing import Dict
 from pathlib import Path
 from orbit_engine import OrbitEngine
 
@@ -96,7 +94,10 @@ async def get_orbit_points(planet: str, num_points: int = 360):
     """Get orbit points for a planet"""
     if planet not in ["earth", "mars"]:
         return {"error": "Invalid planet"}
-    
+
+    if num_points < 4 or num_points > 5000:
+        return {"error": "Invalid num_points (expected 4..5000)"}
+
     points = orbit_engine.generate_orbit_points(planet, num_points)
     return {"planet": planet, "points": points}
 
@@ -171,9 +172,23 @@ async def websocket_endpoint(websocket: WebSocket):
         
         # Listen for client commands
         while True:
-            data = await websocket.receive_json()
+            try:
+                data = await websocket.receive_json()
+            except WebSocketDisconnect:
+                raise
+            except Exception:
+                await websocket.send_json({
+                    "type": "error",
+                    "command": None,
+                    "message": "Invalid JSON message",
+                })
+                continue
+
             command = data.get("command")
-            
+
+            handled = True
+            ok = True
+
             if command == "start":
                 sim_state.is_running = True
                 sim_state.paused = False
@@ -194,6 +209,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     speed = float(raw_speed)
                 except (TypeError, ValueError):
+                    ok = False
                     await websocket.send_json({
                         "type": "error",
                         "command": command,
@@ -208,6 +224,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     t = float(raw_time)
                 except (TypeError, ValueError):
+                    ok = False
                     await websocket.send_json({
                         "type": "error",
                         "command": command,
@@ -220,16 +237,18 @@ async def websocket_endpoint(websocket: WebSocket):
             elif command == "get_snapshot":
                 snapshot = await get_snapshot()
                 await websocket.send_json({"type": "snapshot", "data": snapshot})
-            
-            # Acknowledge command (only if recognized)
-            if command in {"start", "pause", "stop", "set_speed", "set_time", "get_snapshot"}:
-                await websocket.send_json({"type": "ack", "command": command})
+
             else:
+                handled = False
+                ok = False
                 await websocket.send_json({
                     "type": "error",
                     "command": command,
                     "message": "Unknown command",
                 })
+
+            if handled and ok:
+                await websocket.send_json({"type": "ack", "command": command})
             
     except WebSocketDisconnect:
         pass
@@ -247,6 +266,12 @@ if __name__ == "__main__":
     # Check for port argument
     port = 8712
     if len(sys.argv) > 1 and sys.argv[1] == "--port":
-        port = int(sys.argv[2])
+        if len(sys.argv) > 2:
+            try:
+                port = int(sys.argv[2])
+            except ValueError:
+                print(f"Invalid port: {sys.argv[2]!r}; using default {port}")
+        else:
+            print(f"Missing port after --port; using default {port}")
     
     uvicorn.run(app, host="0.0.0.0", port=port)

@@ -215,6 +215,23 @@ class MarsMissionApp {
         console.log('Initialization complete!');
     }
 
+    mapBackendToThreeArray(position) {
+        if (!position || !Array.isArray(position) || position.length < 3) return null;
+        const x = Number(position[0]);
+        const y = Number(position[1]);
+        const z = Number(position[2]);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+        return [x, z, -y];
+    }
+
+    mapBackendToThreeVector(position, outVec3) {
+        if (!outVec3) return false;
+        const mapped = this.mapBackendToThreeArray(position);
+        if (!mapped) return false;
+        outVec3.set(mapped[0], mapped[1], mapped[2]);
+        return true;
+    }
+
     setupWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
         const wsUrl = `${protocol}://${window.location.host}/ws`;
@@ -225,8 +242,19 @@ class MarsMissionApp {
             this.updateConnectionStatus(true);
         };
         this.ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            this.handleMessage(data);
+            let data;
+            try {
+                data = JSON.parse(event.data);
+            } catch (err) {
+                console.warn('Failed to parse WebSocket message:', err, event && event.data);
+                return;
+            }
+
+            try {
+                this.handleMessage(data);
+            } catch (err) {
+                console.warn('Failed to handle WebSocket message:', err, data);
+            }
         };
         this.ws.onclose = () => {
             console.log('WebSocket disconnected');
@@ -243,6 +271,19 @@ class MarsMissionApp {
             case 'snapshot':
             case 'update':
                 this.handleMissionUpdate(data);
+                break;
+            case 'ack':
+                break;
+            case 'error':
+                console.warn('Server error:', data);
+                if (typeof showToast === 'function') {
+                    const message = (data && typeof data.message === 'string' && data.message) ? data.message : 'Unknown server error';
+                    const suffix = (data && data.command) ? ` (${data.command})` : '';
+                    showToast(`${message}${suffix}`, 6000);
+                }
+                break;
+            default:
+                console.warn('Unknown message type:', data);
                 break;
         }
     }
@@ -1553,8 +1594,12 @@ class MarsMissionApp {
         const positions = [];
         
         orbitPoints.points.forEach(point => {
-            // Backend (x, y, z) -> Three.js (x, z, -y)
-            positions.push(point[0], point[2], -point[1]);
+            const mapped = this.mapBackendToThreeArray(point);
+            if (mapped) {
+                positions.push(mapped[0], mapped[1], mapped[2]);
+            } else {
+                positions.push(0, 0, 0);
+            }
         });
         
         orbitGeometry.setAttribute('position', 
@@ -1646,55 +1691,54 @@ class MarsMissionApp {
         }
         
         if (missionInfo.earth_position && this.objects.earth) {
-            const pos = missionInfo.earth_position;
             if (!this.objects.earth.userData.targetPos) this.objects.earth.userData.targetPos = new THREE.Vector3();
-            this.objects.earth.userData.targetPos.set(pos[0], pos[2], -pos[1]);
+            this.mapBackendToThreeVector(missionInfo.earth_position, this.objects.earth.userData.targetPos);
         }
-        
+
         if (missionInfo.mars_position && this.objects.mars) {
-            const pos = missionInfo.mars_position;
             if (!this.objects.mars.userData.targetPos) this.objects.mars.userData.targetPos = new THREE.Vector3();
-            this.objects.mars.userData.targetPos.set(pos[0], pos[2], -pos[1]);
+            this.mapBackendToThreeVector(missionInfo.mars_position, this.objects.mars.userData.targetPos);
         }
-        
+
         if (missionInfo.spacecraft_position && this.objects.spacecraft) {
-            const pos = missionInfo.spacecraft_position;
             const mesh = this.objects.spacecraft.getMesh();
+            const mapped = this.mapBackendToThreeArray(missionInfo.spacecraft_position);
+            if (mapped) {
+                const [mappedX, mappedY, mappedZ] = mapped;
 
-            const mappedX = pos[0];
-            const mappedY = pos[2];
-            const mappedZ = -pos[1];
-            
-            if (!mesh.userData.targetPos) mesh.userData.targetPos = new THREE.Vector3();
-            mesh.userData.targetPos.set(mappedX, mappedY, mappedZ);
+                if (!mesh.userData.targetPos) mesh.userData.targetPos = new THREE.Vector3();
+                mesh.userData.targetPos.set(mappedX, mappedY, mappedZ);
 
-            mesh.visible = true;
-            const isTransfer = missionInfo.phase === 'transfer_to_mars' || missionInfo.phase === 'transfer_to_earth';
-            this.objects.spacecraft.setThrusterActive(isTransfer);
+                mesh.visible = true;
+                const isTransfer = missionInfo.phase === 'transfer_to_mars' || missionInfo.phase === 'transfer_to_earth';
+                this.objects.spacecraft.setThrusterActive(isTransfer);
 
-            if (isTransfer) {
-                this.updateSpacecraftTrail([mappedX, mappedY, mappedZ]);
-            }
-            
-            if (this.lastSpacecraftPosition && Array.isArray(this.lastSpacecraftPosition)) {
-                const [lastX, lastY, lastZ] = this.lastSpacecraftPosition;
-                const rawDirection = new THREE.Vector3(
-                    mappedX - lastX,
-                    mappedY - lastY,
-                    mappedZ - lastZ
-                );
-
-                if (rawDirection.length() > 0.001) {
-                    const direction = rawDirection.normalize();
-                    const target = new THREE.Vector3(
-                        mappedX + direction.x,
-                        mappedY + direction.y,
-                        mappedZ + direction.z
-                    );
-                    mesh.userData.lookTarget = target;
+                if (isTransfer) {
+                    this.updateSpacecraftTrail([mappedX, mappedY, mappedZ]);
                 }
+
+                if (this.lastSpacecraftPosition && Array.isArray(this.lastSpacecraftPosition)) {
+                    const [lastX, lastY, lastZ] = this.lastSpacecraftPosition;
+                    const rawDirection = new THREE.Vector3(
+                        mappedX - lastX,
+                        mappedY - lastY,
+                        mappedZ - lastZ
+                    );
+
+                    if (rawDirection.length() > 0.001) {
+                        const direction = rawDirection.normalize();
+                        const target = new THREE.Vector3(
+                            mappedX + direction.x,
+                            mappedY + direction.y,
+                            mappedZ + direction.z
+                        );
+                        mesh.userData.lookTarget = target;
+                    }
+                }
+                this.lastSpacecraftPosition = [mappedX, mappedY, mappedZ];
+            } else {
+                console.warn('Invalid spacecraft_position payload:', missionInfo.spacecraft_position);
             }
-            this.lastSpacecraftPosition = [mappedX, mappedY, mappedZ];
         }
         
         updateDataPanel(missionInfo);
