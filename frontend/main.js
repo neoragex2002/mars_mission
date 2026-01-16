@@ -1383,9 +1383,15 @@ class MarsMissionApp {
             this.objects.earthClouds = clouds;
             
             const earthGroup = new THREE.Group();
+            earthGroup.receiveShadow = false;
 
             const earthDayMesh = new THREE.Mesh(geometry, earthDayMaterial);
             const earthNightMesh = new THREE.Mesh(geometry, material);
+
+            earthDayMesh.castShadow = true;
+            earthNightMesh.castShadow = true;
+            earthDayMesh.receiveShadow = false;
+            earthNightMesh.receiveShadow = false;
 
             earthGroup.add(earthDayMesh);
             earthGroup.add(earthNightMesh);
@@ -1421,6 +1427,8 @@ class MarsMissionApp {
                 envMapIntensity: 0.15
             });
             this.objects[name] = new THREE.Mesh(geometry, material);
+            this.objects[name].castShadow = true;
+            this.objects[name].receiveShadow = false;
             this.lensFlareOccluders.mars = this.objects[name];
 
             // Mars clouds (separate transparent shell)

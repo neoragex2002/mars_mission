@@ -14,7 +14,7 @@ fi
 # Check if dependencies are installed
 echo "📦 Checking dependencies..."
 if ! python3 -c "import fastapi" 2>/dev/null; then
-    echo "⚠️  Dependencies not found. Installing..."
+    echo "⚠️  Dependencies not found. Installing ..."
     python3 -m pip install -r requirements.txt
 fi
 

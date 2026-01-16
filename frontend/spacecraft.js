@@ -67,6 +67,12 @@ class Spacecraft {
         this.createThrusterEffect();
         this.createDetails();
         
+        this.mesh.traverse((child) => {
+            if (!child.isMesh) return;
+            if (child.isPoints || child.isLine || child.isSprite) return;
+            child.receiveShadow = true;
+        });
+
         this.scene.add(this.mesh);
     }
 
