@@ -70,14 +70,15 @@
             <aside id="right-panel" class="glass-panel">
                 <div class="panel-header panel-header--with-actions">
                     <h3>Craft Telemetry</h3>
-                    <button id="btn-right-panel" class="panel-toggle" type="button" aria-expanded="true" title="Toggle Telemetry panel">▸</button>
+                    <button id="btn-right-panel" class="panel-toggle" type="button" aria-expanded="true"
+                        title="Toggle Telemetry panel">▸</button>
                 </div>
-
+            
                 <div class="data-item">
                     <div class="data-label">Craft Position (AU)</div>
                     <div id="ship-pos" class="data-value coord highlight">(0.00, 0.00, 0.00)</div>
                 </div>
-
+            
                 <div class="data-item">
                     <div class="data-label">Environmental Velocity</div>
                     <div class="data-row">
@@ -89,7 +90,7 @@
                         <span id="mars-vel" class="data-value danger">0.0000</span>
                     </div>
                 </div>
-
+            
                 <div class="data-item divider">
                     <div class="data-label">Camera Interface</div>
                     <select id="view-mode">
@@ -100,35 +101,30 @@
                         <option value="top">Orrery: Top Down</option>
                     </select>
                 </div>
-
+            
                 <div id="model-calibration" class="data-item divider">
                     <div class="data-label">Model Calibration</div>
-
-                    <div class="data-row">
+                    <div class="calibration-row">
                         <span class="label">Yaw</span>
+                        <input id="calib-yaw" type="range" min="-180" max="180" step="1" value="0" class="range--compact" aria-label="Model yaw (degrees)">
                         <span id="calib-yaw-value" class="data-value">0°</span>
                     </div>
-                    <input id="calib-yaw" type="range" min="-180" max="180" step="1" value="0" class="range--compact" aria-label="Model yaw (degrees)">
-
-                    <div class="data-row" style="margin-top:8px;">
+            
+                    <div class="calibration-row">
                         <span class="label">Pitch</span>
+                        <input id="calib-pitch" type="range" min="-180" max="180" step="1" value="0" class="range--compact" aria-label="Model pitch (degrees)">
                         <span id="calib-pitch-value" class="data-value">0°</span>
                     </div>
-                    <input id="calib-pitch" type="range" min="-180" max="180" step="1" value="0" class="range--compact" aria-label="Model pitch (degrees)">
-
-                    <div class="data-row" style="margin-top:8px;">
+            
+                    <div class="calibration-row">
                         <span class="label">Roll</span>
+                        <input id="calib-roll" type="range" min="-180" max="180" step="1" value="0" class="range--compact" aria-label="Model roll (degrees)">
                         <span id="calib-roll-value" class="data-value">0°</span>
-                    </div>
-                    <input id="calib-roll" type="range" min="-180" max="180" step="1" value="0" class="range--compact" aria-label="Model roll (degrees)">
-
-                    <div class="data-row" style="margin-top:10px; justify-content:flex-end; gap:8px;">
-                        <button id="calib-reset" class="btn-icon btn-icon--small" type="button" title="Reset calibration">Reset</button>
-                    </div>
+                    </div>           
                 </div>
 
-                <div id="legend" class="legend">
-                    <div class="data-label legend-title">Visual Legend</div>
+                <div id="legend" class="data-item divider">
+                    <div class="data-label">Visual Legend</div>
                     <div class="legend-list">
                         <div class="legend-item">
                             <span class="legend-dot sun"></span> Sun

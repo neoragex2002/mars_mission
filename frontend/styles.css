@@ -316,6 +316,31 @@ input[type="range"]::-moz-range-thumb {
     margin-top: 8px;
 }
 
+#right-panel #model-calibration.data-item.divider {
+    padding-top: 10px;
+    margin-top: 8px;
+}
+
+#right-panel #model-calibration .calibration-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+#right-panel #model-calibration .calibration-row .range--compact {
+    width: 100%;
+    min-width: 0;
+}
+
+#right-panel #model-calibration .calibration-row .data-value {
+    width: 44px;
+    text-align: right;
+    font-size: 0.85rem;
+}
+
+
 .label {
     display: inline-flex;
     align-items: center;
@@ -613,19 +638,29 @@ input[type="range"]:focus-visible,
     }
 }
 
-.legend {
-    margin-top: 18px;
-}
-
-.legend-title {
-    margin-bottom: 8px;
-}
-
 .legend-list {
     display: grid;
     gap: 6px;
     font-size: 0.72rem;
     color: var(--text-secondary);
+}
+
+#right-panel #legend .legend-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 10px;
+    row-gap: 6px;
+}
+
+@media (max-width: 360px) {
+    #right-panel #legend .legend-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 300px) {
+    #right-panel #legend .legend-list {
+        grid-template-columns: 1fr;
+    }
 }
 
 .legend-item {

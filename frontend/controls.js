@@ -325,7 +325,6 @@ function setupModelCalibration() {
     const yawValue = document.getElementById('calib-yaw-value');
     const pitchValue = document.getElementById('calib-pitch-value');
     const rollValue = document.getElementById('calib-roll-value');
-    const reset = document.getElementById('calib-reset');
 
     if (!yaw || !pitch || !roll || !yawValue || !pitchValue || !rollValue) {
         return;
@@ -399,14 +398,6 @@ function setupModelCalibration() {
     pitch.addEventListener('input', render);
     roll.addEventListener('input', render);
 
-    if (reset) {
-        reset.addEventListener('click', () => {
-            yaw.value = '0';
-            pitch.value = '0';
-            roll.value = '0';
-            render();
-        });
-    }
 
     render();
 }
