@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mars Mission | Command Center</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <link rel="icon" href="data:,">
 </head>
 <body>
     <div id="container">
@@ -188,26 +189,53 @@
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/environments/RoomEnvironment.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/SSAARenderPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/SMAAShader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/SMAAPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.162.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.162.0/examples/jsm/"
+            }
+        }
+    </script>
 
-    <script src="/static/spacecraft.js?v=12"></script>
-    <script src="/static/orbit.js"></script>
-    <script src="/static/main.js?v=10"></script>
-    <script src="/static/controls.js"></script>
-    <script src="/static/ui.js"></script>
+    <script type="module">
+        import * as THREE_NS from 'three';
+
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { SSAARenderPass } from 'three/addons/postprocessing/SSAARenderPass.js';
+        import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+        const THREE = { ...THREE_NS };
+
+        THREE.OrbitControls = OrbitControls;
+        THREE.GLTFLoader = GLTFLoader;
+        THREE.RGBELoader = RGBELoader;
+        THREE.RoomEnvironment = RoomEnvironment;
+
+        THREE.EffectComposer = EffectComposer;
+        THREE.RenderPass = RenderPass;
+        THREE.ShaderPass = ShaderPass;
+        THREE.UnrealBloomPass = UnrealBloomPass;
+        THREE.SSAARenderPass = SSAARenderPass;
+        THREE.SMAAPass = SMAAPass;
+        THREE.OutputPass = OutputPass;
+
+        window.THREE = THREE;
+    </script>
+
+    <script defer src="/static/spacecraft.js?v=12"></script>
+    <script defer src="/static/orbit.js"></script>
+    <script defer src="/static/main.js?v=10"></script>
+    <script defer src="/static/controls.js"></script>
+    <script defer src="/static/ui.js"></script>
 </body>
 </html>

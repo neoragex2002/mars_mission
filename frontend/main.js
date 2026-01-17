@@ -109,6 +109,44 @@ const AdditiveBlendShader = {
     `
 };
 
+const DebugViewShader = {
+    uniforms: {
+        tDiffuse: { value: null },
+        debugMode: { value: 0 }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float debugMode;
+        varying vec2 vUv;
+
+        vec3 exposureRamp(float luma) {
+            if (luma >= 8.0) return vec3(1.0);
+            if (luma >= 4.0) return vec3(1.0, 0.0, 1.0);
+            if (luma >= 2.0) return vec3(1.0, 0.35, 0.0);
+            if (luma >= 1.0) return vec3(1.0, 1.0, 0.0);
+            float t = clamp(luma, 0.0, 1.0);
+            return mix(vec3(0.0, 0.12, 0.3), vec3(0.0, 0.7, 1.0), t);
+        }
+
+        void main() {
+            vec3 color = texture2D(tDiffuse, vUv).rgb;
+            float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            if (debugMode > 1.5) {
+                gl_FragColor = vec4(vec3(luma), 1.0);
+            } else {
+                gl_FragColor = vec4(exposureRamp(luma), 1.0);
+            }
+        }
+    `
+};
+
 class MarsMissionApp {
     constructor() {
         this.scene = null;
@@ -122,6 +160,7 @@ class MarsMissionApp {
         this.cinematicPass = null;
         this.ssaaPass = null;
         this.smaaPass = null;
+        this.debugPass = null;
         this.aaMode = 'none';
         this.raycaster = new THREE.Raycaster(); // For lens flare occlusion
 
@@ -149,6 +188,10 @@ class MarsMissionApp {
         this.sharedTextures = {};
         this.textureRegistry = { color: new Set(), data: new Set() };
         this.textureColorMode = 'srgb';
+        this.iblIntensity = this.getRequestedIblIntensity();
+        if (typeof window !== 'undefined') {
+            window.__mm_applyIblIntensity = () => this.applyIblIntensity();
+        }
 
         this.lensFlareOccluders = { earth: [], mars: null };
 
@@ -212,6 +255,7 @@ class MarsMissionApp {
         this.setupCamera();
         this.setupRenderer();
         this.setupEnvironment();
+        this.applyIblIntensity();
         this.setupControls();
         this.setupPostProcessing();
         this.setupLighting();
@@ -309,6 +353,76 @@ class MarsMissionApp {
         return THREE.MathUtils.clamp(level, 0, 5);
     }
 
+    getRequestedDebugMode() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 'none';
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 'none';
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('debug') || '').trim().toLowerCase();
+        if (!raw || raw === '0' || raw === 'off' || raw === 'none') {
+            return 'none';
+        }
+        if (raw === 'exposure') {
+            return 'exposure';
+        }
+        if (raw === 'luma') {
+            return 'luma';
+        }
+        return 'none';
+    }
+
+    getRequestedIblIntensity() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 1.0;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 1.0;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('ibl') || '').trim();
+        if (!raw) {
+            return 1.0;
+        }
+
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return 1.0;
+        }
+
+        return Math.max(0, value);
+    }
+
+    applyIblIntensity() {
+        if (!this.scene) return;
+        this.scene.traverse((node) => {
+            if (!node.isMesh) return;
+            if (node.isPoints || node.isLine || node.isSprite) return;
+            if (!node.material) return;
+
+            const applyToMaterial = (material) => {
+                if (!material) return;
+                if (!(material.isMeshStandardMaterial || material.isMeshPhysicalMaterial)) return;
+                if (typeof material.envMapIntensity !== 'number') return;
+                if (typeof material.userData.baseEnvMapIntensity !== 'number') {
+                    material.userData.baseEnvMapIntensity = material.envMapIntensity;
+                }
+                material.envMapIntensity = material.userData.baseEnvMapIntensity * this.iblIntensity;
+            };
+
+            if (Array.isArray(node.material)) {
+                node.material.forEach((material) => applyToMaterial(material));
+                return;
+            }
+
+            applyToMaterial(node.material);
+        });
+    }
+
     setAAMode(mode) {
         if (typeof window === 'undefined' || !window.location) {
             return;
@@ -392,6 +506,7 @@ class MarsMissionApp {
         this.createPlanet('earth', data.earth_orbit);
         this.createPlanet('mars', data.mars_orbit);
         this.createSpacecraft();
+        this.applyIblIntensity();
         updateMissionInfo(data.mission_info);
         const initialHorizonEnd =
             (data.current_snapshot && typeof data.current_snapshot.timeline_horizon_end === 'number')
@@ -431,12 +546,8 @@ class MarsMissionApp {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
 
-        if (typeof THREE.sRGBEncoding !== 'undefined') {
-            this.renderer.outputEncoding = THREE.sRGBEncoding;
-        }
-
-        // Switch to ACES Filmic Tone Mapping for cinematic look
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        this.renderer.toneMapping = THREE.NeutralToneMapping;
         this.renderer.toneMappingExposure = 1.05;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -516,6 +627,7 @@ class MarsMissionApp {
             disposePreviousEnvironment();
             this.scene.environment = envRenderTarget.texture;
             this.environmentRenderTarget = envRenderTarget;
+            this.applyIblIntensity();
         };
 
         const applyCanvasEnvironment = () => {
@@ -656,6 +768,7 @@ class MarsMissionApp {
         this.aaMode = this.getRequestedAAMode();
         this.ssaaPass = null;
         this.smaaPass = null;
+        this.debugPass = null;
 
         const aaRequested = this.aaMode;
 
@@ -678,9 +791,6 @@ class MarsMissionApp {
         this.additivePass.uniforms.bloomStrength.value = 1.0;
         this.finalComposer.addPass(this.additivePass);
 
-        this.cinematicPass = new THREE.ShaderPass(CinematicShader);
-        this.finalComposer.addPass(this.cinematicPass);
-
         if (aaRequested === 'smaa') {
             if (typeof THREE.SMAAPass === 'function') {
                 this.smaaPass = new THREE.SMAAPass(width * pixelRatio, height * pixelRatio);
@@ -689,6 +799,20 @@ class MarsMissionApp {
                 console.warn('SMAA requested (?aa=smaa) but THREE.SMAAPass is not available. Falling back to no AA.');
                 this.aaMode = 'none';
             }
+        }
+
+        const debugMode = this.getRequestedDebugMode();
+        if (debugMode !== 'none') {
+            this.debugPass = new THREE.ShaderPass(DebugViewShader);
+            this.debugPass.uniforms.debugMode.value = debugMode === 'luma' ? 2 : 1;
+            this.finalComposer.addPass(this.debugPass);
+        }
+
+        if (typeof THREE.OutputPass === 'function') {
+            this.outputPass = new THREE.OutputPass();
+            this.finalComposer.addPass(this.outputPass);
+        } else {
+            console.warn('OutputPass unavailable; final output may look incorrect.');
         }
     }
 
@@ -958,27 +1082,34 @@ class MarsMissionApp {
 
      applyDataTextureEncoding(texture) {
          if (!texture) return;
-         if (typeof THREE.LinearEncoding === 'undefined') return;
 
-         if (texture.encoding !== THREE.LinearEncoding) {
-             texture.encoding = THREE.LinearEncoding;
+         if (typeof THREE.NoColorSpace === 'undefined') return;
+
+         const nextColorSpace = THREE.NoColorSpace;
+         if (texture.colorSpace === nextColorSpace) return;
+
+         texture.colorSpace = nextColorSpace;
+         if (texture.image && texture.image.width && texture.image.height) {
              texture.needsUpdate = true;
          }
      }
 
      applyTextureColorMode(texture) {
          if (!texture) return;
-         if (typeof THREE.sRGBEncoding === 'undefined') return;
+         if (typeof THREE.SRGBColorSpace === 'undefined') return;
 
-         const encoding = (this.textureColorMode === 'linear' && typeof THREE.LinearEncoding !== 'undefined')
-             ? THREE.LinearEncoding
-             : THREE.sRGBEncoding;
+         const nextColorSpace = (this.textureColorMode === 'linear' && typeof THREE.LinearSRGBColorSpace !== 'undefined')
+             ? THREE.LinearSRGBColorSpace
+             : THREE.SRGBColorSpace;
 
-         if (texture.encoding !== encoding) {
-             texture.encoding = encoding;
+         if (texture.colorSpace === nextColorSpace) return;
+
+         texture.colorSpace = nextColorSpace;
+         if (texture.image && texture.image.width && texture.image.height) {
              texture.needsUpdate = true;
          }
      }
+
 
      applyPlanetTextureColorMode() {
          for (const texture of this.textureRegistry.color) {
@@ -1396,29 +1527,30 @@ class MarsMissionApp {
                     `
                 );
 
-                shader.fragmentShader = shader.fragmentShader.replace(
-                    '#include <roughnessmap_fragment>',
-                    `
-                    float roughnessFactor = roughness;
-                    #ifdef USE_ROUGHNESSMAP
-                        vec4 texelRoughness = texture2D( roughnessMap, vUv );
-                        roughnessFactor *= (1.0 - texelRoughness.g);
-                    #endif
-                    `
-                );
+                 shader.fragmentShader = shader.fragmentShader.replace(
+                     '#include <roughnessmap_fragment>',
+                     `
+                     float roughnessFactor = roughness;
+                     #ifdef USE_ROUGHNESSMAP
+                         vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
+                         roughnessFactor *= texelRoughness.g;
+                     #endif
+                     `
+                 );
 
-                shader.fragmentShader = shader.fragmentShader.replace(
-                    '#include <dithering_fragment>',
-                    `
-                    vec3 fragPosView = -vViewPosition;
-                    vec3 sunDirView = normalize(sunPositionView - fragPosView);
-                    float ndl = dot(normalize(vNormal), sunDirView);
-                    float dayFactor = smoothstep(0.03, 0.12, ndl);
-                    float noise = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453123);
-                    if (noise >= dayFactor) discard;
-                    #include <dithering_fragment>
-                    `
-                );
+                 shader.fragmentShader = shader.fragmentShader.replace(
+                     '#include <dithering_fragment>',
+                     `
+                     vec3 fragPosView = -vViewPosition;
+                     vec3 sunDirView = normalize(sunPositionView - fragPosView);
+                     float ndl = dot(normalize(vNormal), sunDirView);
+                     float dayFactor = smoothstep(0.03, 0.12, ndl);
+                     float noise = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453123);
+                     if (noise >= dayFactor) discard;
+                     #include <dithering_fragment>
+                     `
+                 );
+
             };
 
             material.onBeforeCompile = (shader) => {
@@ -1433,24 +1565,25 @@ class MarsMissionApp {
                     `
                 );
 
-                shader.fragmentShader = shader.fragmentShader.replace(
-                    '#include <roughnessmap_fragment>',
-                    `
-                    float roughnessFactor = roughness;
-                    #ifdef USE_ROUGHNESSMAP
-                        vec4 texelRoughness = texture2D( roughnessMap, vUv );
-                        roughnessFactor *= (1.0 - texelRoughness.g);
-                    #endif
-                    `
-                );
+                 shader.fragmentShader = shader.fragmentShader.replace(
+                     '#include <roughnessmap_fragment>',
+                     `
+                     float roughnessFactor = roughness;
+                     #ifdef USE_ROUGHNESSMAP
+                         vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
+                         roughnessFactor *= texelRoughness.g;
+                     #endif
+                     `
+                 );
 
-                shader.fragmentShader = shader.fragmentShader.replace(
-                    '#include <dithering_fragment>',
-                    `
-                    vec3 fragPosView = -vViewPosition;
-                    vec3 sunDirView = normalize(sunPositionView - fragPosView);
-                    vec3 N = normalize(vNormal);
-                    float ndl = dot(N, sunDirView);
+                 shader.fragmentShader = shader.fragmentShader.replace(
+                     '#include <dithering_fragment>',
+                     `
+                     vec3 fragPosView = -vViewPosition;
+                     vec3 sunDirView = normalize(sunPositionView - fragPosView);
+                     vec3 N = normalize(vNormal);
+                     float ndl = dot(N, sunDirView);
+
 
                     // Night visibility mask (soft terminator): 0 on day side, 1 on deep night.
                     float nightMask = 1.0 - smoothstep(0.02, 0.18, ndl);
@@ -1498,12 +1631,13 @@ class MarsMissionApp {
                     `
                 );
 
-                shader.fragmentShader = shader.fragmentShader.replace(
-                    '#include <emissivemap_fragment>',
-                    `
-                    #ifdef USE_EMISSIVEMAP
-                        vec3 emissiveTexel = emissiveMapTexelToLinear(texture2D(emissiveMap, vUv)).rgb;
-                        float luminance = dot(emissiveTexel, vec3(0.2126, 0.7152, 0.0722));
+                 shader.fragmentShader = shader.fragmentShader.replace(
+                     '#include <emissivemap_fragment>',
+                     `
+                     #ifdef USE_EMISSIVEMAP
+                         vec3 emissiveTexel = texture2D( emissiveMap, vEmissiveMapUv ).rgb;
+                         float luminance = dot(emissiveTexel, vec3(0.2126, 0.7152, 0.0722));
+
 
                         // Base intensity curve (keeps bright metro areas bright, dims noise).
                         float baseMask = smoothstep(0.05, 0.30, luminance);
@@ -1516,7 +1650,7 @@ class MarsMissionApp {
                         vec3 baseColor = vec3(1.0, 0.95, 0.88) * baseGlow;
 
                         // Stable per-texel flicker (avoid gl_FragCoord-based shimmer).
-                        vec2 cellUv = floor(vUv * vec2(2048.0, 1024.0));
+                        vec2 cellUv = floor(vEmissiveMapUv * vec2(2048.0, 1024.0));
                         float seed = dot(cellUv, vec2(12.9898, 78.233));
                         float rnd = fract(sin(seed) * 43758.5453123);
                         float wave = 0.5 + 0.5 * sin(time * 2.2 + rnd * 6.28318530718);

@@ -15,8 +15,14 @@ class Spacecraft {
         this.antenna = null;
         this.landingLegs = [];
         this.sharedTextures = {};
-        
+
         this.createSpacecraft();
+    }
+
+    applyIblIntensity() {
+        if (typeof window === 'undefined') return;
+        if (typeof window.__mm_applyIblIntensity !== 'function') return;
+        window.__mm_applyIblIntensity();
     }
 
     getMicroNormalMap() {
@@ -126,6 +132,8 @@ class Spacecraft {
             if (child.isPoints || child.isLine || child.isSprite) return;
             child.receiveShadow = true;
         });
+
+        this.applyIblIntensity();
     }
 
      loadGatewayModel() {
@@ -136,9 +144,12 @@ class Spacecraft {
                  const root = gltf.scene || gltf.scenes[0];
                  if (!root) {
                      console.warn('GLB loaded without a scene; falling back to procedural model.');
-                     this.createProceduralModel();
-                     return;
-                 }
+                  this.createProceduralModel();
+                  this.applyIblIntensity();
+                  return;
+
+             }
+
 
                  this.applySavedCalibration();
 
@@ -146,19 +157,24 @@ class Spacecraft {
                  this.mesh.add(normalized);
                  this.modelRoot = normalized;
                  this.modelLoaded = true;
-
+ 
                  if (this.modelCalibrationRoot) {
                      this.modelCalibrationRoot.rotation.set(0, 0, 0);
                      this.modelCalibrationRoot.rotateX(this.modelPitchCorrection);
                      this.modelCalibrationRoot.rotateY(this.modelYawCorrection);
                      this.modelCalibrationRoot.rotateZ(this.modelRollCorrection);
                  }
+ 
+                 this.applyIblIntensity();
              },
+
              undefined,
              (error) => {
-                 console.warn('Failed to load GatewayCore GLB; falling back to procedural model.', error);
-                 this.createProceduralModel();
-             }
+                  console.warn('Failed to load GatewayCore GLB; falling back to procedural model.', error);
+                  this.createProceduralModel();
+                  this.applyIblIntensity();
+              }
+
          );
      }
 
@@ -246,16 +262,9 @@ class Spacecraft {
                 m.side = THREE.DoubleSide;
 
                 if (typeof m.envMapIntensity === 'number') {
-                    const defaultIntensity = Math.max(m.envMapIntensity, 3);
-                    let targetIntensity = defaultIntensity;
-                    if (typeof window !== 'undefined') {
-                        if (typeof window.__mm_shipEnvIntensity === 'number') {
-                            targetIntensity = window.__mm_shipEnvIntensity;
-                        } else if (window.__mm_envMode && window.__mm_envMode !== 'canvas') {
-                            targetIntensity = 1.4;
-                        }
+                    if (typeof m.userData.baseEnvMapIntensity !== 'number') {
+                        m.userData.baseEnvMapIntensity = m.envMapIntensity;
                     }
-                    m.envMapIntensity = Math.min(defaultIntensity, targetIntensity);
                 }
                 m.needsUpdate = true;
             };
