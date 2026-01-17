@@ -54,27 +54,223 @@ class Spacecraft {
         return texture;
     }
 
+    getThrusterSpriteTexture() {
+        if (this.sharedTextures.thrusterSprite) {
+            return this.sharedTextures.thrusterSprite;
+        }
+
+        const size = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const context = canvas.getContext('2d');
+        const center = size * 0.5;
+        const gradient = context.createRadialGradient(center, center, 0, center, center, center);
+
+        gradient.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+        gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.9)');
+        gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.45)');
+        gradient.addColorStop(0.75, 'rgba(255, 255, 255, 0.12)');
+        gradient.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+
+        context.clearRect(0, 0, size, size);
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, size, size);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.needsUpdate = true;
+
+        this.sharedTextures.thrusterSprite = texture;
+        return texture;
+    }
+
     createSpacecraft() {
         this.mesh = new THREE.Group();
-        this.mesh.scale.set(0.54, 0.54, 0.54);
+        this.mesh.scale.set(0.34, 0.4, 0.4);
+        this.modelTargetSize = 0.2;
+        this.autoCenterModelPivot = false;
+        this.autoAlignModelAxes = false;
+        this.modelYawCorrection = 0;
+        this.modelPitchCorrection = 0;
+        this.modelRollCorrection = 0;
+        this.modelRoot = null;
+        this.modelLoaded = false;
         
+        this.createThrusterEffect();
+
+        const loaderAvailable = (typeof THREE !== 'undefined' && typeof THREE.GLTFLoader === 'function');
+        if (loaderAvailable) {
+            this.loadGatewayModel();
+        } else {
+            console.warn('GLTFLoader missing; falling back to procedural spacecraft.');
+            this.createProceduralModel();
+        }
+
+        this.scene.add(this.mesh);
+    }
+
+    createProceduralModel() {
         this.createBody();
         this.createCockpit();
         this.createSolarPanels();
         this.createThrusterNozzles();
         this.createAntenna();
         this.createLandingLegs();
-        this.createThrusterEffect();
         this.createDetails();
-        
+
         this.mesh.traverse((child) => {
             if (!child.isMesh) return;
             if (child.isPoints || child.isLine || child.isSprite) return;
             child.receiveShadow = true;
         });
-
-        this.scene.add(this.mesh);
     }
+
+     loadGatewayModel() {
+         const loader = new THREE.GLTFLoader();
+         loader.load(
+             '/static/assets/models/GatewayCore.glb',
+             (gltf) => {
+                 const root = gltf.scene || gltf.scenes[0];
+                 if (!root) {
+                     console.warn('GLB loaded without a scene; falling back to procedural model.');
+                     this.createProceduralModel();
+                     return;
+                 }
+
+                 this.applySavedCalibration();
+
+                 const normalized = this.normalizeLoadedModel(root);
+                 this.mesh.add(normalized);
+                 this.modelRoot = normalized;
+                 this.modelLoaded = true;
+
+                 if (this.modelCalibrationRoot) {
+                     this.modelCalibrationRoot.rotation.set(0, 0, 0);
+                     this.modelCalibrationRoot.rotateX(this.modelPitchCorrection);
+                     this.modelCalibrationRoot.rotateY(this.modelYawCorrection);
+                     this.modelCalibrationRoot.rotateZ(this.modelRollCorrection);
+                 }
+             },
+             undefined,
+             (error) => {
+                 console.warn('Failed to load GatewayCore GLB; falling back to procedural model.', error);
+                 this.createProceduralModel();
+             }
+         );
+     }
+
+     applySavedCalibration() {
+         const STORAGE_KEY = 'mm_model_calibration_v1';
+         try {
+             const raw = localStorage.getItem(STORAGE_KEY);
+             if (!raw) return;
+             const parsed = JSON.parse(raw);
+             if (!parsed || typeof parsed !== 'object') return;
+
+             const yaw = typeof parsed.yaw === 'number' ? parsed.yaw : 0;
+             const pitch = typeof parsed.pitch === 'number' ? parsed.pitch : 0;
+             const roll = typeof parsed.roll === 'number' ? parsed.roll : 0;
+
+             this.modelYawCorrection = (yaw * Math.PI) / 180.0;
+             this.modelPitchCorrection = (pitch * Math.PI) / 180.0;
+             this.modelRollCorrection = (roll * Math.PI) / 180.0;
+         } catch (e) {
+             return;
+         }
+     }
+
+
+    normalizeLoadedModel(model) {
+        const container = new THREE.Group();
+        container.position.set(0, 0, 0);
+        container.rotation.set(0, 0, 0);
+        container.scale.set(1, 1, 1);
+
+        const calibration = new THREE.Group();
+        calibration.position.set(0, 0, 0);
+        calibration.rotation.set(0, 0, 0);
+        calibration.scale.set(1, 1, 1);
+
+        container.add(calibration);
+        calibration.add(model);
+
+        model.updateMatrixWorld(true);
+        calibration.updateMatrixWorld(true);
+        container.updateMatrixWorld(true);
+
+
+        if (Number.isFinite(this.modelPitchCorrection)) {
+            calibration.rotateX(this.modelPitchCorrection);
+        }
+        if (Number.isFinite(this.modelYawCorrection)) {
+            calibration.rotateY(this.modelYawCorrection);
+        }
+        if (Number.isFinite(this.modelRollCorrection)) {
+            calibration.rotateZ(this.modelRollCorrection);
+        }
+        container.updateMatrixWorld(true);
+
+        this.modelCalibrationRoot = calibration;
+
+        const scaledBox = new THREE.Box3().setFromObject(container);
+        const size = new THREE.Vector3();
+        scaledBox.getSize(size);
+
+        const maxDimension = Math.max(size.x, size.y, size.z);
+        const safeDimension = maxDimension > 0 ? maxDimension : 1;
+        const uniformScale = this.modelTargetSize / safeDimension;
+        container.scale.set(uniformScale, uniformScale, uniformScale);
+        container.updateMatrixWorld(true);
+
+
+        model.traverse((child) => {
+            if (!child.isMesh) return;
+            if (child.isPoints || child.isLine || child.isSprite) return;
+            child.receiveShadow = true;
+
+            const material = child.material;
+            if (!material) return;
+
+            const applyMaterialFixes = (m) => {
+                if (!m) return;
+
+                m.transparent = false;
+                m.opacity = 1.0;
+                m.alphaTest = 0.0;
+                m.depthWrite = true;
+                m.depthTest = true;
+
+                m.side = THREE.DoubleSide;
+
+                if (typeof m.envMapIntensity === 'number') {
+                    const defaultIntensity = Math.max(m.envMapIntensity, 3);
+                    let targetIntensity = defaultIntensity;
+                    if (typeof window !== 'undefined') {
+                        if (typeof window.__mm_shipEnvIntensity === 'number') {
+                            targetIntensity = window.__mm_shipEnvIntensity;
+                        } else if (window.__mm_envMode && window.__mm_envMode !== 'canvas') {
+                            targetIntensity = 1.4;
+                        }
+                    }
+                    m.envMapIntensity = Math.min(defaultIntensity, targetIntensity);
+                }
+                m.needsUpdate = true;
+            };
+
+            if (Array.isArray(material)) {
+                material.forEach((m) => applyMaterialFixes(m));
+                return;
+            }
+
+            applyMaterialFixes(material);
+        });
+
+        return container;
+    }
+
 
     createBody() {
         const bodyGeometry = new THREE.CylinderGeometry(0.012, 0.015, 0.05, 16);
@@ -358,100 +554,222 @@ class Spacecraft {
     }
 
     createThrusterEffect() {
-        const particleCount = 150;
-        const geometry = new THREE.BufferGeometry();
-        
-        const positions = new Float32Array(particleCount * 3);
-        const colors = new Float32Array(particleCount * 3);
-        const sizes = new Float32Array(particleCount);
-        const velocities = [];
-        
-        for (let i = 0; i < particleCount; i++) {
-            positions[i * 3] = 0;
-            positions[i * 3 + 1] = 0;
-            positions[i * 3 + 2] = -0.04;
-            
-            const t = Math.random();
-            colors[i * 3] = 1.0;
-            colors[i * 3 + 1] = 0.3 + t * 0.4;
-            colors[i * 3 + 2] = 0.0;
-            
-            sizes[i] = Math.random() * 0.008 + 0.002;
-            
-            const maxLife = Math.random() * 0.4 + 0.3;
-            velocities.push({
-                velocity: {
-                    x: (Math.random() - 0.5) * 0.003,
-                    y: (Math.random() - 0.5) * 0.003,
-                    z: -Math.random() * 0.004 - 0.002
-                },
-                life: Math.random() * maxLife,
-                maxLife,
-                size: sizes[i]
+        this.thrusterConfig = {
+            core: {
+                particleCount: 250,
+                originX: 0.0,
+                originZ: -0.05,
+                originY: -0.01,
+                baseSize: 0.0016,
+                sizeJitter: 0.0011,
+                baseOpacity: 0.2,
+                lifeMin: 0.18,
+                lifeMax: 0.32,
+                speedMin: 0.004,
+                speedMax: 0.007,
+                spread: 0.00015,
+                colorStart: new THREE.Color(0xbfe9ff),
+                colorEnd: new THREE.Color(0x4aa3ff)
+            },
+            plume: {
+                particleCount: 200,
+                originX: 0.0,
+                originZ: -0.05,
+                originY: -0.01,
+                baseSize: 0.003,
+                sizeJitter: 0.0035,
+                baseOpacity: 0.2,
+                lifeMin: 0.45,
+                lifeMax: 0.9,
+                speedMin: 0.002,
+                speedMax: 0.0045,
+                spread: 0.0010,
+                colorStart: new THREE.Color(0x7c4dff),
+                colorEnd: new THREE.Color(0x2bdcff)
+            },
+            update: {
+                dtLife: 0.03,
+                jitterFactor: 0.08,
+                minSizeRatio: 0.05
+            }
+        };
+
+        const thrusterSprite = this.getThrusterSpriteTexture();
+
+        const buildSystem = (config) => {
+            const geometry = new THREE.BufferGeometry();
+
+            const positions = new Float32Array(config.particleCount * 3);
+            const colors = new Float32Array(config.particleCount * 3);
+            const sizes = new Float32Array(config.particleCount);
+            const data = [];
+
+            for (let i = 0; i < config.particleCount; i++) {
+                positions[i * 3] = config.originX || 0;
+                positions[i * 3 + 1] = config.originY || 0;
+                positions[i * 3 + 2] = config.originZ;
+
+                const maxLife = config.lifeMin + Math.random() * (config.lifeMax - config.lifeMin);
+                const speed = config.speedMin + Math.random() * (config.speedMax - config.speedMin);
+
+                const jitter = (Math.random() - 0.5);
+                sizes[i] = config.baseSize + jitter * config.sizeJitter;
+
+                const c = config.colorStart.clone().lerp(config.colorEnd, Math.random());
+                colors[i * 3] = c.r;
+                colors[i * 3 + 1] = c.g;
+                colors[i * 3 + 2] = c.b;
+
+                data.push({
+                    velocity: {
+                        x: (Math.random() - 0.5) * config.spread,
+                        y: (Math.random() - 0.5) * config.spread,
+                        z: -speed
+                    },
+                    life: Math.random() * maxLife,
+                    maxLife,
+                    size: sizes[i]
+                });
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+            const material = new THREE.PointsMaterial({
+                size: config.baseSize,
+                map: thrusterSprite,
+                alphaTest: 0.0,
+                vertexColors: true,
+                transparent: true,
+                opacity: config.baseOpacity,
+                blending: THREE.AdditiveBlending,
+                sizeAttenuation: true,
+                depthWrite: false
             });
-        }
-        
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-        
-        const material = new THREE.PointsMaterial({
-            size: 0.01,
-            vertexColors: true,
-            transparent: true,
-            opacity: 0.9,
-            blending: THREE.AdditiveBlending,
-            sizeAttenuation: true,
-            depthWrite: false
-        });
-        
-        this.thrusterParticles = new THREE.Points(geometry, material);
-        this.thrusterParticles.visible = false;
-        this.particleData = velocities;
-        this.mesh.add(this.thrusterParticles);
+
+            const points = new THREE.Points(geometry, material);
+            points.visible = false;
+
+            return { points, data };
+        };
+
+        const core = buildSystem(this.thrusterConfig.core);
+        const plume = buildSystem(this.thrusterConfig.plume);
+
+        this.thrusterCore = core.points;
+        this.thrusterPlume = plume.points;
+        this.thrusterCoreData = core.data;
+        this.thrusterPlumeData = plume.data;
+
+        this.mesh.add(this.thrusterCore);
+        this.mesh.add(this.thrusterPlume);
     }
 
     updateThrusterEffect() {
-        if (!this.thrusterParticles.visible) return;
-        
-        const positions = this.thrusterParticles.geometry.attributes.position.array;
-        const colors = this.thrusterParticles.geometry.attributes.color.array;
-        const sizes = this.thrusterParticles.geometry.attributes.size.array;
-        
-        for (let i = 0; i < this.particleData.length; i++) {
-            const particle = this.particleData[i];
-            
-            positions[i * 3] += particle.velocity.x;
-            positions[i * 3 + 1] += particle.velocity.y;
-            positions[i * 3 + 2] += particle.velocity.z;
-            
-            particle.velocity.x += (Math.random() - 0.5) * 0.0001;
-            particle.velocity.y += (Math.random() - 0.5) * 0.0001;
-            
-            particle.life -= 0.025;
-            
-            if (particle.life <= 0) {
-                positions[i * 3] = 0;
-                positions[i * 3 + 1] = 0;
-                positions[i * 3 + 2] = -0.04;
+        const updateSystem = (points, data, config) => {
+            if (!points || !points.visible) return;
 
-                particle.velocity.x = (Math.random() - 0.5) * 0.003;
-                particle.velocity.y = (Math.random() - 0.5) * 0.003;
-                particle.velocity.z = -Math.random() * 0.004 - 0.002;
-                particle.life = particle.maxLife;
+            const positions = points.geometry.attributes.position.array;
+            const colors = points.geometry.attributes.color.array;
+            const sizes = points.geometry.attributes.size.array;
+
+            const updateCfg = this.thrusterConfig && this.thrusterConfig.update ? this.thrusterConfig.update : null;
+            const jitterFactor = updateCfg ? updateCfg.jitterFactor : 0.08;
+            const dtLife = updateCfg ? updateCfg.dtLife : 0.03;
+            const minSizeRatio = updateCfg ? updateCfg.minSizeRatio : 0.05;
+
+            for (let i = 0; i < data.length; i++) {
+                const particle = data[i];
+
+                positions[i * 3] += particle.velocity.x;
+                positions[i * 3 + 1] += particle.velocity.y;
+                positions[i * 3 + 2] += particle.velocity.z;
+
+                particle.velocity.x += (Math.random() - 0.5) * (config.spread * jitterFactor);
+                particle.velocity.y += (Math.random() - 0.5) * (config.spread * jitterFactor);
+
+                particle.life -= dtLife;
+
+
+                if (particle.life <= 0) {
+                    positions[i * 3] = config.originX || 0;
+                    positions[i * 3 + 1] = config.originY || 0;
+                    positions[i * 3 + 2] = config.originZ;
+
+                    const maxLife = config.lifeMin + Math.random() * (config.lifeMax - config.lifeMin);
+                    const speed = config.speedMin + Math.random() * (config.speedMax - config.speedMin);
+
+                    particle.velocity.x = (Math.random() - 0.5) * config.spread;
+                    particle.velocity.y = (Math.random() - 0.5) * config.spread;
+                    particle.velocity.z = -speed;
+                    particle.maxLife = maxLife;
+                    particle.life = particle.maxLife;
+                }
+
+                const lifeRatio = particle.life / particle.maxLife;
+
+                const t = 1.0 - Math.max(0.0, Math.min(1.0, lifeRatio));
+                const c = config.colorStart.clone().lerp(config.colorEnd, t);
+                colors[i * 3] = c.r;
+                colors[i * 3 + 1] = c.g;
+                colors[i * 3 + 2] = c.b;
+
+                sizes[i] = particle.size * Math.max(minSizeRatio, lifeRatio);
             }
-            
-            const lifeRatio = particle.life / particle.maxLife;
-            colors[i * 3] = 1.0;
-            colors[i * 3 + 1] = 0.3 * lifeRatio;
-            colors[i * 3 + 2] = 0.0;
-            
-            sizes[i] = particle.size * lifeRatio;
+
+            points.geometry.attributes.position.needsUpdate = true;
+            points.geometry.attributes.color.needsUpdate = true;
+            points.geometry.attributes.size.needsUpdate = true;
+        };
+
+        if (this.thrusterCore && this.thrusterPlume) {
+            updateSystem(this.thrusterCore, this.thrusterCoreData, this.thrusterConfig.core);
+            updateSystem(this.thrusterPlume, this.thrusterPlumeData, this.thrusterConfig.plume);
+            return;
         }
-        
-        this.thrusterParticles.geometry.attributes.position.needsUpdate = true;
-        this.thrusterParticles.geometry.attributes.color.needsUpdate = true;
-        this.thrusterParticles.geometry.attributes.size.needsUpdate = true;
+
+        if (this.thrusterParticles && this.particleData) {
+            if (!this.thrusterParticles.visible) return;
+            const positions = this.thrusterParticles.geometry.attributes.position.array;
+            const colors = this.thrusterParticles.geometry.attributes.color.array;
+            const sizes = this.thrusterParticles.geometry.attributes.size.array;
+
+            for (let i = 0; i < this.particleData.length; i++) {
+                const particle = this.particleData[i];
+
+                positions[i * 3] += particle.velocity.x;
+                positions[i * 3 + 1] += particle.velocity.y;
+                positions[i * 3 + 2] += particle.velocity.z;
+
+                particle.velocity.x += (Math.random() - 0.5) * 0.0001;
+                particle.velocity.y += (Math.random() - 0.5) * 0.0001;
+
+                particle.life -= 0.025;
+
+                if (particle.life <= 0) {
+                    positions[i * 3] = 0;
+                    positions[i * 3 + 1] = 0;
+                    positions[i * 3 + 2] = -0.04;
+
+                    particle.velocity.x = (Math.random() - 0.5) * 0.003;
+                    particle.velocity.y = (Math.random() - 0.5) * 0.003;
+                    particle.velocity.z = -Math.random() * 0.004 - 0.002;
+                    particle.life = particle.maxLife;
+                }
+
+                const lifeRatio = particle.life / particle.maxLife;
+                colors[i * 3] = 1.0;
+                colors[i * 3 + 1] = 0.3 * lifeRatio;
+                colors[i * 3 + 2] = 0.0;
+
+                sizes[i] = particle.size * lifeRatio;
+            }
+
+            this.thrusterParticles.geometry.attributes.position.needsUpdate = true;
+            this.thrusterParticles.geometry.attributes.color.needsUpdate = true;
+            this.thrusterParticles.geometry.attributes.size.needsUpdate = true;
+        }
     }
 
     updateNavigationLights(time) {
@@ -476,7 +794,13 @@ class Spacecraft {
 
     setThrusterActive(active) {
         this.thrusterActive = active;
-        this.thrusterParticles.visible = active;
+        if (this.thrusterCore && this.thrusterPlume) {
+            this.thrusterCore.visible = active;
+            this.thrusterPlume.visible = active;
+        }
+        if (this.thrusterParticles) {
+            this.thrusterParticles.visible = active;
+        }
         
         this.landingLegs.forEach((leg, index) => {
             const targetRotation = active ? Math.PI / 6 : 0;

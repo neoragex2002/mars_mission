@@ -120,6 +120,9 @@ class MarsMissionApp {
         this.additivePass = null;
         this.bloomPass = null;
         this.cinematicPass = null;
+        this.ssaaPass = null;
+        this.smaaPass = null;
+        this.aaMode = 'none';
         this.raycaster = new THREE.Raycaster(); // For lens flare occlusion
 
         this.objects = {
@@ -193,6 +196,11 @@ class MarsMissionApp {
         this.lastRenderMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
         this.orientationBlendTauSec = 0.25;
         this.orientationBlendW = 0.0;
+        this.bankMaxRad = 0.5;
+        this.bankGainPerUnit = 0.18;
+        this.bankTauSec = 0.35;
+        this.bankCurvatureTauSec = 0.25;
+        this.bankDeadbandRad = 0.02;
 
         this.init();
     }
@@ -232,6 +240,91 @@ class MarsMissionApp {
         if (!mapped) return false;
         outVec3.set(mapped[0], mapped[1], mapped[2]);
         return true;
+    }
+
+    getRequestedAAMode() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 'none';
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 'none';
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('aa') || '').trim().toLowerCase();
+        if (!raw || raw === '0' || raw === 'off' || raw === 'none') {
+            return 'none';
+        }
+        if (raw === 'ssaa') {
+            return 'ssaa';
+        }
+        if (raw === 'smaa') {
+            return 'smaa';
+        }
+        return 'none';
+    }
+
+    getRequestedEnvironmentMode() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 'canvas';
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 'canvas';
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('env') || '').trim().toLowerCase();
+        if (!raw || raw === 'canvas') {
+            return 'canvas';
+        }
+        if (raw === 'room') {
+            return 'room';
+        }
+        if (raw === 'hdr') {
+            return 'hdr';
+        }
+        return 'canvas';
+    }
+
+    getRequestedAASampleLevel(fallbackLevel) {
+        if (typeof window === 'undefined' || !window.location) {
+            return fallbackLevel;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return fallbackLevel;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('aaLevel') || '').trim();
+        if (!raw) {
+            return fallbackLevel;
+        }
+
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return fallbackLevel;
+        }
+
+        const level = Math.round(value);
+        return THREE.MathUtils.clamp(level, 0, 5);
+    }
+
+    setAAMode(mode) {
+        if (typeof window === 'undefined' || !window.location) {
+            return;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return;
+        }
+
+        const nextMode = String(mode || '').trim().toLowerCase();
+        const params = new URLSearchParams(window.location.search || '');
+        if (!nextMode || nextMode === 'none' || nextMode === 'off' || nextMode === '0') {
+            params.delete('aa');
+        } else {
+            params.set('aa', nextMode);
+        }
+        window.location.search = params.toString();
     }
 
     setupWebSocket() {
@@ -325,7 +418,7 @@ class MarsMissionApp {
         this.camera = new THREE.PerspectiveCamera(
             60,
             window.innerWidth / window.innerHeight,
-            0.03,
+            0.01,
             3000
         );
         this.camera.position.set(5, 4, 5);
@@ -404,17 +497,87 @@ class MarsMissionApp {
     }
 
     setupEnvironment() {
-        const environmentTexture = this.createEnvironmentTexture();
+        const envMode = this.getRequestedEnvironmentMode();
+        if (typeof window !== 'undefined') {
+            window.__mm_envMode = envMode;
+            window.__mm_shipEnvIntensity = envMode === 'canvas' ? 3.0 : 1.4;
+        }
         const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
         pmremGenerator.compileEquirectangularShader();
 
-        const envRenderTarget = pmremGenerator.fromEquirectangular(environmentTexture);
-        this.scene.environment = envRenderTarget.texture;
-        this.environmentRenderTarget = envRenderTarget;
+        const disposePreviousEnvironment = () => {
+            if (this.environmentRenderTarget) {
+                this.environmentRenderTarget.dispose();
+                this.environmentRenderTarget = null;
+            }
+        };
 
-        environmentTexture.dispose();
-        this.textureRegistry.color.delete(environmentTexture);
-        pmremGenerator.dispose();
+        const applyEnvRenderTarget = (envRenderTarget) => {
+            disposePreviousEnvironment();
+            this.scene.environment = envRenderTarget.texture;
+            this.environmentRenderTarget = envRenderTarget;
+        };
+
+        const applyCanvasEnvironment = () => {
+            const environmentTexture = this.createEnvironmentTexture();
+            const envRenderTarget = pmremGenerator.fromEquirectangular(environmentTexture);
+            applyEnvRenderTarget(envRenderTarget);
+            environmentTexture.dispose();
+            this.textureRegistry.color.delete(environmentTexture);
+            pmremGenerator.dispose();
+        };
+
+        const applyRoomEnvironment = () => {
+            if (typeof THREE.RoomEnvironment !== 'function') {
+                console.warn('RoomEnvironment unavailable; falling back to canvas environment.');
+                applyCanvasEnvironment();
+                return;
+            }
+
+            const roomScene = new THREE.RoomEnvironment();
+            const envRenderTarget = pmremGenerator.fromScene(roomScene, 0.04);
+            roomScene.dispose();
+            applyEnvRenderTarget(envRenderTarget);
+            pmremGenerator.dispose();
+        };
+
+        const applyHdrEnvironment = () => {
+            if (typeof THREE.RGBELoader !== 'function') {
+                console.warn('RGBELoader unavailable; falling back to room environment.');
+                applyRoomEnvironment();
+                return;
+            }
+
+            const params = new URLSearchParams(window.location.search || '');
+            const envUrl = String(params.get('envUrl') || '').trim();
+            const defaultHdrUrl = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/equirectangular/venice_sunset_1k.hdr';
+            const targetUrl = envUrl || defaultHdrUrl;
+            const loader = new THREE.RGBELoader();
+
+            loader.load(
+                targetUrl,
+                (texture) => {
+                    texture.mapping = THREE.EquirectangularReflectionMapping;
+                    const envRenderTarget = pmremGenerator.fromEquirectangular(texture);
+                    applyEnvRenderTarget(envRenderTarget);
+                    texture.dispose();
+                    pmremGenerator.dispose();
+                },
+                undefined,
+                (error) => {
+                    console.warn('Failed to load HDR environment. Falling back to room environment.', error);
+                    applyRoomEnvironment();
+                }
+            );
+        };
+
+        if (envMode === 'hdr') {
+            applyHdrEnvironment();
+        } else if (envMode === 'room') {
+            applyRoomEnvironment();
+        } else {
+            applyCanvasEnvironment();
+        }
     }
 
     setupControls() {
@@ -490,8 +653,25 @@ class MarsMissionApp {
         }
         this.finalComposer.setSize(width, height);
 
-        const baseRenderPass = new THREE.RenderPass(this.scene, this.camera);
-        this.finalComposer.addPass(baseRenderPass);
+        this.aaMode = this.getRequestedAAMode();
+        this.ssaaPass = null;
+        this.smaaPass = null;
+
+        const aaRequested = this.aaMode;
+
+        if (aaRequested === 'ssaa') {
+            if (typeof THREE.SSAARenderPass === 'function') {
+                this.ssaaPass = new THREE.SSAARenderPass(this.scene, this.camera);
+                this.ssaaPass.sampleLevel = this.getRequestedAASampleLevel(1);
+                this.finalComposer.addPass(this.ssaaPass);
+            } else {
+                console.warn('SSAA requested (?aa=ssaa) but THREE.SSAARenderPass is not available. Falling back to no AA.');
+                this.aaMode = 'none';
+                this.finalComposer.addPass(new THREE.RenderPass(this.scene, this.camera));
+            }
+        } else {
+            this.finalComposer.addPass(new THREE.RenderPass(this.scene, this.camera));
+        }
 
         this.additivePass = new THREE.ShaderPass(AdditiveBlendShader);
         this.additivePass.uniforms.tBloom.value = null;
@@ -499,14 +679,26 @@ class MarsMissionApp {
         this.finalComposer.addPass(this.additivePass);
 
         this.cinematicPass = new THREE.ShaderPass(CinematicShader);
-        this.cinematicPass.renderToScreen = true;
         this.finalComposer.addPass(this.cinematicPass);
+
+        if (aaRequested === 'smaa') {
+            if (typeof THREE.SMAAPass === 'function') {
+                this.smaaPass = new THREE.SMAAPass(width * pixelRatio, height * pixelRatio);
+                this.finalComposer.addPass(this.smaaPass);
+            } else {
+                console.warn('SMAA requested (?aa=smaa) but THREE.SMAAPass is not available. Falling back to no AA.');
+                this.aaMode = 'none';
+            }
+        }
     }
 
     setupLighting() {
         // Ambient light
         const ambientLight = new THREE.AmbientLight(0x223744, 1.1);
         this.scene.add(ambientLight);
+
+        const hemiLight = new THREE.HemisphereLight(0x9ad7ff, 0x081018, 0.3);
+        this.scene.add(hemiLight);
         
         // Point light from sun
         const sunLight = new THREE.PointLight(0xf2fbff, 4.5, 100);
@@ -1639,6 +1831,7 @@ class MarsMissionApp {
         }
 
         this.objects.spacecraft = new SpacecraftClass(this.scene);
+        window.__spacecraft = this.objects.spacecraft;
     }
 
     updateSpacecraftTrail(position) {
@@ -1802,6 +1995,8 @@ class MarsMissionApp {
         switch (this.viewMode) {
             case 'earth':
                 this.controls.enablePan = false;
+                this.controls.minDistance = 0.3;
+                this.controls.maxDistance = 50;
                 if (earthPos) {
                     focusPoint = earthPos;
                     idealOffset = new THREE.Vector3(0.8, 0.4, 0.8);
@@ -1810,6 +2005,8 @@ class MarsMissionApp {
 
             case 'mars':
                 this.controls.enablePan = false;
+                this.controls.minDistance = 0.3;
+                this.controls.maxDistance = 50;
                 if (marsPos) {
                     focusPoint = marsPos;
                     idealOffset = new THREE.Vector3(0.6, 0.3, 0.6);
@@ -1818,9 +2015,11 @@ class MarsMissionApp {
 
             case 'spacecraft':
                 this.controls.enablePan = false;
+                this.controls.minDistance = 0.02;
+                this.controls.maxDistance = 10;
                 if (shipPos) {
                     focusPoint = shipPos;
-                    idealOffset = new THREE.Vector3(0.3, 0.2, 0.3);
+                    idealOffset = new THREE.Vector3(0.18, 0.12, 0.18);
                 }
                 break;
 
@@ -1896,6 +2095,12 @@ class MarsMissionApp {
         }
         if (this.bloomPass) {
             this.bloomPass.resolution.set(width * pixelRatio, height * pixelRatio);
+        }
+        if (this.ssaaPass && typeof this.ssaaPass.setSize === 'function') {
+            this.ssaaPass.setSize(width * pixelRatio, height * pixelRatio);
+        }
+        if (this.smaaPass && typeof this.smaaPass.setSize === 'function') {
+            this.smaaPass.setSize(width * pixelRatio, height * pixelRatio);
         }
     }
 
@@ -2110,9 +2315,80 @@ class MarsMissionApp {
                 if (!mesh.userData._q1) {
                     mesh.userData._q1 = new THREE.Quaternion();
                 }
+                if (!mesh.userData.prevForward) {
+                    mesh.userData.prevForward = new THREE.Vector3();
+                }
+                if (!mesh.userData._bankCross) {
+                    mesh.userData._bankCross = new THREE.Vector3();
+                }
+                if (!mesh.userData._bankWorldUp) {
+                    mesh.userData._bankWorldUp = new THREE.Vector3(0, 1, 0);
+                }
+                if (!mesh.userData._bankAxis) {
+                    mesh.userData._bankAxis = new THREE.Vector3(0, 0, -1);
+                }
+                if (!mesh.userData._bankQuat) {
+                    mesh.userData._bankQuat = new THREE.Quaternion();
+                }
+                if (typeof mesh.userData.bank !== 'number') {
+                    mesh.userData.bank = 0.0;
+                }
+
+                if (typeof mesh.userData.bankCurvature !== 'number') {
+                    mesh.userData.bankCurvature = 0.0;
+                }
+
+                let bankTarget = 0.0;
+                const forwardDir = mesh.userData.forwardDir;
+                if (forwardDir && forwardDir.lengthSq() > 1e-10) {
+                    if (mesh.userData.prevForward.lengthSq() <= 1e-10) {
+                        mesh.userData.prevForward.copy(forwardDir);
+                    }
+                    const dot = Math.max(-1, Math.min(1, mesh.userData.prevForward.dot(forwardDir)));
+                    const angle = Math.acos(dot);
+                    const turnSign = Math.sign(
+                        mesh.userData._bankCross.crossVectors(mesh.userData.prevForward, forwardDir)
+                            .dot(mesh.userData._bankWorldUp)
+                    );
+                    const stepDist = mesh.userData.renderDelta.length();
+                    const measuredCurvature = stepDist > 1e-10 ? (turnSign * angle / stepDist) : 0.0;
+
+                    const curvatureTau = (typeof this.bankCurvatureTauSec === 'number' && this.bankCurvatureTauSec > 0)
+                        ? this.bankCurvatureTauSec
+                        : 0.0;
+                    const curvatureAlpha = curvatureTau > 0 ? (1 - Math.exp(-dtSec / curvatureTau)) : 1.0;
+                    mesh.userData.bankCurvature = mesh.userData.bankCurvature + (measuredCurvature - mesh.userData.bankCurvature) * curvatureAlpha;
+
+                    const gain = (typeof this.bankGainPerUnit === 'number' && this.bankGainPerUnit > 0)
+                        ? this.bankGainPerUnit
+                        : 0.0;
+                    bankTarget = Math.max(
+                        -this.bankMaxRad,
+                        Math.min(this.bankMaxRad, mesh.userData.bankCurvature * gain)
+                    );
+
+                    const deadband = (typeof this.bankDeadbandRad === 'number' && this.bankDeadbandRad > 0)
+                        ? this.bankDeadbandRad
+                        : 0.0;
+                    if (Math.abs(bankTarget) < deadband) {
+                        bankTarget = 0.0;
+                    }
+
+                    mesh.userData.prevForward.copy(forwardDir);
+                }
+
+                const bankTau = (typeof this.bankTauSec === 'number' && this.bankTauSec > 0) ? this.bankTauSec : 0.0;
+                const bankAlpha = bankTau > 0 ? (1 - Math.exp(-dtSec / bankTau)) : 1.0;
+                mesh.userData.bank = mesh.userData.bank + (bankTarget - mesh.userData.bank) * bankAlpha;
+
+
                 const currentQuat = mesh.userData._q0.copy(mesh.quaternion);
                 mesh.lookAt(mesh.userData.lookTarget);
                 const targetQuat = mesh.userData._q1.copy(mesh.quaternion);
+                if (mesh.userData.bank !== 0) {
+                    mesh.userData._bankQuat.setFromAxisAngle(mesh.userData._bankAxis, mesh.userData.bank);
+                    targetQuat.multiply(mesh.userData._bankQuat);
+                }
                 mesh.quaternion.copy(currentQuat).slerp(targetQuat, lookAlpha);
             }
 
@@ -2345,4 +2621,7 @@ let app = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     app = new MarsMissionApp();
+    if (app) {
+        window.app = app;
+    }
 });

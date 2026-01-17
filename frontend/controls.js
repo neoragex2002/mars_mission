@@ -316,7 +316,103 @@ function setupKeyboardControls() {
 }
 
 // Setup controls when DOM is ready
+function setupModelCalibration() {
+    const STORAGE_KEY = 'mm_model_calibration_v1';
+
+    const yaw = document.getElementById('calib-yaw');
+    const pitch = document.getElementById('calib-pitch');
+    const roll = document.getElementById('calib-roll');
+    const yawValue = document.getElementById('calib-yaw-value');
+    const pitchValue = document.getElementById('calib-pitch-value');
+    const rollValue = document.getElementById('calib-roll-value');
+    const reset = document.getElementById('calib-reset');
+
+    if (!yaw || !pitch || !roll || !yawValue || !pitchValue || !rollValue) {
+        return;
+    }
+
+    const load = () => {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : null;
+        } catch (e) {
+            return null;
+        }
+    };
+
+    const save = (data) => {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } catch (e) {
+            return;
+        }
+    };
+
+    const toDegInt = (value) => {
+        const n = parseFloat(value);
+        return Number.isFinite(n) ? Math.round(n) : 0;
+    };
+
+    const applyToShip = (degYaw, degPitch, degRoll) => {
+        if (!app || !app.objects || !app.objects.spacecraft) return;
+        const sc = app.objects.spacecraft;
+        const target = sc.modelCalibrationRoot || sc.modelRoot;
+        if (!target) return;
+
+        const ry = (degYaw * Math.PI) / 180.0;
+        const rx = (degPitch * Math.PI) / 180.0;
+        const rz = (degRoll * Math.PI) / 180.0;
+
+        sc.modelYawCorrection = ry;
+        sc.modelPitchCorrection = rx;
+        sc.modelRollCorrection = rz;
+
+        target.rotation.set(0, 0, 0);
+        target.rotateX(rx);
+        target.rotateY(ry);
+        target.rotateZ(rz);
+    };
+
+    const render = () => {
+        const degYaw = toDegInt(yaw.value);
+        const degPitch = toDegInt(pitch.value);
+        const degRoll = toDegInt(roll.value);
+
+        yawValue.textContent = `${degYaw}°`;
+        pitchValue.textContent = `${degPitch}°`;
+        rollValue.textContent = `${degRoll}°`;
+
+        applyToShip(degYaw, degPitch, degRoll);
+        save({ yaw: degYaw, pitch: degPitch, roll: degRoll });
+    };
+
+    const saved = load();
+    if (saved) {
+        if (typeof saved.yaw === 'number') yaw.value = String(saved.yaw);
+        if (typeof saved.pitch === 'number') pitch.value = String(saved.pitch);
+        if (typeof saved.roll === 'number') roll.value = String(saved.roll);
+    }
+
+    yaw.addEventListener('input', render);
+    pitch.addEventListener('input', render);
+    roll.addEventListener('input', render);
+
+    if (reset) {
+        reset.addEventListener('click', () => {
+            yaw.value = '0';
+            pitch.value = '0';
+            roll.value = '0';
+            render();
+        });
+    }
+
+    render();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     setupControls();
     setupKeyboardControls();
+    setupModelCalibration();
 });

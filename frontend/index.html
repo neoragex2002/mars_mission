@@ -101,6 +101,32 @@
                     </select>
                 </div>
 
+                <div id="model-calibration" class="data-item divider">
+                    <div class="data-label">Model Calibration</div>
+
+                    <div class="data-row">
+                        <span class="label">Yaw</span>
+                        <span id="calib-yaw-value" class="data-value">0°</span>
+                    </div>
+                    <input id="calib-yaw" type="range" min="-180" max="180" step="1" value="0" class="range--compact" aria-label="Model yaw (degrees)">
+
+                    <div class="data-row" style="margin-top:8px;">
+                        <span class="label">Pitch</span>
+                        <span id="calib-pitch-value" class="data-value">0°</span>
+                    </div>
+                    <input id="calib-pitch" type="range" min="-180" max="180" step="1" value="0" class="range--compact" aria-label="Model pitch (degrees)">
+
+                    <div class="data-row" style="margin-top:8px;">
+                        <span class="label">Roll</span>
+                        <span id="calib-roll-value" class="data-value">0°</span>
+                    </div>
+                    <input id="calib-roll" type="range" min="-180" max="180" step="1" value="0" class="range--compact" aria-label="Model roll (degrees)">
+
+                    <div class="data-row" style="margin-top:10px; justify-content:flex-end; gap:8px;">
+                        <button id="calib-reset" class="btn-icon btn-icon--small" type="button" title="Reset calibration">Reset</button>
+                    </div>
+                </div>
+
                 <div id="legend" class="legend">
                     <div class="data-label legend-title">Visual Legend</div>
                     <div class="legend-list">
@@ -168,17 +194,23 @@
 
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/environments/RoomEnvironment.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/SSAARenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/SMAAShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/SMAAPass.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
 
-    <script src="/static/spacecraft.js?v=11"></script>
+    <script src="/static/spacecraft.js?v=12"></script>
     <script src="/static/orbit.js"></script>
-    <script src="/static/main.js?v=7"></script>
+    <script src="/static/main.js?v=10"></script>
     <script src="/static/controls.js"></script>
     <script src="/static/ui.js"></script>
 </body>
