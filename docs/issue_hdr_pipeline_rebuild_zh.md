@@ -142,7 +142,10 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。如
 6. 修复升级后出现的 shader 编译失败（贴图“看起来没加载”的根因）：
    - 旧版 `onBeforeCompile` 注入使用了 `vUv`/`emissiveMapTexelToLinear(...)` 等旧变量/函数
    - r162 的标准 chunk 使用 `vRoughnessMapUv`、`vEmissiveMapUv` 等命名
-7. 清理浏览器噪音：
+7. Phase 2（物理摄影感照明标定）第一步：
+   - 默认显著降低 Ambient/Hemisphere 填充光，暗面更暗、层次更像摄影曝光
+   - 支持 URL 参数快速调参：`?exp=`（曝光）、`?sun=`（主光）、`?amb=`（环境补光）、`?hemi=`（半球补光）
+8. 清理浏览器噪音：
    - 增加 `<link rel="icon" href="data:,">` 避免 `/favicon.ico 404`
    - 避免在图片未加载时强制 `texture.needsUpdate = true`，减少 `Texture marked for update but no image data found` 警告
 

@@ -207,16 +207,22 @@ class MarsMissionApp {
         this.isTransitioning = false;
         this.lastViewMode = 'free';
         
-        this.textureLoader = new THREE.TextureLoader();
+         this.textureLoader = new THREE.TextureLoader();
+ 
+         this.lastPhase = null;
+         this.lastSpacecraftPosition = null;
 
-        this.lastPhase = null;
-        this.lastSpacecraftPosition = null;
+         this.planetShadowEnabled = this.isPlanetShadowEnabled();
+         this.planetShadowUniforms = null;
 
-        this.simulationState = {
-            is_running: false,
-            paused: false,
-            time_speed: 0.5,
-        };
+
+         this.simulationState = {
+             is_running: false,
+             paused: false,
+             time_speed: 0.5,
+         };
+
+
         // Simulation-time tracking for smooth rendering between WS updates.
         // Backend advances time at ~20Hz (see backend sleep 0.05s), so we locally interpolate.
         this.serverTickSeconds = 0.05;
@@ -330,6 +336,28 @@ class MarsMissionApp {
         return 'canvas';
     }
 
+    getRequestedIblEnvironmentStyle() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 'default';
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 'default';
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('iblEnv') || '').trim().toLowerCase();
+        if (!raw || raw === 'default' || raw === 'auto' || raw === '1' || raw === 'on') {
+            return 'default';
+        }
+        if (raw === 'neutral' || raw === 'gray' || raw === 'grey') {
+            return 'neutral';
+        }
+        if (raw === 'space' || raw === 'deepspace' || raw === 'deep_space') {
+            return 'space';
+        }
+        return 'default';
+    }
+
     getRequestedAASampleLevel(fallbackLevel) {
         if (typeof window === 'undefined' || !window.location) {
             return fallbackLevel;
@@ -353,49 +381,241 @@ class MarsMissionApp {
         return THREE.MathUtils.clamp(level, 0, 5);
     }
 
-    getRequestedDebugMode() {
+    getRequestedPostMode() {
         if (typeof window === 'undefined' || !window.location) {
-            return 'none';
+            return 'default';
         }
         if (typeof URLSearchParams === 'undefined') {
-            return 'none';
+            return 'default';
         }
 
         const params = new URLSearchParams(window.location.search || '');
-        const raw = String(params.get('debug') || '').trim().toLowerCase();
-        if (!raw || raw === '0' || raw === 'off' || raw === 'none') {
-            return 'none';
+        const raw = String(params.get('post') || '').trim().toLowerCase();
+        if (!raw || raw === '1' || raw === 'on' || raw === 'default') {
+            return 'default';
         }
-        if (raw === 'exposure') {
-            return 'exposure';
+        if (raw === 'raw' || raw === '0' || raw === 'off') {
+            return 'raw';
         }
-        if (raw === 'luma') {
-            return 'luma';
-        }
-        return 'none';
+        return 'default';
     }
 
-    getRequestedIblIntensity() {
+    getRequestedBgMode() {
         if (typeof window === 'undefined' || !window.location) {
-            return 1.0;
+            return 'default';
         }
         if (typeof URLSearchParams === 'undefined') {
-            return 1.0;
+            return 'default';
         }
 
         const params = new URLSearchParams(window.location.search || '');
-        const raw = String(params.get('ibl') || '').trim();
+        const raw = String(params.get('bg') || '').trim().toLowerCase();
+        if (!raw || raw === '1' || raw === 'on' || raw === 'default') {
+            return 'default';
+        }
+        if (raw === 'off' || raw === '0' || raw === 'none') {
+            return 'off';
+        }
+        if (raw === 'dim') {
+            return 'dim';
+        }
+        return 'default';
+    }
+
+     getRequestedCityLightsIntensity() {
+         if (typeof window === 'undefined' || !window.location) {
+             return 1.0;
+         }
+         if (typeof URLSearchParams === 'undefined') {
+             return 1.0;
+         }
+
+         const params = new URLSearchParams(window.location.search || '');
+         const raw = String(params.get('city') || '').trim();
+         if (!raw) {
+             return 1.0;
+         }
+
+         const value = Number(raw);
+         if (!Number.isFinite(value)) {
+             return 1.0;
+         }
+
+         return THREE.MathUtils.clamp(value, 0, 2);
+     }
+
+
+     getRequestedDebugMode() {
+         if (typeof window === 'undefined' || !window.location) {
+             return 'none';
+         }
+         if (typeof URLSearchParams === 'undefined') {
+             return 'none';
+         }
+
+         const params = new URLSearchParams(window.location.search || '');
+         const raw = String(params.get('debug') || '').trim().toLowerCase();
+         if (!raw || raw === '0' || raw === 'off' || raw === 'none') {
+             return 'none';
+         }
+         if (raw === 'exposure') {
+             return 'exposure';
+         }
+         if (raw === 'luma') {
+             return 'luma';
+         }
+         return 'none';
+     }
+
+     isPlanetShadowEnabled() {
+         if (typeof window === 'undefined' || !window.location) {
+             return false;
+         }
+         if (typeof URLSearchParams === 'undefined') {
+             return false;
+         }
+
+         const params = new URLSearchParams(window.location.search || '');
+         const raw = String(params.get('planetShadow') || params.get('ps') || '').trim().toLowerCase();
+         if (!raw || raw === '0' || raw === 'off' || raw === 'false') {
+             return false;
+         }
+         return true;
+     }
+
+
+    getRequestedExposure() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 0.9;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 0.9;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('exp') || '').trim();
         if (!raw) {
-            return 1.0;
+            return 0.9;
         }
 
         const value = Number(raw);
         if (!Number.isFinite(value)) {
-            return 1.0;
+            return 0.9;
+        }
+
+        return THREE.MathUtils.clamp(value, 0, 3);
+    }
+
+    getRequestedSunIntensity() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 3.8;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 3.8;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('sun') || '').trim();
+        if (!raw) {
+            return 3.8;
+        }
+
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return 3.8;
         }
 
         return Math.max(0, value);
     }
+
+    getRequestedAmbientIntensity() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 0.03;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 0.03;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('amb') || '').trim();
+        if (!raw) {
+            return 0.03;
+        }
+
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return 0.03;
+        }
+
+        return Math.max(0, value);
+    }
+
+    getRequestedHemisphereIntensity() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 0.03;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 0.03;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('hemi') || '').trim();
+        if (!raw) {
+            return 0.03;
+        }
+
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return 0.03;
+        }
+
+        return Math.max(0, value);
+    }
+
+     getRequestedIblIntensity() {
+         if (typeof window === 'undefined' || !window.location) {
+             return 1.0;
+         }
+         if (typeof URLSearchParams === 'undefined') {
+             return 1.0;
+         }
+
+         const params = new URLSearchParams(window.location.search || '');
+         const raw = String(params.get('ibl') || '').trim();
+         if (!raw) {
+             return 1.0;
+         }
+
+         const value = Number(raw);
+         if (!Number.isFinite(value)) {
+             return 1.0;
+         }
+
+         return Math.max(0, value);
+     }
+
+     getRequestedTimeSpeed() {
+         if (typeof window === 'undefined' || !window.location) {
+             return null;
+         }
+         if (typeof URLSearchParams === 'undefined') {
+             return null;
+         }
+
+         const params = new URLSearchParams(window.location.search || '');
+         const raw = String(params.get('speed') || params.get('warp') || '').trim();
+         if (!raw) {
+             return null;
+         }
+
+         const value = Number(raw);
+         if (!Number.isFinite(value)) {
+             return null;
+         }
+
+         return THREE.MathUtils.clamp(value, 0, 5);
+     }
+
 
     applyIblIntensity() {
         if (!this.scene) return;
@@ -497,11 +717,24 @@ class MarsMissionApp {
         }
     }
 
-    handleInitialData(data) {
-        this.missionData = data.mission_info;
-        if (data.simulation_state) {
-            this.simulationState = { ...this.simulationState, ...data.simulation_state };
-        }
+     handleInitialData(data) {
+         this.missionData = data.mission_info;
+
+         if (data.simulation_state) {
+             this.simulationState = { ...this.simulationState, ...data.simulation_state };
+         }
+
+         const requestedSpeed = this.getRequestedTimeSpeed();
+         if (requestedSpeed !== null) {
+             this.simulationState = { ...this.simulationState, time_speed: requestedSpeed };
+         }
+
+         this.syncUiFromSimulationState();
+
+         if (requestedSpeed !== null && this.connected) {
+             this.setTimeSpeed(requestedSpeed);
+         }
+
         this.createSun();
         this.createPlanet('earth', data.earth_orbit);
         this.createPlanet('mars', data.mars_orbit);
@@ -527,6 +760,9 @@ class MarsMissionApp {
     setupScene() {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x000000);
+
+        const bgMode = this.getRequestedBgMode();
+        this.objects.bgMode = bgMode;
     }
 
     setupCamera() {
@@ -548,7 +784,7 @@ class MarsMissionApp {
 
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         this.renderer.toneMapping = THREE.NeutralToneMapping;
-        this.renderer.toneMappingExposure = 1.05;
+        this.renderer.toneMappingExposure = this.getRequestedExposure();
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         container.appendChild(this.renderer.domElement);
@@ -607,10 +843,70 @@ class MarsMissionApp {
         return texture;
     }
 
+    createNeutralEnvironmentTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 128;
+        const context = canvas.getContext('2d');
+
+        const bg = context.createLinearGradient(0, 0, 0, canvas.height);
+        bg.addColorStop(0, 'rgb(3, 3, 3)');
+        bg.addColorStop(0.5, 'rgb(2, 2, 2)');
+        bg.addColorStop(1, 'rgb(3, 3, 3)');
+        context.fillStyle = bg;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        texture.needsUpdate = true;
+        this.registerColorTexture(texture);
+        return texture;
+    }
+
+    createDeepSpaceEnvironmentTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 256;
+        const context = canvas.getContext('2d');
+
+        const fill = context.createLinearGradient(0, 0, 0, canvas.height);
+        fill.addColorStop(0, 'rgb(3, 3, 3)');
+        fill.addColorStop(0.5, 'rgb(2, 2, 2)');
+        fill.addColorStop(1, 'rgb(3, 3, 3)');
+        context.fillStyle = fill;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        const drawLobe = (cx, cy, radius, c0, c1, alpha0, alpha1) => {
+            const gradient = context.createRadialGradient(cx, cy, 0, cx, cy, radius);
+            gradient.addColorStop(0, `rgba(${c0[0]}, ${c0[1]}, ${c0[2]}, ${alpha0})`);
+            gradient.addColorStop(1, `rgba(${c1[0]}, ${c1[1]}, ${c1[2]}, ${alpha1})`);
+            context.fillStyle = gradient;
+            context.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+        };
+
+        for (let i = 0; i < 8; i++) {
+            const x = canvas.width * (0.15 + i * 0.1);
+            const y = canvas.height * (0.55 + Math.sin(i * 0.7) * 0.08);
+            const r = canvas.width * 0.22;
+            drawLobe(x, y, r, [220, 225, 230], [0, 0, 0], 0.035, 0.0);
+        }
+
+        drawLobe(canvas.width * 0.22, canvas.height * 0.28, canvas.width * 0.10, [255, 244, 225], [0, 0, 0], 0.22, 0.0);
+        drawLobe(canvas.width * 0.22, canvas.height * 0.28, canvas.width * 0.18, [255, 236, 205], [0, 0, 0], 0.06, 0.0);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        texture.needsUpdate = true;
+        this.registerColorTexture(texture);
+        return texture;
+    }
+
     setupEnvironment() {
         const envMode = this.getRequestedEnvironmentMode();
+        const iblEnvStyle = this.getRequestedIblEnvironmentStyle();
         if (typeof window !== 'undefined') {
             window.__mm_envMode = envMode;
+            window.__mm_iblEnvStyle = iblEnvStyle;
             window.__mm_shipEnvIntensity = envMode === 'canvas' ? 3.0 : 1.4;
         }
         const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
@@ -631,7 +927,11 @@ class MarsMissionApp {
         };
 
         const applyCanvasEnvironment = () => {
-            const environmentTexture = this.createEnvironmentTexture();
+            const environmentTexture = (iblEnvStyle === 'neutral')
+                ? this.createNeutralEnvironmentTexture()
+                : (iblEnvStyle === 'space')
+                    ? this.createDeepSpaceEnvironmentTexture()
+                    : this.createEnvironmentTexture();
             const envRenderTarget = pmremGenerator.fromEquirectangular(environmentTexture);
             applyEnvRenderTarget(envRenderTarget);
             environmentTexture.dispose();
@@ -816,25 +1116,27 @@ class MarsMissionApp {
         }
     }
 
-    setupLighting() {
-        // Ambient light
-        const ambientLight = new THREE.AmbientLight(0x223744, 1.1);
-        this.scene.add(ambientLight);
+     setupLighting() {
+         // Ambient light
+         const ambientLight = new THREE.AmbientLight(0x101820, this.getRequestedAmbientIntensity());
+         this.scene.add(ambientLight);
+ 
+         const hemiLight = new THREE.HemisphereLight(0xfff2e3, 0x05080c, this.getRequestedHemisphereIntensity());
+         this.scene.add(hemiLight);
+ 
+         // Point light from sun
+         const sunLight = new THREE.PointLight(0xfff2e3, this.getRequestedSunIntensity(), 0, 2);
+         sunLight.position.set(0, 0, 0);
+         sunLight.castShadow = true;
+         sunLight.shadow.mapSize.width = 2048;
+         sunLight.shadow.mapSize.height = 2048;
+         sunLight.shadow.camera.near = 0.5;
+         sunLight.shadow.camera.far = 500;
+         sunLight.shadow.bias = -0.0008;
+         this.scene.add(sunLight);
+         this.sunLight = sunLight;
+     }
 
-        const hemiLight = new THREE.HemisphereLight(0x9ad7ff, 0x081018, 0.3);
-        this.scene.add(hemiLight);
-        
-        // Point light from sun
-        const sunLight = new THREE.PointLight(0xf2fbff, 4.5, 100);
-        sunLight.position.set(0, 0, 0);
-        sunLight.castShadow = true;
-        sunLight.shadow.mapSize.width = 2048;
-        sunLight.shadow.mapSize.height = 2048;
-        sunLight.shadow.camera.near = 0.5;
-        sunLight.shadow.camera.far = 500;
-        sunLight.shadow.bias = -0.0008;
-        this.scene.add(sunLight);
-    }
 
     createNebulaTexture() {
         const canvas = document.createElement('canvas');
@@ -842,9 +1144,9 @@ class MarsMissionApp {
         canvas.height = 256;
         const context = canvas.getContext('2d');
         const gradient = context.createRadialGradient(128, 128, 0, 128, 128, 128);
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
-        gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.1)');
-        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        gradient.addColorStop(0, 'rgba(240, 238, 233, 0.18)');
+        gradient.addColorStop(0.5, 'rgba(240, 238, 233, 0.06)');
+        gradient.addColorStop(1, 'rgba(240, 238, 233, 0)');
         context.fillStyle = gradient;
         context.fillRect(0, 0, 256, 256);
 
@@ -854,9 +1156,14 @@ class MarsMissionApp {
         return texture;
     }
 
-    setupNebulae() {
-        const texture = this.createNebulaTexture();
-        const colors = [0x442288, 0x112266, 0x441144, 0x114466];
+     setupNebulae() {
+         if (this.objects.bgMode === 'off') {
+             return;
+         }
+
+         const texture = this.createNebulaTexture();
+
+        const colors = [0x2b2b31, 0x363338, 0x302f33, 0x3a3a3f];
         const nebulaCount = 8;
         this.objects.nebulae = new THREE.Group();
         for (let i = 0; i < nebulaCount; i++) {
@@ -864,7 +1171,7 @@ class MarsMissionApp {
                 map: texture,
                 color: colors[i % colors.length],
                 transparent: true,
-                opacity: 0.2 + Math.random() * 0.2,
+                opacity: 0.08 + Math.random() * 0.12,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false
             });
@@ -884,8 +1191,13 @@ class MarsMissionApp {
         this.scene.add(this.objects.nebulae);
     }
 
-    setupStars() {
-        const starCount = 20000;
+     setupStars() {
+         if (this.objects.bgMode === 'off') {
+             return;
+         }
+
+         const starCount = 20000;
+
         const dustCount = 20000;
         const totalCount = starCount + dustCount;
         const geometry = new THREE.BufferGeometry();
@@ -894,9 +1206,10 @@ class MarsMissionApp {
         const sizes = new Float32Array(totalCount);
         const colorOptions = [
             new THREE.Color(0xffffff),
-            new THREE.Color(0xfff4ea),
-            new THREE.Color(0xeaf4ff),
-            new THREE.Color(0xffe5d9)
+            new THREE.Color(0xfff7ef),
+            new THREE.Color(0xf4f8ff),
+            new THREE.Color(0xfff0e2),
+            new THREE.Color(0xf8f6f0)
         ];
 
         for (let i = 0; i < totalCount; i++) {
@@ -930,7 +1243,7 @@ class MarsMissionApp {
 
             // FIX: Drastically reduce dust brightness to avoid Bloom artifacts
             // Dust should be subtle (dark grey/blue), Stars stay bright
-            const color = isDust ? new THREE.Color(0x333344) : colorOptions[Math.floor(Math.random() * colorOptions.length)];
+            const color = isDust ? new THREE.Color(0x2e2e33) : colorOptions[Math.floor(Math.random() * colorOptions.length)];
             
             colors[i * 3] = color.r;
             colors[i * 3 + 1] = color.g;
@@ -944,12 +1257,18 @@ class MarsMissionApp {
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
         geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-        const material = new THREE.ShaderMaterial({
-            uniforms: {
-                time: { value: 0 }
-            },
+         const bgMode = this.objects.bgMode;
+         const dimFactor = bgMode === 'dim' ? 0.4 : 1.0;
+
+         const material = new THREE.ShaderMaterial({
+             uniforms: {
+                 time: { value: 0 },
+                 dimFactor: { value: dimFactor }
+             },
+
             vertexShader: `
                 uniform float time;
+                uniform float dimFactor;
                 attribute float size;
                 attribute vec3 color;
                 varying vec3 vColor;
@@ -958,7 +1277,7 @@ class MarsMissionApp {
                     vColor = color;
                     // Add subtle twinkling effect based on position and time
                     float twinkle = sin(time * 0.002 + position.x + position.y) * 0.3 + 0.7;
-                    vOpacity = twinkle;
+                    vOpacity = twinkle * dimFactor;
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
                     gl_PointSize = max(1.5, size * (950.0 / -mvPosition.z));
                     gl_Position = projectionMatrix * mvPosition;
@@ -970,7 +1289,7 @@ class MarsMissionApp {
                 void main() {
                     float r = distance(gl_PointCoord, vec2(0.5));
                     if (r > 0.5) discard;
-                    gl_FragColor = vec4(vColor * 1.5, vOpacity * (1.0 - r * 2.0));
+                    gl_FragColor = vec4(vColor * 1.0, vOpacity * (1.0 - r * 2.0));
                 }
             `,
             transparent: true,
@@ -1330,39 +1649,44 @@ class MarsMissionApp {
         
         this.objects.sun = new THREE.Mesh(geometry, material);
         
-        const glowTexture = this.createGlowTexture();
-        
-        const spriteMaterial1 = new THREE.SpriteMaterial({
-            map: glowTexture,
-            color: 0xffd2a3,
-            transparent: true,
-            opacity: 0.5,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            toneMapped: false
-        });
-        const sprite1 = new THREE.Sprite(spriteMaterial1);
-        sprite1.scale.set(0.85, 0.85, 1.0);
-        this.objects.sun.add(sprite1);
-
-        const spriteMaterial2 = new THREE.SpriteMaterial({
-            map: glowTexture,
-            color: 0xff9c63,
-            transparent: true,
-            opacity: 0.21,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            toneMapped: false
-        });
-        const sprite2 = new THREE.Sprite(spriteMaterial2);
-        sprite2.scale.set(1.7, 1.7, 1.0);
-        this.objects.sun.add(sprite2);
-
-        this.objects.sunGlow = [sprite1, sprite2];
-
         this.objects.sun.layers.enable(BLOOM_LAYER);
-        sprite1.layers.enable(BLOOM_LAYER);
-        sprite2.layers.enable(BLOOM_LAYER);
+
+        if (this.getRequestedPostMode() !== 'raw') {
+            const glowTexture = this.createGlowTexture();
+
+            const spriteMaterial1 = new THREE.SpriteMaterial({
+                map: glowTexture,
+                color: 0xffd2a3,
+                transparent: true,
+                opacity: 0.5,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                toneMapped: false
+            });
+            const sprite1 = new THREE.Sprite(spriteMaterial1);
+            sprite1.scale.set(0.85, 0.85, 1.0);
+            this.objects.sun.add(sprite1);
+
+            const spriteMaterial2 = new THREE.SpriteMaterial({
+                map: glowTexture,
+                color: 0xff9c63,
+                transparent: true,
+                opacity: 0.21,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                toneMapped: false
+            });
+            const sprite2 = new THREE.Sprite(spriteMaterial2);
+            sprite2.scale.set(1.7, 1.7, 1.0);
+            this.objects.sun.add(sprite2);
+
+            this.objects.sunGlow = [sprite1, sprite2];
+
+            sprite1.layers.enable(BLOOM_LAYER);
+            sprite2.layers.enable(BLOOM_LAYER);
+        } else {
+            this.objects.sunGlow = [];
+        }
         
         this.scene.add(this.objects.sun);
         this.sunTexture = sunTexture;
@@ -1606,7 +1930,8 @@ class MarsMissionApp {
             const earthLightsMaterial = new THREE.MeshStandardMaterial({
                 color: 0x000000,
                 emissive: new THREE.Color(0xffffff),
-                emissiveIntensity: 1.8,
+                emissiveIntensity: 0.6 * this.getRequestedCityLightsIntensity(),
+
                 emissiveMap: earthLights,
                 transparent: true,
                 blending: THREE.AdditiveBlending,
@@ -1631,34 +1956,33 @@ class MarsMissionApp {
                     `
                 );
 
-                 shader.fragmentShader = shader.fragmentShader.replace(
-                     '#include <emissivemap_fragment>',
-                     `
-                     #ifdef USE_EMISSIVEMAP
-                         vec3 emissiveTexel = texture2D( emissiveMap, vEmissiveMapUv ).rgb;
-                         float luminance = dot(emissiveTexel, vec3(0.2126, 0.7152, 0.0722));
 
 
-                        // Base intensity curve (keeps bright metro areas bright, dims noise).
-                        float baseMask = smoothstep(0.05, 0.30, luminance);
-                        float baseGlow = pow(clamp(luminance, 0.0, 1.0), 0.65) * baseMask;
-
-                        // City sparkle mask biased toward higher-luminance texels.
-                        float cityMask = smoothstep(0.02, 0.10, luminance);
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <emissivemap_fragment>',
+                    `
+                    #ifdef USE_EMISSIVEMAP
+                        vec3 emissiveTexel = texture2D( emissiveMap, vEmissiveMapUv ).rgb;
+                        float luminance = dot(emissiveTexel, vec3(0.2126, 0.7152, 0.0722));
+                        
+                        // 基础亮度处理
+                        float adjustedLuminance = clamp(luminance, 0.0, 1.0);
+                        
+                        // Base intensity
+                        float baseMask = smoothstep(0.05, 0.30, adjustedLuminance);
+                        float baseGlow = pow(adjustedLuminance, 0.75) * baseMask;
+                        
+                        // City sparkle mask
+                        float cityMask = smoothstep(0.02, 0.10, adjustedLuminance);
                         cityMask = pow(cityMask, 2.3);
+                        
+                        // 基础颜色
+                        vec3 baseColor = vec3(0.95, 0.90, 0.83) * baseGlow;
+                        
+                        vec3 cityColor = vec3(1.0, 0.78, 0.55) * cityMask;
 
-                        vec3 baseColor = vec3(1.0, 0.95, 0.88) * baseGlow;
-
-                        // Stable per-texel flicker (avoid gl_FragCoord-based shimmer).
-                        vec2 cellUv = floor(vEmissiveMapUv * vec2(2048.0, 1024.0));
-                        float seed = dot(cellUv, vec2(12.9898, 78.233));
-                        float rnd = fract(sin(seed) * 43758.5453123);
-                        float wave = 0.5 + 0.5 * sin(time * 2.2 + rnd * 6.28318530718);
-                        float sparkle = 1.0 + cityMask * 0.35 * wave;
-
-                        vec3 cityColor = vec3(1.0, 0.78, 0.55) * (cityMask * sparkle);
-
-                        totalEmissiveRadiance = baseColor + cityColor;
+                        vec3 totalRadiance = baseColor + cityColor;
+                        totalEmissiveRadiance = totalRadiance / (1.0 + totalRadiance);
                     #endif
                     `
                 );
@@ -1833,20 +2157,22 @@ class MarsMissionApp {
         }
         
         this.scene.add(this.objects[name]);
-        
-        const glowTexture = this.createRadialTexture();
-        const glowMaterial = new THREE.SpriteMaterial({
-            map: glowTexture,
-            color: color,
-            transparent: true,
-            opacity: 0.6,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-        });
-        
-        const glow = new THREE.Sprite(glowMaterial);
-        glow.scale.set(size * 4, size * 4, 1.0);
-        this.objects[name].add(glow);
+
+        if (this.getRequestedPostMode() !== 'raw') {
+            const glowTexture = this.createRadialTexture();
+            const glowMaterial = new THREE.SpriteMaterial({
+                map: glowTexture,
+                color: color,
+                transparent: true,
+                opacity: 0.6,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            const glow = new THREE.Sprite(glowMaterial);
+            glow.scale.set(size * 4, size * 4, 1.0);
+            this.objects[name].add(glow);
+        }
 
         const atmospherePreset = name === 'earth'
             ? {
@@ -1894,6 +2220,7 @@ class MarsMissionApp {
         const atmosphereMaterial = this.createAtmosphereMaterial(atmospherePreset);
         const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
         atmosphere.userData.atmosphereRadius = atmosphereRadius;
+        atmosphere.visible = this.getRequestedPostMode() !== 'raw';
 
         const planetWorldPos = new THREE.Vector3();
         const sunWorldPos = new THREE.Vector3();
@@ -1953,39 +2280,176 @@ class MarsMissionApp {
         this.scene.add(orbitLine);
     }
 
-    createSpacecraft() {
-        const SpacecraftClass =
-            (typeof globalThis !== 'undefined' && globalThis.Spacecraft) ? globalThis.Spacecraft : undefined;
-        if (typeof SpacecraftClass !== 'function') {
-            console.error('Spacecraft is not defined. Check that /static/spacecraft.js loaded before main.js.');
-            if (typeof showToast === 'function') {
-                showToast('Failed to load spacecraft model (spacecraft.js). Check console/network tab.', 6000);
-            }
-            return;
-        }
+     createSpacecraft() {
+         const SpacecraftClass =
+             (typeof globalThis !== 'undefined' && globalThis.Spacecraft) ? globalThis.Spacecraft : undefined;
+         if (typeof SpacecraftClass !== 'function') {
+             console.error('Spacecraft is not defined. Check that /static/spacecraft.js loaded before main.js.');
+             if (typeof showToast === 'function') {
+                 showToast('Failed to load spacecraft model (spacecraft.js). Check console/network tab.', 6000);
+             }
+             return;
+         }
 
-        this.objects.spacecraft = new SpacecraftClass(this.scene);
-        window.__spacecraft = this.objects.spacecraft;
-    }
+         this.objects.spacecraft = new SpacecraftClass(this.scene);
+         window.__spacecraft = this.objects.spacecraft;
 
-    updateSpacecraftTrail(position) {
-        if (this.objects.spacecraft) {
-            this.objects.spacecraft.addTrailPoint(position);
-        }
-    }
+         if (this.planetShadowEnabled) {
+             this.installPlanetShadowForSpacecraft();
+             this.updatePlanetShadowUniforms();
+         }
 
-    clearSpacecraftTrail() {
-        if (this.objects.spacecraft) {
-            this.objects.spacecraft.clearTrail();
-        }
-    }
+     }
 
-    handleMissionUpdate(data) {
+
+     updateSpacecraftTrail(position) {
+         if (this.objects.spacecraft) {
+             this.objects.spacecraft.addTrailPoint(position);
+         }
+     }
+ 
+     clearSpacecraftTrail() {
+         if (this.objects.spacecraft) {
+             this.objects.spacecraft.clearTrail();
+         }
+     }
+
+     updatePlanetShadowUniforms() {
+         if (!this.planetShadowUniforms) return;
+
+         this.planetShadowUniforms.uSunPosWorld.value.set(0, 0, 0);
+
+         if (this.objects.earth) {
+             this.objects.earth.getWorldPosition(this.planetShadowUniforms.uEarthPosWorld.value);
+         } else {
+             this.planetShadowUniforms.uEarthPosWorld.value.set(1e9, 1e9, 1e9);
+         }
+
+         if (this.objects.mars) {
+             this.objects.mars.getWorldPosition(this.planetShadowUniforms.uMarsPosWorld.value);
+         } else {
+             this.planetShadowUniforms.uMarsPosWorld.value.set(1e9, 1e9, 1e9);
+         }
+     }
+
+     installPlanetShadowForSpacecraft() {
+         if (!this.planetShadowEnabled) return;
+         if (!this.objects || !this.objects.spacecraft) return;
+
+          if (!this.planetShadowUniforms) {
+              const earthRadius = 0.12;
+              const marsRadius = 0.08;
+
+              this.planetShadowUniforms = {
+                  uPlanetShadowEnabled: { value: 1 },
+                  uSunPosWorld: { value: new THREE.Vector3(0, 0, 0) },
+                  uSunPosView: { value: new THREE.Vector3(0, 0, 0) },
+                  uEarthPosWorld: { value: new THREE.Vector3(0, 0, 0) },
+                  uEarthRadius: { value: earthRadius },
+                  uMarsPosWorld: { value: new THREE.Vector3(0, 0, 0) },
+                  uMarsRadius: { value: marsRadius }
+              };
+          }
+
+          const uniforms = this.planetShadowUniforms;
+          uniforms.uPlanetShadowEnabled.value = 1;
+
+
+         const shipMesh = this.objects.spacecraft.getMesh();
+         if (!shipMesh) return;
+
+          const applyToMaterial = (material) => {
+              if (!material) return;
+              if (!(material.isMeshStandardMaterial || material.isMeshPhysicalMaterial)) return;
+              if (material.userData && material.userData.mmPlanetShadowInstalled) return;
+
+              const prevCompile = material.onBeforeCompile;
+              material.onBeforeCompile = (shader) => {
+                  if (typeof prevCompile === 'function') {
+                      prevCompile(shader);
+                  }
+
+
+                 shader.uniforms.uPlanetShadowEnabled = uniforms.uPlanetShadowEnabled;
+                 shader.uniforms.uSunPosWorld = uniforms.uSunPosWorld;
+                 shader.uniforms.uSunPosView = uniforms.uSunPosView;
+                 shader.uniforms.uEarthPosWorld = uniforms.uEarthPosWorld;
+                 shader.uniforms.uEarthRadius = uniforms.uEarthRadius;
+                 shader.uniforms.uMarsPosWorld = uniforms.uMarsPosWorld;
+                 shader.uniforms.uMarsRadius = uniforms.uMarsRadius;
+
+                 shader.vertexShader = shader.vertexShader.replace(
+                     '#include <common>',
+                     `#include <common>\nvarying vec3 vMMPlanetShadowWorldPos;`
+                 );
+
+                 shader.vertexShader = shader.vertexShader.replace(
+                     '#include <begin_vertex>',
+                     `#include <begin_vertex>\nvec4 mmPlanetShadowWorldPos = modelMatrix * vec4(transformed, 1.0);\nvMMPlanetShadowWorldPos = mmPlanetShadowWorldPos.xyz;`
+                 );
+
+                  shader.fragmentShader = shader.fragmentShader.replace(
+                      '#include <common>',
+                      `#include <common>\n\nuniform float uPlanetShadowEnabled;\nuniform vec3 uSunPosWorld;\nuniform vec3 uEarthPosWorld;\nuniform float uEarthRadius;\nuniform vec3 uMarsPosWorld;\nuniform float uMarsRadius;\n\nvarying vec3 vMMPlanetShadowWorldPos;\n\nbool mmPlanetShadowRaySphereOccluded(vec3 rayOrigin, vec3 rayDir, vec3 sphereCenter, float sphereRadius, float maxT) {\n    vec3 oc = rayOrigin - sphereCenter;\n    float b = dot(oc, rayDir);\n    float c = dot(oc, oc) - sphereRadius * sphereRadius;\n    float h = b * b - c;\n    if (h < 0.0) return false;\n    float t = -b - sqrt(h);\n    return t > 0.0 && t < maxT;\n}\n\nfloat mmPlanetShadowFactor() {\n    if (uPlanetShadowEnabled < 0.5) return 1.0;\n    vec3 toSun = uSunPosWorld - vMMPlanetShadowWorldPos;\n    float maxT = length(toSun);\n    if (maxT <= 1e-6) return 1.0;\n    vec3 dir = toSun / maxT;\n\n    if (mmPlanetShadowRaySphereOccluded(vMMPlanetShadowWorldPos, dir, uEarthPosWorld, uEarthRadius, maxT)) return 0.0;\n    if (mmPlanetShadowRaySphereOccluded(vMMPlanetShadowWorldPos, dir, uMarsPosWorld, uMarsRadius, maxT)) return 0.0;\n    return 1.0;\n}`
+                  );
+
+
+                  shader.fragmentShader = shader.fragmentShader.replace(
+                      '#include <lights_fragment_begin>',
+                      `#include <lights_fragment_begin>\n\nfloat mmPlanetShadow = mmPlanetShadowFactor();`
+                  );
+
+                  let mmPatchedPointLight = false;
+                  shader.fragmentShader = shader.fragmentShader.replace(
+                      /getPointLightInfo\(\s*pointLights\s*\[\s*i\s*\]\s*,\s*geometry\s*,\s*directLight\s*\)\s*;\s*/,
+                      (match) => {
+                          mmPatchedPointLight = true;
+                          return `${match}\nif (distance(pointLights[i].position, uSunPosWorld) < 1e-6) { directLight.color *= mmPlanetShadow; }\n`;
+                      }
+                  );
+
+                  if (!mmPatchedPointLight) {
+                      shader.fragmentShader = shader.fragmentShader.replace(
+                          '#include <lights_fragment_end>',
+                          `#include <lights_fragment_end>\n\nif (mmPlanetShadow < 0.5) {\n    reflectedLight.directDiffuse = vec3(0.0);\n    reflectedLight.directSpecular = vec3(0.0);\n}`
+                      );
+                  }
+
+
+
+
+                 material.userData.mmPlanetShadowShader = shader;
+             };
+
+             if (!material.userData) {
+                 material.userData = {};
+             }
+             material.userData.mmPlanetShadowInstalled = true;
+             material.needsUpdate = true;
+         };
+
+         shipMesh.traverse((node) => {
+             if (!node || node.isMesh !== true) return;
+             if (node.isPoints || node.isLine || node.isSprite) return;
+             if (!node.material) return;
+
+             if (Array.isArray(node.material)) {
+                 node.material.forEach((m) => applyToMaterial(m));
+             } else {
+                 applyToMaterial(node.material);
+             }
+         });
+     }
+
+     handleMissionUpdate(data) {
+
         const missionInfo = data.type === 'update' ? data : data.data;
 
-        if (missionInfo.simulation && typeof missionInfo.simulation === 'object') {
-            this.simulationState = { ...this.simulationState, ...missionInfo.simulation };
-        }
+         if (missionInfo.simulation && typeof missionInfo.simulation === 'object') {
+             this.simulationState = { ...this.simulationState, ...missionInfo.simulation };
+             this.syncUiFromSimulationState();
+         }
+
         if (typeof missionInfo.time_days === 'number' && Number.isFinite(missionInfo.time_days)) {
             const nowMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
             const nextDays = missionInfo.time_days;
@@ -2021,23 +2485,24 @@ class MarsMissionApp {
             this.lastSimPacketMs = nowMs;
         }
         
-        // Clear trail on phase change
-        if (missionInfo.phase && this.lastPhase !== missionInfo.phase) {
-            this.clearSpacecraftTrail();
-            this.lastPhase = missionInfo.phase;
-            this.lastSpacecraftPosition = null;
-            if (this.objects.spacecraft) {
-                const mesh = this.objects.spacecraft.getMesh();
-                if (mesh) {
-                    mesh.userData.lookTarget = null;
-                    if (mesh.userData.prevRenderPos) {
-                        mesh.userData.prevRenderPos.copy(mesh.position);
-                    } else {
-                        mesh.userData.prevRenderPos = mesh.position.clone();
-                    }
-                }
-            }
-        }
+         // Clear trail on phase change
+         if (missionInfo.phase && this.lastPhase !== missionInfo.phase) {
+             this.clearSpacecraftTrail();
+             this.lastPhase = missionInfo.phase;
+             this.lastSpacecraftPosition = null;
+             if (this.objects.spacecraft) {
+                 const mesh = this.objects.spacecraft.getMesh();
+                 if (mesh) {
+                     mesh.userData.lookTarget = null;
+                     if (mesh.userData.prevRenderPos) {
+                         mesh.userData.prevRenderPos.copy(mesh.position);
+                     } else {
+                         mesh.userData.prevRenderPos = mesh.position.clone();
+                     }
+                 }
+             }
+         }
+
         
         if (missionInfo.earth_position && this.objects.earth) {
             if (!this.objects.earth.userData.targetPos) this.objects.earth.userData.targetPos = new THREE.Vector3();
@@ -2238,15 +2703,34 @@ class MarsMissionApp {
         }
     }
 
-    updateConnectionStatus(connected) {
-        if (typeof updateStatusIndicator === 'function') {
-            if (connected) {
-                updateStatusIndicator('System Online', 'connected');
-            } else {
-                updateStatusIndicator('System Offline', 'disconnected');
-            }
-        }
-    }
+     updateConnectionStatus(connected) {
+         if (typeof updateStatusIndicator === 'function') {
+             if (connected) {
+                 updateStatusIndicator('System Online', 'connected');
+             } else {
+                 updateStatusIndicator('System Offline', 'disconnected');
+             }
+         }
+     }
+
+     syncUiFromSimulationState() {
+         const state = this.simulationState;
+         if (!state || typeof state !== 'object') return;
+
+         const speed = (typeof state.time_speed === 'number' && Number.isFinite(state.time_speed)) ? state.time_speed : null;
+         if (speed === null) return;
+
+         const timeSpeedSlider = document.getElementById('time-speed');
+         if (timeSpeedSlider) {
+             timeSpeedSlider.value = String(speed);
+         }
+
+         const speedValue = document.getElementById('speed-value');
+         if (speedValue) {
+             speedValue.textContent = speed.toFixed(1);
+         }
+     }
+
 
     updateLensFlare() {
         if (!this.flareElements || !this.objects.sun) return;
@@ -2537,13 +3021,16 @@ class MarsMissionApp {
         this.camera.updateMatrixWorld();
         this.camera.matrixWorldInverse.copy(this.camera.matrixWorld).invert();
 
-        if (this.objects.sun) {
-            this.objects.sun.rotation.y += 0.001;
+         if (this.objects.sun) {
+             this.objects.sun.rotation.y += 0.001;
+ 
+             this.objects.sun.getWorldPosition(this.sunWorldPosition);
 
-            this.objects.sun.getWorldPosition(this.sunWorldPosition);
-            
-            this.sunViewPosition.copy(this.sunWorldPosition);
-            this.sunViewPosition.applyMatrix4(this.camera.matrixWorldInverse);
+             this.updatePlanetShadowUniforms();
+             
+             this.sunViewPosition.copy(this.sunWorldPosition);
+             this.sunViewPosition.applyMatrix4(this.camera.matrixWorldInverse);
+
 
             if (this.earthDayShader && this.earthDayShader.uniforms.sunPositionView) {
                 this.earthDayShader.uniforms.sunPositionView.value.copy(this.sunViewPosition);
@@ -2559,7 +3046,7 @@ class MarsMissionApp {
             }
         }
 
-        if (this.objects.sunGlow) {
+        if (this.objects.sunGlow && this.objects.sunGlow.length >= 2) {
             const time = Date.now() * 0.002;
             const pulse = 1.0 + Math.sin(time) * 0.08;
             this.objects.sunGlow[0].scale.set(0.85 * pulse, 0.85 * pulse, 1.0);
@@ -2611,9 +3098,19 @@ class MarsMissionApp {
             this.cinematicPass.uniforms.time.value = Date.now() * 0.001;
         }
 
-        this.updateLensFlare();
+        const postMode = this.getRequestedPostMode();
+        const isRawPost = postMode === 'raw';
+
+        if (!isRawPost) {
+            this.updateLensFlare();
+        } else {
+            this.flareElements.forEach(f => f.sprite.visible = false);
+        }
+
+        const disableBloom = isRawPost;
 
         if (
+            !disableBloom &&
             this.bloomComposer &&
             this.finalComposer &&
             this.darkMaterial &&
@@ -2680,6 +3177,12 @@ class MarsMissionApp {
                 this.additivePass.uniforms.tBloom.value = this.bloomComposer.readBuffer.texture;
             }
 
+            this.finalComposer.render();
+        } else if (this.finalComposer && this.additivePass) {
+            if (this.additivePass.uniforms) {
+                this.additivePass.uniforms.tBloom.value = null;
+                this.additivePass.uniforms.bloomStrength.value = 0.0;
+            }
             this.finalComposer.render();
         } else if (this.renderer && this.scene && this.camera) {
             this.renderer.render(this.scene, this.camera);

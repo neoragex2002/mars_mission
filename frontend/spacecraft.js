@@ -144,9 +144,13 @@ class Spacecraft {
                  const root = gltf.scene || gltf.scenes[0];
                  if (!root) {
                      console.warn('GLB loaded without a scene; falling back to procedural model.');
-                  this.createProceduralModel();
-                  this.applyIblIntensity();
-                  return;
+                   this.createProceduralModel();
+                   this.applyIblIntensity();
+                   if (typeof window !== 'undefined' && window.app && typeof window.app.installPlanetShadowForSpacecraft === 'function') {
+                       window.app.installPlanetShadowForSpacecraft();
+                   }
+                   return;
+
 
              }
 
@@ -165,15 +169,23 @@ class Spacecraft {
                      this.modelCalibrationRoot.rotateZ(this.modelRollCorrection);
                  }
  
-                 this.applyIblIntensity();
-             },
+                  this.applyIblIntensity();
+                  if (typeof window !== 'undefined' && window.app && typeof window.app.installPlanetShadowForSpacecraft === 'function') {
+                      window.app.installPlanetShadowForSpacecraft();
+                  }
+              },
+
 
              undefined,
              (error) => {
-                  console.warn('Failed to load GatewayCore GLB; falling back to procedural model.', error);
-                  this.createProceduralModel();
-                  this.applyIblIntensity();
-              }
+                   console.warn('Failed to load GatewayCore GLB; falling back to procedural model.', error);
+                   this.createProceduralModel();
+                   this.applyIblIntensity();
+                   if (typeof window !== 'undefined' && window.app && typeof window.app.installPlanetShadowForSpacecraft === 'function') {
+                       window.app.installPlanetShadowForSpacecraft();
+                   }
+               }
+
 
          );
      }
@@ -565,40 +577,40 @@ class Spacecraft {
     createThrusterEffect() {
         this.thrusterConfig = {
             core: {
-                particleCount: 250,
+                particleCount: 220,
                 originX: 0.0,
                 originZ: -0.05,
                 originY: -0.01,
-                baseSize: 0.0016,
-                sizeJitter: 0.0011,
-                baseOpacity: 0.2,
-                lifeMin: 0.18,
-                lifeMax: 0.32,
+                baseSize: 0.0012,
+                sizeJitter: 0.00065,
+                baseOpacity: 0.22,
+                lifeMin: 0.16,
+                lifeMax: 0.28,
                 speedMin: 0.004,
-                speedMax: 0.007,
-                spread: 0.00015,
-                colorStart: new THREE.Color(0xbfe9ff),
-                colorEnd: new THREE.Color(0x4aa3ff)
+                speedMax: 0.0065,
+                spread: 0.00008,
+                colorStart: new THREE.Color(0xeaf6ff),
+                colorEnd: new THREE.Color(0xa9d2ff)
             },
             plume: {
-                particleCount: 200,
+                particleCount: 180,
                 originX: 0.0,
                 originZ: -0.05,
                 originY: -0.01,
-                baseSize: 0.003,
-                sizeJitter: 0.0035,
-                baseOpacity: 0.2,
-                lifeMin: 0.45,
-                lifeMax: 0.9,
-                speedMin: 0.002,
-                speedMax: 0.0045,
-                spread: 0.0010,
-                colorStart: new THREE.Color(0x7c4dff),
-                colorEnd: new THREE.Color(0x2bdcff)
+                baseSize: 0.0022,
+                sizeJitter: 0.0018,
+                baseOpacity: 0.16,
+                lifeMin: 0.55,
+                lifeMax: 1.1,
+                speedMin: 0.0018,
+                speedMax: 0.0040,
+                spread: 0.00085,
+                colorStart: new THREE.Color(0xb9ddff),
+                colorEnd: new THREE.Color(0x4f9dff)
             },
             update: {
                 dtLife: 0.03,
-                jitterFactor: 0.08,
+                jitterFactor: 0.07,
                 minSizeRatio: 0.05
             }
         };

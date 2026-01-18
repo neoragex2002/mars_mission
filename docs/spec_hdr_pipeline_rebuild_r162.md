@@ -185,7 +185,40 @@
 一致性要求：
 - 反复刷新或切换参数后，材质不会“越来越亮/越来越暗”（baseline 未漂移）。
 
-### 8.6 Console 噪音检查
+### 8.5.1 IBL 环境色（用于排查偏色）
+- 目的：将 IBL 的“色调”与背景（星空/星云）解耦，快速验证是否存在 IBL 带来的蓝紫偏色。
+- 打开：`/?post=raw&bg=off&iblEnv=neutral&ibl=1&debug=luma`
+- 期望：
+  - IBL 填充仍存在（`ibl=1`），但色偏显著减弱（更接近中性灰）。
+  - 与 `/?post=raw&bg=off&iblEnv=default&ibl=1` 对比，阴影抬升更“干净”，不再明显偏蓝/偏紫。
+
+### 8.5.2 深空 IBL（低频银河 + 太阳反射瓣）
+- 打开：`/?post=raw&bg=off&iblEnv=space&ibl=1&debug=luma`
+- 期望：
+  - 阴影不被明显抬平（黑位仍然接近黑）。
+  - 金属表面能看到更“自然”的环境反射高光层次，但不会出现明显蓝紫偏色。
+
+### 8.6 Phase 2（物理摄影感照明）快速验证
+- 打开：`/?post=raw`
+- 期望：
+  - bloom/flare/planet glow/atmosphere 不参与，便于专注调光照。
+  - 夜面更暗，层次更强（不再被 ambient/hemi 大幅抬平）。
+
+- 调参示例：`/?post=raw&exp=0.9&sun=3.8&amb=0.03&hemi=0.03`
+- 期望：
+  - exposure/主光/补光变化是可解释的：降低 `amb/hemi` 会让阴影更深；提高 `exp` 会整体抬亮。
+
+### 8.7 背景与夜灯调试
+- 背景（星光/星云）开关：
+  - 关闭背景：`/?bg=off`
+  - 背景变暗：`/?bg=dim`
+- 地球夜灯强度：`/?city=0.3`（更弱） / `/?city=1.0`（默认） / `/?city=1.6`（更强，建议仅对比用）
+
+推荐调试组合：
+- `/?post=raw&bg=off&debug=exposure`（纯光照/曝光标定）
+- `/?post=raw&bg=dim&city=0.3`（保留少量背景但不干扰夜面）
+
+### 8.8 Console 噪音检查
 - 期望：
   - 不再出现 `/favicon.ico 404`（已使用 `data:,` icon）。
   - `Texture marked for update but no image data found` 警告显著减少/消失。
@@ -201,6 +234,7 @@
 - OutputPass：加入 `finalComposer` 末端。
 - Debug pass：`?debug=exposure` / `?debug=luma`，位于 OutputPass 前。
 - `iblIntensity` Option A：`?ibl=`，集中管理 PBR 材质 `envMapIntensity`，保存 baseline 防漂移。
+- Phase 2（物理摄影感照明）第一步：支持 `?exp`/`?sun`/`?amb`/`?hemi` 并默认降低 fill light。
 
 ### 升级后遇到的问题与处理
 - r162 升级导致 `onBeforeCompile` 注入的旧 shader 变量名不兼容（`vUv` / `emissiveMapTexelToLinear` 等），引发 Shader 编译失败并表现为“贴图不显示”。已按 r162 chunk 的命名修复。
