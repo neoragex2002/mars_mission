@@ -96,15 +96,18 @@ class Spacecraft {
 
         this.applyIblIntensity();
 
-        if (typeof window !== 'undefined' && window.app) {
-            if (typeof window.app.installPlanetShadowForSpacecraft === 'function') {
-                window.app.installPlanetShadowForSpacecraft();
-            }
-            if (typeof window.app.installContactShadowForSpacecraft === 'function') {
-                window.app.installContactShadowForSpacecraft();
-            }
-        }
-    }
+	        if (typeof window !== 'undefined' && window.app) {
+	            if (typeof window.app.installPlanetShadowForSpacecraft === 'function') {
+	                window.app.installPlanetShadowForSpacecraft();
+	            }
+	            if (typeof window.app.installContactShadowForSpacecraft === 'function') {
+	                window.app.installContactShadowForSpacecraft();
+	            }
+	            if (typeof window.app.installSpacecraftSelfShadowForSpacecraft === 'function') {
+	                window.app.installSpacecraftSelfShadowForSpacecraft();
+	            }
+	        }
+	    }
 
     applyIblIntensity() {
         if (typeof window === 'undefined') return;

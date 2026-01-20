@@ -40,6 +40,9 @@
 ### 1.7 只看飞船 Contact AO（白模基准）
 - `/?post=raw&bg=off&mat=white&ao=contact&amb=0&hemi=0&ibl=0`
 
+### 1.8 飞船自阴影（推荐替代 contact 做“正确自阴影”）
+- `/?post=raw&bg=off&mat=white&sShadow=1&ps=1&amb=0&hemi=0&ibl=0`
+
 ---
 
 ## 2. 抗锯齿（AA）
@@ -261,6 +264,22 @@
 
 ---
 
+## 8.1 飞船自阴影（太阳直射 shadow map，仅飞船）
+
+参数：`sShadow`
+- **默认值**：关闭
+- **开启**：`sShadow=1`
+- **关闭**：`sShadow=0` / `off` / `false`
+
+含义：
+- 为飞船启用“太阳直射自阴影”（Directional shadow map），只影响飞船的太阳直射贡献（directDiffuse/directSpecular），不影响 IBL/ambient/hemi。
+- 与 `ps=1`（行星遮挡太阳直射）相容：当飞船片元处于行星本影时，直射为 0，因此自阴影不会在本影内产生可见变化。
+
+推荐标定组合：
+- `/?post=raw&bg=off&mat=white&sShadow=1&ps=1&amb=0&hemi=0&ibl=0`
+
+---
+
 ## 9. Contact Shadows / SSAO（Phase 3A：Contact Shadows 已实现）
 
 参数：`ao`
@@ -329,6 +348,7 @@ Contact Shadows 调试（已实现，全屏替换输出，不经过 tone mapping
 | Background | `city` | `1.0` | 地球夜灯 0..2 |
 | Warp | `speed` / `warp` | (无) | 刷新后强制 Warp（0..5） |
 | Shadow | `ps` | `off` | 行星遮挡太阳直射（飞船解析） |
+| Shadow | `sShadow` | `off` | 飞船自阴影（太阳直射 shadow map，仅飞船） |
 | AO | `ao` | `off` | `off` / `contact` / `ssao`（Phase 3） |
 | AO | `csDist` | `0.18` | Contact raymarch 最大距离（0..0.5，Three.js scene units） |
 | AO | `csThick` | `0.003` | Contact 厚度/bias（0..0.05） |

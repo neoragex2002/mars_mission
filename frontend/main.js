@@ -613,6 +613,9 @@ class MarsMissionApp {
 
          this.contactShadowUniforms = null;
 
+        this.spacecraftSelfShadowEnabled = this.isSpacecraftSelfShadowEnabled();
+        this.spacecraftSelfShadowLight = null;
+
          this.contactShadowSceneDepthRT = null;
          this.contactShadowShipDepthRT = null;
          this.contactShadowDepthMaterial = null;
@@ -889,6 +892,22 @@ class MarsMissionApp {
           }
           return true;
       }
+
+     isSpacecraftSelfShadowEnabled() {
+         if (typeof window === 'undefined' || !window.location) {
+             return false;
+         }
+         if (typeof URLSearchParams === 'undefined') {
+             return false;
+         }
+
+         const params = new URLSearchParams(window.location.search || '');
+         const raw = String(params.get('sShadow') || '').trim().toLowerCase();
+         if (!raw || raw === '0' || raw === 'off' || raw === 'false') {
+             return false;
+         }
+         return true;
+     }
 
 	     getRequestedAoMode() {
 	         if (typeof window === 'undefined' || !window.location) {
@@ -1802,23 +1821,179 @@ class MarsMissionApp {
 	     setupLighting() {
 	         // Ambient light
 	         const ambientLight = new THREE.AmbientLight(0x101820, this.getRequestedAmbientIntensity());
+	         // Keep layer 0 (default) and also allow lighting the spacecraft-only layer when needed.
+	         ambientLight.layers.enable(CONTACT_SHADOW_LAYER);
 	         this.scene.add(ambientLight);
- 
-         const hemiLight = new THREE.HemisphereLight(0xfff2e3, 0x05080c, this.getRequestedHemisphereIntensity());
-         this.scene.add(hemiLight);
- 
-         // Point light from sun
-         const sunLight = new THREE.PointLight(0xfff2e3, this.getRequestedSunIntensity(), 0, 2);
-         sunLight.position.set(0, 0, 0);
-         sunLight.castShadow = true;
-         sunLight.shadow.mapSize.width = 2048;
-         sunLight.shadow.mapSize.height = 2048;
-         sunLight.shadow.camera.near = 0.5;
-         sunLight.shadow.camera.far = 500;
-         sunLight.shadow.bias = -0.0008;
-         this.scene.add(sunLight);
-         this.sunLight = sunLight;
-     }
+	         this.ambientLight = ambientLight;
+	 
+	     const hemiLight = new THREE.HemisphereLight(0xfff2e3, 0x05080c, this.getRequestedHemisphereIntensity());
+	     hemiLight.layers.enable(CONTACT_SHADOW_LAYER);
+	     this.scene.add(hemiLight);
+	     this.hemiLight = hemiLight;
+	 
+	     // Point light from sun
+	     const sunLight = new THREE.PointLight(0xfff2e3, this.getRequestedSunIntensity(), 0, 2);
+	     sunLight.position.set(0, 0, 0);
+	     // Always keep the sun PointLight on the default layer; `sShadow=1` moves the spacecraft off layer 0.
+	     sunLight.layers.set(0);
+	     // NOTE: When `sShadow=1` we use a ship-only DirectionalLight shadow map for self-shadowing,
+	     // and keep the sun PointLight shadow disabled to avoid expensive cube shadow updates and
+	     // double-shadowing artifacts.
+	     sunLight.castShadow = !this.spacecraftSelfShadowEnabled;
+	     if (sunLight.castShadow) {
+	         sunLight.shadow.mapSize.width = 2048;
+	         sunLight.shadow.mapSize.height = 2048;
+	         sunLight.shadow.camera.near = 0.5;
+	         sunLight.shadow.camera.far = 500;
+	         sunLight.shadow.bias = -0.0008;
+	     }
+	     this.scene.add(sunLight);
+	     this.sunLight = sunLight;
+
+	     if (this.spacecraftSelfShadowEnabled) {
+	         this.setupSpacecraftSelfShadowLight();
+	     }
+	 }
+
+		 setupSpacecraftSelfShadowLight() {
+		     if (!this.scene) return;
+		     if (!this.renderer || !this.renderer.shadowMap || this.renderer.shadowMap.enabled !== true) {
+		         return;
+		     }
+
+	     if (this.spacecraftSelfShadowLight) {
+	         return;
+	     }
+
+	     // NOTE: keep intensity > 0 so three.js includes the light in the lighting + shadow pipeline.
+	     // When `sShadow=1`, the spacecraft is moved off the sun PointLight layer and is lit by this
+	     // DirectionalLight (with intensity adjusted per-frame for 1/r^2 falloff).
+	     const light = new THREE.DirectionalLight(0xffffff, 0.0001);
+	     light.name = 'mm_spacecraftSelfShadow';
+	     light.castShadow = true;
+
+		     // Only affect / render shadows for the spacecraft layer.
+		     light.layers.set(CONTACT_SHADOW_LAYER);
+
+		     // Slightly higher-res + less blur for clearer self-shadow edges.
+		     light.shadow.mapSize.set(2048, 2048);
+		     light.shadow.bias = -0.00003;
+		     light.shadow.normalBias = 0.002;
+		     light.shadow.radius = 0;
+
+	     // Initialize a reasonable shadow camera volume (will be tightened per-frame once the ship exists).
+	     const cam = light.shadow.camera;
+	     cam.left = -1;
+	     cam.right = 1;
+	     cam.top = 1;
+	     cam.bottom = -1;
+	     cam.near = 0.1;
+	     cam.far = 50;
+	     cam.updateProjectionMatrix();
+
+	     this.scene.add(light);
+	     this.scene.add(light.target);
+
+	     this.spacecraftSelfShadowLight = light;
+
+	     if (!this._sShadowBox) {
+	         this._sShadowBox = new THREE.Box3();
+	     }
+	     if (!this._sShadowBoxCenter) {
+	         this._sShadowBoxCenter = new THREE.Vector3();
+	     }
+	     if (!this._sShadowBoxSize) {
+	         this._sShadowBoxSize = new THREE.Vector3();
+	     }
+	     if (!this._sShadowCorner) {
+	         this._sShadowCorner = new THREE.Vector3();
+	     }
+	     if (!this._sShadowCorners) {
+	         this._sShadowCorners = Array.from({ length: 8 }, () => new THREE.Vector3());
+	     }
+	     if (!this._sShadowSphere) {
+	         this._sShadowSphere = new THREE.Sphere();
+	     }
+	     if (!this._sShadowSunDir) {
+	         this._sShadowSunDir = new THREE.Vector3();
+	     }
+	     if (!this._sShadowSunPos) {
+	         this._sShadowSunPos = new THREE.Vector3();
+	     }
+	 }
+
+	 updateSpacecraftSelfShadowLight() {
+	     if (!this.spacecraftSelfShadowEnabled) return;
+	     const light = this.spacecraftSelfShadowLight;
+	     if (!light || !light.shadow || !light.shadow.camera) return;
+	     if (!this.scene) return;
+	     if (!this.objects || !this.objects.spacecraft || typeof this.objects.spacecraft.getMesh !== 'function') return;
+
+	     const shipMesh = this.objects.spacecraft.getMesh();
+	     if (!shipMesh) return;
+
+	     const box = this._sShadowBox;
+	     const center = this._sShadowBoxCenter;
+	     const size = this._sShadowBoxSize;
+
+	     box.setFromObject(shipMesh);
+	     if (!Number.isFinite(box.min.x) || !Number.isFinite(box.max.x)) {
+	         return;
+	     }
+
+	     box.getCenter(center);
+	     box.getSize(size);
+	     box.getBoundingSphere(this._sShadowSphere);
+	     const shipRadius = Math.max(0.01, this._sShadowSphere.radius);
+
+	     // Sun is at world origin today; keep the hook for future where it may move.
+	     if (this.sunWorldPosition) {
+	         this._sShadowSunPos.copy(this.sunWorldPosition);
+	     } else {
+	         this._sShadowSunPos.set(0, 0, 0);
+	     }
+
+	     this._sShadowSunDir.copy(center).sub(this._sShadowSunPos);
+	     if (this._sShadowSunDir.lengthSq() <= 1e-12) {
+	         this._sShadowSunDir.set(1, 0, 0);
+	     } else {
+	         this._sShadowSunDir.normalize();
+	     }
+
+	     const maxExtent = Math.max(size.x, size.y, size.z);
+	     const lightDistance = Math.max(2.0, shipRadius * 10.0, maxExtent * 6.0);
+	     light.position.copy(center).sub(this._sShadowCorner.copy(this._sShadowSunDir).multiplyScalar(lightDistance));
+	     light.target.position.copy(center);
+	     light.target.updateMatrixWorld();
+	     light.updateMatrixWorld();
+
+	     // Keep shadow camera volume simple and safe using the ship's bounding sphere.
+	     // (A tight AABB-in-light-space fit is possible, but this is more robust.)
+	     const shadowCam = light.shadow.camera;
+	     const marginXY = Math.max(0.02, shipRadius * 0.6);
+	     const marginZ = Math.max(0.2, shipRadius * 4.0);
+
+	     const r = shipRadius + marginXY;
+	     shadowCam.left = -r;
+	     shadowCam.right = r;
+	     shadowCam.bottom = -r;
+	     shadowCam.top = r;
+	     shadowCam.near = Math.max(0.01, lightDistance - shipRadius - marginZ);
+	     shadowCam.far = lightDistance + shipRadius + marginZ;
+	     shadowCam.updateProjectionMatrix();
+
+	     // Approximate 1/r^2 falloff to match the sun PointLight intensity at the spacecraft distance.
+	     const distToSun = Math.max(0.01, center.distanceTo(this._sShadowSunPos));
+	     if (this.sunLight && typeof this.sunLight.intensity === 'number') {
+	         light.intensity = Math.max(0.0001, this.sunLight.intensity / (distToSun * distToSun));
+	     } else {
+	         light.intensity = 0.0001;
+	     }
+
+	     if (light.shadow) {
+	         light.shadow.needsUpdate = true;
+	     }
+	 }
 
 
     createNebulaTexture() {
@@ -2991,11 +3166,36 @@ class MarsMissionApp {
 	             this.updatePlanetShadowUniforms();
 	         }
 
-	         if (this.aoMode === 'contact') {
-	             this.installContactShadowForSpacecraft();
-	         }
+		         if (this.aoMode === 'contact') {
+		             this.installContactShadowForSpacecraft();
+		         }
 
-	     }
+			         if (this.spacecraftSelfShadowEnabled) {
+			             this.applySpacecraftSelfShadowFlags();
+			         }
+
+		     }
+
+	    applySpacecraftSelfShadowFlags() {
+	        if (!this.spacecraftSelfShadowEnabled) return;
+	        if (!this.objects || !this.objects.spacecraft || typeof this.objects.spacecraft.getMesh !== 'function') return;
+	        const shipMesh = this.objects.spacecraft.getMesh();
+	        if (!shipMesh) return;
+	        if (this.camera && this.camera.layers && typeof this.camera.layers.enable === 'function') {
+	            // Ensure the main camera can still see the spacecraft once we remove it from layer 0.
+	            this.camera.layers.enable(CONTACT_SHADOW_LAYER);
+	        }
+	        shipMesh.traverse((node) => {
+	            if (!node || node.isMesh !== true) return;
+	            if (node.isPoints || node.isLine || node.isSprite) return;
+	            if (node.layers && typeof node.layers.enable === 'function' && typeof node.layers.disable === 'function') {
+	                node.layers.enable(CONTACT_SHADOW_LAYER);
+	                node.layers.disable(0);
+	            }
+	            node.castShadow = true;
+	            node.receiveShadow = true;
+	        });
+	    }
 
     ensureContactShadowUniforms() {
         if (this.contactShadowUniforms) {
@@ -3203,6 +3403,18 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
                 applyToMaterial(node.material);
             }
         });
+    }
+
+    installSpacecraftSelfShadowForSpacecraft() {
+        if (!this.spacecraftSelfShadowEnabled) return;
+
+        // The spacecraft GLTF loads asynchronously; ensure new meshes get the correct layer + shadow flags
+        // after material swaps / model load completes.
+        if (!this.spacecraftSelfShadowLight) {
+            this.setupSpacecraftSelfShadowLight();
+        }
+        this.applySpacecraftSelfShadowFlags();
+        this.updateSpacecraftSelfShadowLight();
     }
 
 
@@ -3933,12 +4145,12 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
          if (this.objects.sun) {
              this.objects.sun.rotation.y += 0.001;
  
-             this.objects.sun.getWorldPosition(this.sunWorldPosition);
+	             this.objects.sun.getWorldPosition(this.sunWorldPosition);
 
-             this.updatePlanetShadowUniforms();
-             
-             this.sunViewPosition.copy(this.sunWorldPosition);
-             this.sunViewPosition.applyMatrix4(this.camera.matrixWorldInverse);
+	             this.updatePlanetShadowUniforms();
+	             
+	             this.sunViewPosition.copy(this.sunWorldPosition);
+	             this.sunViewPosition.applyMatrix4(this.camera.matrixWorldInverse);
 
 
             if (this.earthDayShader && this.earthDayShader.uniforms.sunPositionView) {
@@ -3951,8 +4163,10 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
                 this.earthLightsShader.uniforms.sunPositionView.value.copy(this.sunViewPosition);
                 if (this.earthLightsShader.uniforms.time) {
                     this.earthLightsShader.uniforms.time.value = Date.now() * 0.001;
-                }
-            }
+	            }
+	        }
+
+	        this.updateSpacecraftSelfShadowLight();
         }
 
         if (this.objects.sunGlow && this.objects.sunGlow.length >= 2) {
