@@ -148,6 +148,30 @@ const DebugViewShader = {
     `
 };
 
+const BloomDebugShader = {
+    uniforms: {
+        tBloom: { value: null }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tBloom;
+        varying vec2 vUv;
+
+        void main() {
+            vec3 bloom = texture2D(tBloom, vUv).rgb;
+            // Debug visualization: compress HDR values for structure readability.
+            bloom = bloom / (vec3(1.0) + bloom);
+            gl_FragColor = vec4(bloom, 1.0);
+        }
+    `
+};
+
 const ContactShadowShader = {
     uniforms: {
         tDiffuse: { value: null },
@@ -934,6 +958,10 @@ class MarsMissionApp {
         this.bloomOcclusionMaterials = new Map();
         this.bloomHiddenObjects = new Map();
         this.darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        this._mmBlackTexture = null;
+        this.bloomDebugScene = null;
+        this.bloomDebugCamera = null;
+        this.bloomDebugMaterial = null;
 
         // Camera smoothing
         this.camLerpFactor = 0.05;
@@ -1170,6 +1198,95 @@ class MarsMissionApp {
         return 'default';
     }
 
+    getRequestedBloomEnabled(fallbackEnabled) {
+        const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : true;
+        if (typeof window === 'undefined' || !window.location) {
+            return fallback;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return fallback;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('bloom') || '').trim().toLowerCase();
+        if (!raw) {
+            return fallback;
+        }
+        if (raw === '0' || raw === 'off' || raw === 'false' || raw === 'none') {
+            return false;
+        }
+        return true;
+    }
+
+    getRequestedBloomDebugMode() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 0;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 0;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('bloomDebug') || '').trim();
+        if (!raw) {
+            return 0;
+        }
+
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return 0;
+        }
+
+        return Math.max(0, Math.min(1, Math.floor(value)));
+    }
+
+    getRequestedBloomParams() {
+        if (typeof window === 'undefined' || !window.location) {
+            return {};
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return {};
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+
+        const parseNum = (raw) => {
+            if (raw === null || raw === undefined) return null;
+            const v = Number(raw);
+            return Number.isFinite(v) ? v : null;
+        };
+
+        const strength = parseNum(params.get('bloomStr'));
+        const radius = parseNum(params.get('bloomRad'));
+        const threshold = parseNum(params.get('bloomTh'));
+
+        return {
+            strength: strength !== null ? THREE.MathUtils.clamp(strength, 0.0, 3.0) : undefined,
+            radius: radius !== null ? THREE.MathUtils.clamp(radius, 0.0, 1.0) : undefined,
+            threshold: threshold !== null ? THREE.MathUtils.clamp(threshold, 0.0, 5.0) : undefined
+        };
+    }
+
+    getRequestedSunGlowEnabled(fallbackEnabled) {
+        const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : true;
+        if (typeof window === 'undefined' || !window.location) {
+            return fallback;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return fallback;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('sunGlow') || '').trim().toLowerCase();
+        if (!raw) {
+            return fallback;
+        }
+        if (raw === '0' || raw === 'off' || raw === 'false' || raw === 'none') {
+            return false;
+        }
+        return true;
+    }
+
     getRequestedBgMode() {
         if (typeof window === 'undefined' || !window.location) {
             return 'default';
@@ -1404,21 +1521,21 @@ class MarsMissionApp {
 
     getRequestedAmbientIntensity() {
         if (typeof window === 'undefined' || !window.location) {
-            return 0.03;
+            return 0.0;
         }
         if (typeof URLSearchParams === 'undefined') {
-            return 0.03;
+            return 0.0;
         }
 
         const params = new URLSearchParams(window.location.search || '');
         const raw = String(params.get('amb') || '').trim();
         if (!raw) {
-            return 0.03;
+            return 0.0;
         }
 
         const value = Number(raw);
         if (!Number.isFinite(value)) {
-            return 0.03;
+            return 0.0;
         }
 
         return Math.max(0, value);
@@ -1426,21 +1543,21 @@ class MarsMissionApp {
 
     getRequestedHemisphereIntensity() {
         if (typeof window === 'undefined' || !window.location) {
-            return 0.03;
+            return 0.0;
         }
         if (typeof URLSearchParams === 'undefined') {
-            return 0.03;
+            return 0.0;
         }
 
         const params = new URLSearchParams(window.location.search || '');
         const raw = String(params.get('hemi') || '').trim();
         if (!raw) {
-            return 0.03;
+            return 0.0;
         }
 
         const value = Number(raw);
         if (!Number.isFinite(value)) {
-            return 0.03;
+            return 0.0;
         }
 
         return Math.max(0, value);
@@ -1941,23 +2058,47 @@ class MarsMissionApp {
             });
         };
 
-	        this.bloomComposer = new THREE.EffectComposer(this.renderer, createRenderTargetForComposer());
-	        if (typeof this.bloomComposer.setPixelRatio === 'function') {
-	            this.bloomComposer.setPixelRatio(pixelRatio);
+	        const postMode = this.getRequestedPostMode();
+	        const isRawPost = postMode === 'raw';
+	        const bloomEnabled = this.getRequestedBloomEnabled(!isRawPost);
+	        const bloomDebugMode = this.getRequestedBloomDebugMode();
+	        const wantsBloom = bloomEnabled || bloomDebugMode !== 0;
+
+	        if (wantsBloom) {
+	            this.bloomComposer = new THREE.EffectComposer(this.renderer, createRenderTargetForComposer());
+	            if (typeof this.bloomComposer.setPixelRatio === 'function') {
+	                this.bloomComposer.setPixelRatio(pixelRatio);
+	            }
+	            this.bloomComposer.setSize(width, height);
+	            this.bloomComposer.renderToScreen = false;
+
+	            const bloomRenderPass = new THREE.RenderPass(this.scene, this.camera);
+	            this.bloomComposer.addPass(bloomRenderPass);
+
+	            const bloomDefaults = { strength: 0.95, radius: 0.42, threshold: 0.82 };
+	            const bloomParams = this.getRequestedBloomParams();
+	            const bloomStrength =
+	                (typeof bloomParams.strength === 'number') ? bloomParams.strength : bloomDefaults.strength;
+	            const bloomRadius =
+	                (typeof bloomParams.radius === 'number') ? bloomParams.radius : bloomDefaults.radius;
+	            const bloomThreshold =
+	                (typeof bloomParams.threshold === 'number') ? bloomParams.threshold : bloomDefaults.threshold;
+
+	            this.bloomPass = new THREE.UnrealBloomPass(
+	                new THREE.Vector2(width * pixelRatio, height * pixelRatio),
+	                bloomStrength,
+	                bloomRadius,
+	                bloomThreshold
+	            );
+	            this.bloomComposer.addPass(this.bloomPass);
+
+	            if (bloomDebugMode !== 0) {
+	                this.setupBloomDebugView();
+	            }
+	        } else {
+	            this.bloomComposer = null;
+	            this.bloomPass = null;
 	        }
-	        this.bloomComposer.setSize(width, height);
-	        this.bloomComposer.renderToScreen = false;
-
-        const bloomRenderPass = new THREE.RenderPass(this.scene, this.camera);
-        this.bloomComposer.addPass(bloomRenderPass);
-
-        this.bloomPass = new THREE.UnrealBloomPass(
-            new THREE.Vector2(width * pixelRatio, height * pixelRatio),
-            0.95,
-            0.42,
-            0.82
-        );
-        this.bloomComposer.addPass(this.bloomPass);
 
 	        this.finalComposer = new THREE.EffectComposer(
 	            this.renderer,
@@ -1994,7 +2135,7 @@ class MarsMissionApp {
 	        // not as a post-process pass. We keep csDebug as a full-screen debug view.
 
         this.additivePass = new THREE.ShaderPass(AdditiveBlendShader);
-        this.additivePass.uniforms.tBloom.value = null;
+        this.additivePass.uniforms.tBloom.value = this.ensureBlackTexture();
         this.additivePass.uniforms.bloomStrength.value = 1.0;
         this.finalComposer.addPass(this.additivePass);
 
@@ -2308,6 +2449,53 @@ class MarsMissionApp {
                     quad.frustumCulled = false;
                     this.ssaoDebugScene.add(quad);
                 }
+            }
+
+            setupBloomDebugView() {
+                if (this.bloomDebugScene) return;
+                if (!this.renderer) return;
+
+                this.bloomDebugScene = new THREE.Scene();
+                this.bloomDebugCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+                this.bloomDebugMaterial = new THREE.ShaderMaterial({
+                    uniforms: THREE.UniformsUtils.clone(BloomDebugShader.uniforms),
+                    vertexShader: BloomDebugShader.vertexShader,
+                    fragmentShader: BloomDebugShader.fragmentShader,
+                    depthTest: false,
+                    depthWrite: false
+                });
+                this.bloomDebugMaterial.toneMapped = false;
+
+                const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.bloomDebugMaterial);
+                quad.frustumCulled = false;
+                this.bloomDebugScene.add(quad);
+            }
+
+            renderBloomDebug(bloomTexture) {
+                if (!this.renderer) return false;
+                if (!this.bloomDebugMaterial || !this.bloomDebugScene || !this.bloomDebugCamera) return false;
+
+                const tex = bloomTexture || this.ensureBlackTexture();
+                if (!tex) return false;
+
+                const uniforms = this.bloomDebugMaterial.uniforms;
+                uniforms.tBloom.value = tex;
+
+                const renderer = this.renderer;
+                const prevToneMapping = renderer.toneMapping;
+                const prevExposure = renderer.toneMappingExposure;
+                const prevTarget = renderer.getRenderTarget();
+
+                renderer.toneMapping = THREE.NoToneMapping;
+                renderer.toneMappingExposure = 1.0;
+                renderer.setRenderTarget(null);
+                renderer.render(this.bloomDebugScene, this.bloomDebugCamera);
+
+                renderer.setRenderTarget(prevTarget);
+                renderer.toneMapping = prevToneMapping;
+                renderer.toneMappingExposure = prevExposure;
+
+                return true;
             }
 
 		    setupContactShadowDebugView() {
@@ -3064,6 +3252,7 @@ if (uMMSsaoEnabled > 0.5) {
         canvas.width = 512;
         canvas.height = 512;
         const context = canvas.getContext('2d');
+        context.clearRect(0, 0, canvas.width, canvas.height);
         const gradient = context.createRadialGradient(256, 256, 0, 256, 256, 256);
         
         gradient.addColorStop(0, 'rgba(255, 250, 240, 1.0)');
@@ -3072,12 +3261,17 @@ if (uMMSsaoEnabled > 0.5) {
         gradient.addColorStop(0.4, 'rgba(255, 160, 60, 0.4)');
         gradient.addColorStop(0.6, 'rgba(255, 100, 40, 0.2)');
         gradient.addColorStop(0.8, 'rgba(200, 60, 20, 0.08)');
-        gradient.addColorStop(1, 'rgba(150, 40, 10, 0)');
+        // NOTE: use RGB=0 at alpha=0 to avoid additive/bloom "square halo" from transparent-edge color bleed.
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
         
         context.fillStyle = gradient;
         context.fillRect(0, 0, 512, 512);
         
         const texture = new THREE.CanvasTexture(canvas);
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.premultiplyAlpha = true;
         texture.needsUpdate = true;
         this.sharedTextures.glow = texture;
         this.registerColorTexture(texture);
@@ -3094,17 +3288,23 @@ if (uMMSsaoEnabled > 0.5) {
         canvas.width = 512;
         canvas.height = 512;
         const context = canvas.getContext('2d');
+        context.clearRect(0, 0, canvas.width, canvas.height);
         const gradient = context.createRadialGradient(256, 256, 0, 256, 256, 256);
         
         gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
         gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.8)');
         gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.2)');
-        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        // RGB=0 at alpha=0 avoids additive/bloom edge bleed.
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
         
         context.fillStyle = gradient;
         context.fillRect(0, 0, 512, 512);
         
         const texture = new THREE.CanvasTexture(canvas);
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.premultiplyAlpha = true;
         texture.needsUpdate = true;
         this.sharedTextures.radial = texture;
         this.registerColorTexture(texture);
@@ -3180,6 +3380,19 @@ if (uMMSsaoEnabled > 0.5) {
          if (texture.image && texture.image.width && texture.image.height) {
              texture.needsUpdate = true;
          }
+     }
+
+     ensureBlackTexture() {
+         if (this._mmBlackTexture) return this._mmBlackTexture;
+         if (typeof THREE.DataTexture !== 'function') return null;
+
+         const data = new Uint8Array([0, 0, 0, 255]);
+         const tex = new THREE.DataTexture(data, 1, 1);
+         tex.name = 'mm_black1x1';
+         tex.needsUpdate = true;
+         this.registerDataTexture(tex);
+         this._mmBlackTexture = tex;
+         return tex;
      }
 
 
@@ -3308,6 +3521,7 @@ if (uMMSsaoEnabled > 0.5) {
         canvas.width = 128;
         canvas.height = 128;
         const context = canvas.getContext('2d');
+        context.clearRect(0, 0, canvas.width, canvas.height);
         const center = 64;
 
         if (type === 'hexagon') {
@@ -3332,12 +3546,16 @@ if (uMMSsaoEnabled > 0.5) {
             const gradient = context.createRadialGradient(center, center, 0, center, center, 64);
             gradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)');
             gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.2)');
-            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
             context.fillStyle = gradient;
             context.fillRect(0, 0, 128, 128);
         }
 
         const texture = new THREE.CanvasTexture(canvas);
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.premultiplyAlpha = true;
         texture.needsUpdate = true;
         this.registerColorTexture(texture);
         return texture;
@@ -3386,6 +3604,10 @@ if (uMMSsaoEnabled > 0.5) {
             this.scene.remove(this.objects.sun);
         }
 
+        const postMode = this.getRequestedPostMode();
+        const isRawPost = postMode === 'raw';
+        const sunGlowEnabled = this.getRequestedSunGlowEnabled(!isRawPost);
+
         const geometry = new THREE.SphereGeometry(0.2, 64, 64);
         const sunTexture = this.textureLoader.load(TEXTURE_PATHS.sunMap);
         this.registerColorTexture(sunTexture);
@@ -3404,7 +3626,7 @@ if (uMMSsaoEnabled > 0.5) {
         
         this.objects.sun.layers.enable(BLOOM_LAYER);
 
-        if (this.getRequestedPostMode() !== 'raw') {
+        if (sunGlowEnabled) {
             const glowTexture = this.createGlowTexture();
 
             const spriteMaterial1 = new THREE.SpriteMaterial({
@@ -5413,15 +5635,17 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
 		            this.renderContactShadowDebug();
 		            return;
 		        }
-                if (this.ssaoDebugMode !== 0) {
-                    this.renderSsaoDebug();
-                    return;
-                }
+        if (this.ssaoDebugMode !== 0) {
+            this.renderSsaoDebug();
+            return;
+        }
 
-	        const disableBloom = isRawPost;
+	        const bloomEnabled = this.getRequestedBloomEnabled(!isRawPost);
+	        const bloomDebugMode = this.getRequestedBloomDebugMode();
+	        const wantsBloom = bloomEnabled || bloomDebugMode !== 0;
 
         if (
-            !disableBloom &&
+            wantsBloom &&
             this.bloomComposer &&
             this.finalComposer &&
             this.darkMaterial &&
@@ -5486,12 +5710,22 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
 
             if (this.additivePass && this.bloomComposer.readBuffer) {
                 this.additivePass.uniforms.tBloom.value = this.bloomComposer.readBuffer.texture;
+                this.additivePass.uniforms.bloomStrength.value = bloomEnabled ? 1.0 : 0.0;
+            }
+
+            if (bloomDebugMode !== 0) {
+                this.renderBloomDebug(this.bloomComposer.readBuffer ? this.bloomComposer.readBuffer.texture : null);
+                return;
             }
 
             this.finalComposer.render();
         } else if (this.finalComposer && this.additivePass) {
+            if (bloomDebugMode !== 0) {
+                this.renderBloomDebug(null);
+                return;
+            }
             if (this.additivePass.uniforms) {
-                this.additivePass.uniforms.tBloom.value = null;
+                this.additivePass.uniforms.tBloom.value = this.ensureBlackTexture();
                 this.additivePass.uniforms.bloomStrength.value = 0.0;
             }
             this.finalComposer.render();

@@ -221,7 +221,7 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 - 打开：`/?post=raw`
 - 期望：
   - bloom/flare/planet glow/atmosphere 不参与，便于专注调光照。
-- 调参示例：`/?post=raw&exp=0.9&sun=3.8&amb=0.03&hemi=0.03`
+- 调参示例：`/?post=raw&exp=0.9&sun=3.8&amb=0&hemi=0`
 - 期望：
   - 降低 `amb/hemi` → 阴影更深。
   - 提高 `exp` → 整体更亮。
@@ -352,6 +352,7 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 9. Phase 3A（飞船 Contact Shadows）：`ao=contact` + 专用 ship depth prepass（DepthTexture），并提供 `csDebug=1/2` 全屏替换调试输出（强制 `NoToneMapping`）。
 10. Phase 3B（飞船 SSAO）：`ao=ssao`（ship-only，自研 shader + 复用 ship depth；仅衰减间接光），并提供 `ssaoDebug=1` 调试输出。
 11. 飞船太阳直射自阴影：`sShadow=1`（ship-only shadow map depth prepass + shader compare；提供 tight fit/snap、bias、软硬与采样数等参数）。
+12. Phase 4A（Bloom 开始解耦）：新增 `bloom=0/1` 独立开关（允许 `post=raw&bloom=1`），并提供 `bloomStr/bloomRad/bloomTh` 调参与 `bloomDebug=1` 全屏替换调试输出。
 
 ### 已知问题/观察（非阻塞）
 - Firefox 可能对 Google Fonts `Chakra Petch` 报 `maxp: Bad maxZones`（疑似 CDN/缓存导致），不影响渲染逻辑。

@@ -195,7 +195,7 @@
 
 ### 6.3 AmbientLight 强度
 参数：`amb`
-- **默认值**：`0.03`
+- **默认值**：`0.0`
 - **取值**：`>= 0`
 
 示例：
@@ -203,7 +203,7 @@
 
 ### 6.4 HemisphereLight 强度
 参数：`hemi`
-- **默认值**：`0.03`
+- **默认值**：`0.0`
 - **取值**：`>= 0`
 
 示例：
@@ -318,13 +318,22 @@
 
 ---
 
-## 10. Post FX（Phase 4，规划中）
+## 10. Post FX（Phase 4）
 
 > Phase 4 负责在 HDR 基线稳定后，逐项恢复 Bloom / Atmosphere(Fresnel) / Glow / Lens Flare 等效果。
 > Lens Flare 计划迁移为 OutputPass 之后的 post pass（display-referred），避免与 HDR/bloom 强耦合。
 
-规划开关（待实现）：
-- `bloom=1|0`：独立控制 bloom（不影响 `post=raw` 标定模式）
+### 10.1 Bloom（已实现）
+- `bloom=1|0`：独立控制 bloom；默认 `auto`（`post=raw` 默认关，其它默认开），显式指定会覆盖 `post` 的默认值（允许 `post=raw&bloom=1` 做 bloom-only 标定）。
+- `bloomStr=<float>`：强度（默认 `0.95`；范围 `0..3`）
+- `bloomRad=<float>`：半径（默认 `0.42`；范围 `0..1`）
+- `bloomTh=<float>`：阈值（默认 `0.82`；范围 `0..5`）
+- `bloomDebug=0|1`：bloom buffer 调试输出（全屏替换，强制 `NoToneMapping`；用于观察 bloom 形态/能量）
+
+### 10.2 Sun Glow（已实现）
+- `sunGlow=1|0`：太阳光晕 sprites（非 bloom）开关；默认 `auto`（`post=raw` 默认关，其它默认开），显式指定会覆盖 `post` 的默认值（用于隔离“太阳光晕 vs bloom”贡献）。
+
+### 10.2 其它开关（规划中）
 - `atmo=1|0`：独立控制行星大气/fresnel
 - `flare=1|0`：独立控制 lens flare（post flare）
 
@@ -373,8 +382,8 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | IBL | `ibl` | `1.0` | 全局 IBL 强度缩放 |
 | Lighting | `exp` | `0.9` | 曝光 0..3 |
 | Lighting | `sun` | `3.8` | 太阳点光强度 |
-| Lighting | `amb` | `0.03` | Ambient 强度 |
-| Lighting | `hemi` | `0.03` | Hemisphere 强度 |
+| Lighting | `amb` | `0.0` | Ambient 强度 |
+| Lighting | `hemi` | `0.0` | Hemisphere 强度 |
 | Background | `bg` | `default` | `default`/`off`/`dim` |
 | Background | `city` | `1.0` | 地球夜灯 0..2 |
 | Warp | `speed` / `warp` | (无) | 刷新后强制 Warp（0..5） |
@@ -404,6 +413,11 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | AO | `ssaoBlur` | `1` | SSAO depth-aware blur（0/1） |
 | Debug | `ssaoDebug` | `0` | `0` / `1`（SSAO debug） |
 | Material | `mat` | `default` | `default` / `white`（仅飞船） |
-| PostFX | `bloom` | (规划) | `1` / `0`（Phase 4，独立 bloom 开关） |
+| PostFX | `bloom` | auto | `1` / `0`（独立 bloom 开关；默认随 `post`） |
+| PostFX | `bloomStr` | `0.95` | bloom 强度（0..3） |
+| PostFX | `bloomRad` | `0.42` | bloom 半径（0..1） |
+| PostFX | `bloomTh` | `0.82` | bloom 阈值（0..5） |
+| PostFX | `bloomDebug` | `0` | `0` / `1`（bloom buffer debug） |
+| PostFX | `sunGlow` | auto | `1` / `0`（太阳光晕 sprites；默认随 `post`） |
 | PostFX | `atmo` | (规划) | `1` / `0`（Phase 4，大气/fresnel） |
 | PostFX | `flare` | (规划) | `1` / `0`（Phase 4，post lens flare） |
