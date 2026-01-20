@@ -103,6 +103,9 @@ class Spacecraft {
 	            if (typeof window.app.installContactShadowForSpacecraft === 'function') {
 	                window.app.installContactShadowForSpacecraft();
 	            }
+	            if (typeof window.app.installSsaoForSpacecraft === 'function') {
+	                window.app.installSsaoForSpacecraft();
+	            }
 	            if (typeof window.app.installSpacecraftSelfShadowForSpacecraft === 'function') {
 	                window.app.installSpacecraftSelfShadowForSpacecraft();
 	            }

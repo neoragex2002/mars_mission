@@ -43,6 +43,9 @@
 ### 1.8 飞船自阴影（推荐替代 contact 做“正确自阴影”）
 - `/?post=raw&bg=off&mat=white&sShadow=1&ps=1&amb=0&hemi=0&ibl=0`
 
+### 1.9 只看飞船 SSAO（环境光自遮蔽）
+- `/?post=raw&bg=off&mat=white&ao=ssao&sun=0&amb=0&hemi=0&ibl=1`
+
 ---
 
 ## 2. 抗锯齿（AA）
@@ -287,7 +290,7 @@
 - **可选值**：
   - `off` / `0` / `none`
   - `contact`（优先实现）：方向性近场接触阴影（深度 + 太阳方向短距离 raymarch；仅影响太阳直射）
-  - `ssao`（后续可选）：屏幕空间环境光遮蔽（更重，需更强降噪/边缘保真）
+  - `ssao`：飞船屏幕空间环境光遮蔽（ship-only；仅衰减间接光：IBL/ambient/hemi）
 
 说明：
 - `ao=contact` 与 `ps=1`（行星遮挡太阳直射）互补：
@@ -326,6 +329,19 @@ Contact Shadows 调试（已实现，全屏替换输出，不经过 tone mapping
 - `mat=default`：原材质（默认）
 - `mat=white`：白模（纯白漫反射基准）
 
+飞船 SSAO（已实现，Phase 3B；ship-only；仅衰减间接光，不影响太阳直射）：
+- `ssaoScale=<float>`：内部 AO 计算分辨率比例（默认 `0.5`；范围 `0.25..1.0`；越高越细腻但更耗）
+- `ssaoRad=<float>`：采样半径（默认 `0.06`；范围 `0.005..0.25`；单位为 Three.js scene units）
+- `ssaoBias=<float>`：bias（默认 `0.0015`；范围 `0..0.02`；用于抑制自交/深度精度伪影）
+- `ssaoStr=<float>`：强度（默认 `1.0`；范围 `0..3.0`；越大越“黑”）
+- `ssaoPow=<float>`：曲线（默认 `1.2`；范围 `0.2..4.0`；>1 更强调暗部）
+- `ssaoSteps=<int>`：采样数（默认 `24`；范围 `1..32`；越大越稳定但更耗）
+- `ssaoBlur=0|1`：是否启用 depth-aware blur（默认 `1`；建议开）
+
+SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
+- `ssaoDebug=0`：关闭
+- `ssaoDebug=1`：查看 AO 因子（0..1；仅显示飞船像素）
+
 ---
 
 ## 11. 参数一览表（速查）
@@ -355,6 +371,14 @@ Contact Shadows 调试（已实现，全屏替换输出，不经过 tone mapping
 | AO | `csStr` | `1.1` | Contact 强度（0..2；仅影响实际着色） |
 | AO | `csSteps` | `22` | Contact 步数（1..24） |
 | Debug | `csDebug` | `0` | `0` / `1` / `2`（Contact Shadows debug） |
+| AO | `ssaoScale` | `0.5` | SSAO 内部分辨率比例（0.25..1.0） |
+| AO | `ssaoRad` | `0.06` | SSAO 半径（Three.js scene units） |
+| AO | `ssaoBias` | `0.0015` | SSAO bias（0..0.02） |
+| AO | `ssaoStr` | `1.0` | SSAO 强度（0..3） |
+| AO | `ssaoPow` | `1.2` | SSAO 曲线（0.2..4） |
+| AO | `ssaoSteps` | `24` | SSAO 采样数（1..32） |
+| AO | `ssaoBlur` | `1` | SSAO depth-aware blur（0/1） |
+| Debug | `ssaoDebug` | `0` | `0` / `1`（SSAO debug） |
 | Material | `mat` | `default` | `default` / `white`（仅飞船） |
 | PostFX | `bloom` | (规划) | `1` / `0`（Phase 4，独立 bloom 开关） |
 | PostFX | `atmo` | (规划) | `1` / `0`（Phase 4，大气/fresnel） |
