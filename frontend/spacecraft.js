@@ -16,7 +16,85 @@ class Spacecraft {
         this.landingLegs = [];
         this.sharedTextures = {};
 
+        this.materialMode = 'default';
+        this._originalMaterials = new Map();
+        this._whiteMaterial = null;
+        this._contactShadowLayer = null;
+
         this.createSpacecraft();
+    }
+
+    setMaterialMode(mode) {
+        const normalized = (String(mode || '').trim().toLowerCase() === 'white') ? 'white' : 'default';
+        this.materialMode = normalized;
+        this._applyPostCreateFlags();
+    }
+
+    setContactShadowLayer(layer) {
+        const raw = Number(layer);
+        if (!Number.isFinite(raw)) return;
+        const normalized = Math.max(0, Math.min(31, Math.floor(raw)));
+        this._contactShadowLayer = normalized;
+        this._applyPostCreateFlags();
+    }
+
+    _ensureWhiteMaterial() {
+        if (this._whiteMaterial) return this._whiteMaterial;
+        this._whiteMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            metalness: 0.0,
+            roughness: 1.0
+        });
+        return this._whiteMaterial;
+    }
+
+    _cacheOriginalMaterials() {
+        if (!this.mesh || typeof this.mesh.traverse !== 'function') return;
+        this.mesh.traverse((child) => {
+            if (!child || child.isMesh !== true) return;
+            if (!child.material) return;
+            if (this._originalMaterials.has(child)) return;
+            this._originalMaterials.set(child, child.material);
+        });
+    }
+
+    _applyWhiteMaterial() {
+        this._cacheOriginalMaterials();
+        const white = this._ensureWhiteMaterial();
+        if (!this.mesh || typeof this.mesh.traverse !== 'function') return;
+        this.mesh.traverse((child) => {
+            if (!child || child.isMesh !== true) return;
+            if (!child.material) return;
+            child.material = white;
+        });
+    }
+
+    _restoreOriginalMaterials() {
+        for (const [child, material] of this._originalMaterials.entries()) {
+            if (!child || child.isMesh !== true) continue;
+            child.material = material;
+        }
+    }
+
+    _applyContactShadowLayer() {
+        if (this._contactShadowLayer === null || this._contactShadowLayer === undefined) return;
+        if (!this.mesh || typeof this.mesh.traverse !== 'function') return;
+        this.mesh.traverse((child) => {
+            if (!child || child.isMesh !== true) return;
+            if (!child.layers || typeof child.layers.enable !== 'function') return;
+            child.layers.enable(this._contactShadowLayer);
+        });
+    }
+
+    _applyPostCreateFlags() {
+        this._applyContactShadowLayer();
+        if (this.materialMode === 'white') {
+            this._applyWhiteMaterial();
+        } else {
+            this._restoreOriginalMaterials();
+        }
+
+        this.applyIblIntensity();
     }
 
     applyIblIntensity() {
@@ -115,6 +193,7 @@ class Spacecraft {
             this.createProceduralModel();
         }
 
+        this._applyPostCreateFlags();
         this.scene.add(this.mesh);
     }
 
@@ -134,6 +213,7 @@ class Spacecraft {
         });
 
         this.applyIblIntensity();
+        this._applyPostCreateFlags();
     }
 
      loadGatewayModel() {
@@ -169,10 +249,11 @@ class Spacecraft {
                      this.modelCalibrationRoot.rotateZ(this.modelRollCorrection);
                  }
  
-                  this.applyIblIntensity();
+                 this.applyIblIntensity();
                   if (typeof window !== 'undefined' && window.app && typeof window.app.installPlanetShadowForSpacecraft === 'function') {
                       window.app.installPlanetShadowForSpacecraft();
                   }
+                  this._applyPostCreateFlags();
               },
 
 

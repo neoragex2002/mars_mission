@@ -37,6 +37,9 @@
 ### 1.6 刷新后保持 Warp 速度（UI 必须匹配）
 - `/?speed=0.5` 或 `/?warp=0.5`
 
+### 1.7 只看飞船 Contact AO（白模基准）
+- `/?post=raw&bg=off&mat=white&ao=contact&amb=0&hemi=0&ibl=0`
+
 ---
 
 ## 2. 抗锯齿（AA）
@@ -153,6 +156,7 @@
 
 含义：
 - 统一缩放场景内 PBR 材质的 `envMapIntensity`。
+- 注意：`ibl` 只控制 IBL（`scene.environment` 的间接光/反射）；如果还想去掉其它填充光，需要同时把 `amb=0&hemi=0`。
 
 示例：
 - `/?ibl=0`（禁用 IBL 影响）
@@ -257,7 +261,54 @@
 
 ---
 
-## 9. 参数一览表（速查）
+## 9. Contact Shadows / SSAO（Phase 3A：Contact Shadows 已实现）
+
+参数：`ao`
+- **默认值**：`off`
+- **可选值**：
+  - `off` / `0` / `none`
+  - `contact`（优先实现）：屏幕空间近场接触阴影（深度 + 太阳方向短距离 raymarch）
+  - `ssao`（后续可选）：屏幕空间环境光遮蔽（更重，需更强降噪/边缘保真）
+
+说明：
+- `ao=contact` 与 `ps=1`（行星遮挡太阳直射）互补：
+  - `ps=1` 负责“星球挡太阳”的硬遮挡阴影（只影响太阳直射贡献）。
+  - `ao=contact` 负责“飞船近场自遮蔽/接触尺度层次”的补偿。
+- 这两个都不应把整张画面压灰；默认强度必须保守，确保不干扰 Phase 2 的照明标定。
+
+推荐验证组合：
+- `/?post=raw&bg=off&ao=contact&ps=1&amb=0&hemi=0&ibl=0`
+
+---
+
+## 10. Post FX（Phase 4，规划中）
+
+> Phase 4 负责在 HDR 基线稳定后，逐项恢复 Bloom / Atmosphere(Fresnel) / Glow / Lens Flare 等效果。
+> Lens Flare 计划迁移为 OutputPass 之后的 post pass（display-referred），避免与 HDR/bloom 强耦合。
+
+规划开关（待实现）：
+- `bloom=1|0`：独立控制 bloom（不影响 `post=raw` 标定模式）
+- `atmo=1|0`：独立控制行星大气/fresnel
+- `flare=1|0`：独立控制 lens flare（post flare）
+
+Contact Shadows 调参（已实现，Phase 3A）：
+- `csDist=<float>`：raymarch 最大距离（默认 `0.14`）
+- `csThick=<float>`：厚度/bias（默认 `0.004`）
+- `csStr=<float>`：强度（默认 `0.8`）
+- `csSteps=<int>`：步数（默认 `18`，范围 1..24）
+
+Contact Shadows 调试（已实现，全屏替换输出，不经过 tone mapping）：
+- `csDebug=0`：关闭
+- `csDebug=1`：查看深度场结构（对比增强；飞船被遮挡时会显示品红）
+- `csDebug=2`：查看遮蔽场（occlusion 0..1；只在飞船可见像素输出）
+
+飞船白模（已实现，用于隔离光照分量；仅影响飞船）：
+- `mat=default`：原材质（默认）
+- `mat=white`：白模（纯白漫反射基准）
+
+---
+
+## 11. 参数一览表（速查）
 
 | 分类 | 参数 | 默认值 | 说明 |
 |---|---|---:|---|
@@ -277,4 +328,9 @@
 | Background | `city` | `1.0` | 地球夜灯 0..2 |
 | Warp | `speed` / `warp` | (无) | 刷新后强制 Warp（0..5） |
 | Shadow | `ps` | `off` | 行星遮挡太阳直射（飞船解析） |
-
+| AO | `ao` | `off` | `off` / `contact` / `ssao`（Phase 3） |
+| Debug | `csDebug` | `0` | `0` / `1` / `2`（Contact Shadows debug） |
+| Material | `mat` | `default` | `default` / `white`（仅飞船） |
+| PostFX | `bloom` | (规划) | `1` / `0`（Phase 4，独立 bloom 开关） |
+| PostFX | `atmo` | (规划) | `1` / `0`（Phase 4，大气/fresnel） |
+| PostFX | `flare` | (规划) | `1` / `0`（Phase 4，post lens flare） |

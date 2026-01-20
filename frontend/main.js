@@ -81,6 +81,7 @@ const TEXTURE_PATH_LIST = Object.freeze([
 ]);
 
 const BLOOM_LAYER = 1;
+const CONTACT_SHADOW_LAYER = 2;
 
 const AdditiveBlendShader = {
     uniforms: {
@@ -147,6 +148,416 @@ const DebugViewShader = {
     `
 };
 
+const ContactShadowShader = {
+    uniforms: {
+        tDiffuse: { value: null },
+        tSceneDepth: { value: null },
+        tShipDepth: { value: null },
+
+        uProjectionMatrix: { value: new THREE.Matrix4() },
+        uInvProjectionMatrix: { value: new THREE.Matrix4() },
+        uViewMatrix: { value: new THREE.Matrix4() },
+        uInvViewMatrix: { value: new THREE.Matrix4() },
+
+        uDepthAvailable: { value: 0.0 },
+        uSunPosWorld: { value: new THREE.Vector3(0, 0, 0) },
+
+        uMaxDistance: { value: 0.14 },
+        uThickness: { value: 0.004 },
+        uStrength: { value: 0.8 },
+        uSteps: { value: 18 },
+
+        uMinWorldRadius: { value: 0.35 },
+        uMaxViewDistance: { value: 80.0 },
+        uVisibilityEps: { value: 0.002 }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform sampler2D tSceneDepth;
+        uniform sampler2D tShipDepth;
+
+        uniform mat4 uProjectionMatrix;
+        uniform mat4 uInvProjectionMatrix;
+        uniform mat4 uViewMatrix;
+        uniform mat4 uInvViewMatrix;
+
+        uniform float uDepthAvailable;
+        uniform vec3 uSunPosWorld;
+
+        uniform float uMaxDistance;
+        uniform float uThickness;
+        uniform float uStrength;
+        uniform float uSteps;
+        uniform float uMinWorldRadius;
+        uniform float uMaxViewDistance;
+        uniform float uVisibilityEps;
+
+        varying vec2 vUv;
+
+        #define MAX_STEPS 24
+
+        vec3 reconstructViewPosition(vec2 uv, float depth) {
+            float z = depth * 2.0 - 1.0;
+            vec4 clip = vec4(uv * 2.0 - 1.0, z, 1.0);
+            vec4 view = uInvProjectionMatrix * clip;
+            return view.xyz / max(view.w, 1e-6);
+        }
+
+        vec2 projectToUv(vec3 viewPos) {
+            vec4 clip = uProjectionMatrix * vec4(viewPos, 1.0);
+            vec3 ndc = clip.xyz / max(clip.w, 1e-6);
+            return ndc.xy * 0.5 + 0.5;
+        }
+
+        void main() {
+            vec4 base = texture2D(tDiffuse, vUv);
+
+            if (uDepthAvailable < 0.5) {
+                gl_FragColor = base;
+                return;
+            }
+
+            float shipDepth = texture2D(tShipDepth, vUv).x;
+            if (shipDepth >= 1.0) {
+                // Not a spacecraft pixel.
+                gl_FragColor = base;
+                return;
+            }
+
+            float sceneDepth = texture2D(tSceneDepth, vUv).x;
+            if (sceneDepth >= 1.0) {
+                // Scene depth missing or mismatch. Avoid applying on unknown pixels.
+                gl_FragColor = base;
+                return;
+            }
+
+            vec3 shipView = reconstructViewPosition(vUv, shipDepth);
+            vec3 sceneView = reconstructViewPosition(vUv, sceneDepth);
+
+            // Apply only when the spacecraft is actually visible in the main render.
+            // (If the spacecraft is occluded by a planet, shipDepth still exists in the ship-only prepass.)
+            if (abs(shipView.z - sceneView.z) > uVisibilityEps) {
+                gl_FragColor = base;
+                return;
+            }
+
+            vec3 pView = shipView;
+            vec3 pWorld = (uInvViewMatrix * vec4(pView, 1.0)).xyz;
+
+            float rWorld = length(pWorld);
+            if (rWorld < uMinWorldRadius || length(pView) > uMaxViewDistance) {
+                gl_FragColor = base;
+                return;
+            }
+
+            vec3 toSunWorld = uSunPosWorld - pWorld;
+            vec3 toSunView = (uViewMatrix * vec4(toSunWorld, 0.0)).xyz;
+            float toSunLen = length(toSunView);
+            if (toSunLen <= 1e-6) {
+                gl_FragColor = base;
+                return;
+            }
+
+            vec3 rayDirView = toSunView / toSunLen;
+            float maxDist = min(uMaxDistance, toSunLen);
+
+            float steps = clamp(floor(uSteps + 0.5), 1.0, float(MAX_STEPS));
+
+            float occlusion = 0.0;
+            float startDist = max(uThickness * 2.0, 1e-5);
+
+            for (int i = 0; i < MAX_STEPS; i++) {
+                if (float(i) >= steps) break;
+
+                float t = float(i) / max(steps - 1.0, 1.0);
+                float dist = startDist + t * maxDist;
+
+                vec3 sampleView = pView + rayDirView * dist;
+                vec2 suv = projectToUv(sampleView);
+                if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) {
+                    break;
+                }
+
+                float sDepth = texture2D(tShipDepth, suv).x;
+                if (sDepth >= 1.0) {
+                    continue;
+                }
+
+                vec3 occView = reconstructViewPosition(suv, sDepth);
+
+                if (occView.z > sampleView.z + uThickness) {
+                    float w = 1.0 - smoothstep(0.0, maxDist, dist);
+                    occlusion = max(occlusion, w);
+                    break;
+                }
+            }
+
+            float shadowFactor = clamp(1.0 - uStrength * occlusion, 0.0, 1.0);
+            gl_FragColor = vec4(base.rgb * shadowFactor, base.a);
+        }
+    `
+};
+
+const ContactShadowDebugShader = {
+    uniforms: {
+        tSceneDepth: { value: null },
+        tShipDepth: { value: null },
+
+        uProjectionMatrix: { value: new THREE.Matrix4() },
+        uInvProjectionMatrix: { value: new THREE.Matrix4() },
+        uViewMatrix: { value: new THREE.Matrix4() },
+        uInvViewMatrix: { value: new THREE.Matrix4() },
+
+        uDepthAvailable: { value: 0.0 },
+        uSunPosWorld: { value: new THREE.Vector3(0, 0, 0) },
+
+        uDebugMode: { value: 0.0 },
+        uNear: { value: 0.01 },
+        uFar: { value: 3000.0 },
+        uDebugMaxZ: { value: 50.0 },
+
+        uMaxDistance: { value: 0.14 },
+        uThickness: { value: 0.004 },
+        uSteps: { value: 18 },
+        uVisibilityEps: { value: 0.002 }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = vec4(position.xy, 0.0, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tSceneDepth;
+        uniform sampler2D tShipDepth;
+
+        uniform mat4 uProjectionMatrix;
+        uniform mat4 uInvProjectionMatrix;
+        uniform mat4 uViewMatrix;
+        uniform mat4 uInvViewMatrix;
+
+        uniform float uDepthAvailable;
+        uniform vec3 uSunPosWorld;
+
+        uniform float uDebugMode;
+        uniform float uNear;
+        uniform float uFar;
+        uniform float uDebugMaxZ;
+
+        uniform float uMaxDistance;
+        uniform float uThickness;
+        uniform float uSteps;
+        uniform float uVisibilityEps;
+
+        varying vec2 vUv;
+
+        #define MAX_STEPS 24
+
+        vec3 reconstructViewPosition(vec2 uv, float depth) {
+            float z = depth * 2.0 - 1.0;
+            vec4 clip = vec4(uv * 2.0 - 1.0, z, 1.0);
+            vec4 view = uInvProjectionMatrix * clip;
+            return view.xyz / max(view.w, 1e-6);
+        }
+
+        vec2 projectToUv(vec3 viewPos) {
+            vec4 clip = uProjectionMatrix * vec4(viewPos, 1.0);
+            vec3 ndc = clip.xyz / max(clip.w, 1e-6);
+            return ndc.xy * 0.5 + 0.5;
+        }
+
+        float linearDepth01(vec3 viewPos) {
+            float z = -viewPos.z;
+            return clamp((z - uNear) / max(uFar - uNear, 1e-6), 0.0, 1.0);
+        }
+
+        void main() {
+            if (uDepthAvailable < 0.5) {
+                gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);
+                return;
+            }
+
+            float shipDepth = texture2D(tShipDepth, vUv).x;
+            float sceneDepth = texture2D(tSceneDepth, vUv).x;
+
+            bool shipValid = shipDepth < 1.0;
+            bool sceneValid = sceneDepth < 1.0;
+
+            if (!sceneValid && !shipValid) {
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                return;
+            }
+
+            vec3 shipView = shipValid ? reconstructViewPosition(vUv, shipDepth) : vec3(0.0);
+            vec3 sceneView = sceneValid ? reconstructViewPosition(vUv, sceneDepth) : vec3(0.0);
+
+            bool shipVisible = shipValid && sceneValid && (abs(shipView.z - sceneView.z) <= uVisibilityEps);
+
+            if (uDebugMode < 1.5) {
+                // Depth debug (contrast-enhanced). Ship-visible pixels show ship depth; otherwise show scene depth.
+                if (shipValid && sceneValid && !shipVisible) {
+                    // Spacecraft exists in ship-only depth, but isn't visible in scene depth (occluded).
+                    gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);
+                    return;
+                }
+
+                vec3 viewPos = shipVisible ? shipView : (sceneValid ? sceneView : shipView);
+                float z = max(-viewPos.z, 0.0);
+                float maxZ = max(uDebugMaxZ, 1e-3);
+
+                float dn = clamp(z / maxZ, 0.0, 1.0);
+                float shade = pow(1.0 - dn, 0.65);
+
+                float v = dn * 24.0;
+                float tri = abs(fract(v) - 0.5);
+                float line = 1.0 - smoothstep(0.0, 0.035, tri);
+
+                vec3 base = vec3(shade);
+                vec3 lineColor = vec3(1.0, 0.92, 0.25);
+                vec3 color = mix(base, lineColor, line * 0.35);
+
+                gl_FragColor = vec4(color, 1.0);
+                return;
+            }
+
+            // Occlusion debug (0..1). Only meaningful on visible spacecraft pixels.
+            if (!shipVisible) {
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                return;
+            }
+
+            vec3 pWorld = (uInvViewMatrix * vec4(shipView, 1.0)).xyz;
+
+            vec3 toSunWorld = uSunPosWorld - pWorld;
+            vec3 toSunView = (uViewMatrix * vec4(toSunWorld, 0.0)).xyz;
+            float toSunLen = length(toSunView);
+            if (toSunLen <= 1e-6) {
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                return;
+            }
+
+            vec3 rayDirView = toSunView / toSunLen;
+            float maxDist = min(uMaxDistance, toSunLen);
+            float steps = clamp(floor(uSteps + 0.5), 1.0, float(MAX_STEPS));
+
+            float occlusion = 0.0;
+            float startDist = max(uThickness * 2.0, 1e-5);
+
+            for (int i = 0; i < MAX_STEPS; i++) {
+                if (float(i) >= steps) break;
+
+                float t = float(i) / max(steps - 1.0, 1.0);
+                float dist = startDist + t * maxDist;
+                vec3 sampleView = shipView + rayDirView * dist;
+                vec2 suv = projectToUv(sampleView);
+                if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) {
+                    break;
+                }
+
+                float sDepth = texture2D(tShipDepth, suv).x;
+                if (sDepth >= 1.0) {
+                    continue;
+                }
+
+                vec3 occView = reconstructViewPosition(suv, sDepth);
+                if (occView.z > sampleView.z + uThickness) {
+                    float w = 1.0 - smoothstep(0.0, maxDist, dist);
+                    occlusion = max(occlusion, w);
+                    break;
+                }
+            }
+
+            gl_FragColor = vec4(vec3(clamp(occlusion, 0.0, 1.0)), 1.0);
+        }
+    `
+};
+
+class ContactShadowPass extends THREE.ShaderPass {
+    constructor(camera, uniforms) {
+        super(ContactShadowShader);
+        this.camera = camera;
+        this.uniforms = this.material.uniforms;
+        this.sceneDepthTexture = null;
+        this.shipDepthTexture = null;
+
+        if (uniforms && typeof uniforms === 'object') {
+            if (typeof uniforms.maxDistance === 'number') this.uniforms.uMaxDistance.value = uniforms.maxDistance;
+            if (typeof uniforms.thickness === 'number') this.uniforms.uThickness.value = uniforms.thickness;
+            if (typeof uniforms.strength === 'number') this.uniforms.uStrength.value = uniforms.strength;
+            if (typeof uniforms.steps === 'number') this.uniforms.uSteps.value = uniforms.steps;
+            if (typeof uniforms.minWorldRadius === 'number') this.uniforms.uMinWorldRadius.value = uniforms.minWorldRadius;
+            if (typeof uniforms.maxViewDistance === 'number') this.uniforms.uMaxViewDistance.value = uniforms.maxViewDistance;
+            if (typeof uniforms.visibilityEps === 'number') this.uniforms.uVisibilityEps.value = uniforms.visibilityEps;
+        }
+    }
+
+    setDepthTextures(sceneDepthTexture, shipDepthTexture) {
+        this.sceneDepthTexture = sceneDepthTexture || null;
+        this.shipDepthTexture = shipDepthTexture || null;
+    }
+
+    render(renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
+        if (this.sceneDepthTexture && this.shipDepthTexture) {
+            this.uniforms.tSceneDepth.value = this.sceneDepthTexture;
+            this.uniforms.tShipDepth.value = this.shipDepthTexture;
+            this.uniforms.uDepthAvailable.value = 1.0;
+        } else {
+            this.uniforms.uDepthAvailable.value = 0.0;
+        }
+
+        if (this.camera) {
+            this.uniforms.uProjectionMatrix.value.copy(this.camera.projectionMatrix);
+            this.uniforms.uInvProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
+            this.uniforms.uViewMatrix.value.copy(this.camera.matrixWorldInverse);
+            this.uniforms.uInvViewMatrix.value.copy(this.camera.matrixWorld);
+        }
+
+        super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+    }
+}
+
+function getRequestedContactShadowParams() {
+    if (typeof window === 'undefined' || !window.location) {
+        return null;
+    }
+    if (typeof URLSearchParams === 'undefined') {
+        return null;
+    }
+
+    const params = new URLSearchParams(window.location.search || '');
+
+    const rawMaxDist = params.get('csDist');
+    const rawThickness = params.get('csThick');
+    const rawStrength = params.get('csStr');
+    const rawSteps = params.get('csSteps');
+
+    const parseNum = (raw) => {
+        if (raw === null || raw === undefined) return null;
+        const v = Number(raw);
+        return Number.isFinite(v) ? v : null;
+    };
+
+    const maxDistance = parseNum(rawMaxDist);
+    const thickness = parseNum(rawThickness);
+    const strength = parseNum(rawStrength);
+    const steps = parseNum(rawSteps);
+
+    return {
+        maxDistance: maxDistance !== null ? THREE.MathUtils.clamp(maxDistance, 0.0, 0.5) : undefined,
+        thickness: thickness !== null ? THREE.MathUtils.clamp(thickness, 0.0, 0.05) : undefined,
+        strength: strength !== null ? THREE.MathUtils.clamp(strength, 0.0, 2.0) : undefined,
+        steps: steps !== null ? THREE.MathUtils.clamp(Math.round(steps), 1, 24) : undefined,
+    };
+}
+
 class MarsMissionApp {
     constructor() {
         this.scene = null;
@@ -161,6 +572,7 @@ class MarsMissionApp {
         this.ssaaPass = null;
         this.smaaPass = null;
         this.debugPass = null;
+        this.contactShadowPass = null;
         this.aaMode = 'none';
         this.raycaster = new THREE.Raycaster(); // For lens flare occlusion
 
@@ -181,6 +593,10 @@ class MarsMissionApp {
 
         this.ws = null;
         this.connected = false;
+
+        this.aoMode = this.getRequestedAoMode();
+        this.csDebugMode = this.getRequestedContactShadowDebugMode();
+        this.materialMode = this.getRequestedMaterialMode();
         this.missionData = null;
         this.simulationRunning = false;
         this.viewMode = 'free';
@@ -214,6 +630,15 @@ class MarsMissionApp {
 
          this.planetShadowEnabled = this.isPlanetShadowEnabled();
          this.planetShadowUniforms = null;
+
+         this.contactShadowSceneDepthRT = null;
+         this.contactShadowShipDepthRT = null;
+         this.contactShadowDepthMaterial = null;
+         this.contactShadowDebugScene = null;
+         this.contactShadowDebugCamera = null;
+         this.contactShadowDebugMesh = null;
+         this.contactShadowDebugMaterial = null;
+         this.contactShadowDepthUnsupported = false;
 
 
          this.simulationState = {
@@ -468,25 +893,91 @@ class MarsMissionApp {
      }
 
      isPlanetShadowEnabled() {
-         if (typeof window === 'undefined' || !window.location) {
-             return false;
-         }
-         if (typeof URLSearchParams === 'undefined') {
-             return false;
-         }
+          if (typeof window === 'undefined' || !window.location) {
+              return false;
+          }
+          if (typeof URLSearchParams === 'undefined') {
+              return false;
+          }
+
+          const params = new URLSearchParams(window.location.search || '');
+          const raw = String(params.get('planetShadow') || params.get('ps') || '').trim().toLowerCase();
+          if (!raw || raw === '0' || raw === 'off' || raw === 'false') {
+              return false;
+          }
+          return true;
+      }
+
+	     getRequestedAoMode() {
+	         if (typeof window === 'undefined' || !window.location) {
+	             return 'off';
+	         }
+	         if (typeof URLSearchParams === 'undefined') {
+	             return 'off';
+	         }
 
          const params = new URLSearchParams(window.location.search || '');
-         const raw = String(params.get('planetShadow') || params.get('ps') || '').trim().toLowerCase();
-         if (!raw || raw === '0' || raw === 'off' || raw === 'false') {
-             return false;
+         const raw = String(params.get('ao') || '').trim().toLowerCase();
+         if (!raw || raw === '0' || raw === 'off' || raw === 'none') {
+             return 'off';
          }
-         return true;
-     }
+         if (raw === 'contact') {
+             return 'contact';
+         }
+         if (raw === 'ssao' || raw === 'sao') {
+             // Placeholder for future Phase 3B; keep parsing stable.
+             return 'ssao';
+         }
+	         return 'off';
+	     }
+
+	     getRequestedContactShadowDebugMode() {
+	         if (typeof window === 'undefined' || !window.location) {
+	             return 0;
+	         }
+	         if (typeof URLSearchParams === 'undefined') {
+	             return 0;
+	         }
+	
+	         const params = new URLSearchParams(window.location.search || '');
+	         const raw = String(params.get('csDebug') || '').trim();
+	         if (!raw) {
+	             return 0;
+	         }
+	
+	         const value = Number(raw);
+	         if (!Number.isFinite(value)) {
+	             return 0;
+	         }
+	
+	         const mode = Math.max(0, Math.min(2, Math.floor(value)));
+	         return mode;
+	     }
+
+	     getRequestedMaterialMode() {
+	         if (typeof window === 'undefined' || !window.location) {
+	             return 'default';
+	         }
+	         if (typeof URLSearchParams === 'undefined') {
+	             return 'default';
+	         }
+
+	         const params = new URLSearchParams(window.location.search || '');
+	         const raw = String(params.get('mat') || '').trim().toLowerCase();
+	         if (!raw || raw === 'default') {
+	             return 'default';
+	         }
+	         if (raw === 'white') {
+	             return 'white';
+	         }
+	         return 'default';
+	     }
 
 
-    getRequestedExposure() {
-        if (typeof window === 'undefined' || !window.location) {
-            return 0.9;
+
+	    getRequestedExposure() {
+	        if (typeof window === 'undefined' || !window.location) {
+	            return 0.9;
         }
         if (typeof URLSearchParams === 'undefined') {
             return 0.9;
@@ -1011,9 +1502,9 @@ class MarsMissionApp {
         });
     }
 
-    setupPostProcessing() {
-        const width = window.innerWidth;
-        const height = window.innerHeight;
+	    setupPostProcessing() {
+	        const width = window.innerWidth;
+	        const height = window.innerHeight;
 
         let renderTargetType = (typeof THREE.UnsignedByteType !== 'undefined')
             ? THREE.UnsignedByteType
@@ -1028,25 +1519,37 @@ class MarsMissionApp {
             renderTargetType = THREE.HalfFloatType;
         }
 
-        const createRenderTarget = () => new THREE.WebGLRenderTarget(width, height, {
-            minFilter: THREE.LinearFilter,
-            magFilter: THREE.LinearFilter,
-            format: THREE.RGBAFormat,
-            type: renderTargetType,
-            depthBuffer: true,
-            stencilBuffer: false
-        });
 
-        const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
-            ? this.renderer.getPixelRatio()
-            : (window.devicePixelRatio || 1);
+	        const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
+	            ? this.renderer.getPixelRatio()
+	            : (window.devicePixelRatio || 1);
 
-        this.bloomComposer = new THREE.EffectComposer(this.renderer, createRenderTarget());
-        if (typeof this.bloomComposer.setPixelRatio === 'function') {
-            this.bloomComposer.setPixelRatio(pixelRatio);
-        }
-        this.bloomComposer.setSize(width, height);
-        this.bloomComposer.renderToScreen = false;
+	        const wantsContactShadowDepth = this.aoMode === 'contact' || this.csDebugMode !== 0;
+	        if (wantsContactShadowDepth) {
+	            this.ensureContactShadowDepthTargets(width, height, pixelRatio);
+	            this.setupContactShadowDebugView();
+	        }
+
+	        const createRenderTargetForComposer = () => {
+	            // Let EffectComposer.setPixelRatio() + setSize() manage internal scaling.
+	            // Do NOT attach DepthTexture here: EffectComposer clones/ping-pongs targets and
+            // sharing a single DepthTexture can create an illegal feedback loop.
+            return new THREE.WebGLRenderTarget(width, height, {
+                minFilter: THREE.LinearFilter,
+                magFilter: THREE.LinearFilter,
+                format: THREE.RGBAFormat,
+                type: renderTargetType,
+                depthBuffer: true,
+                stencilBuffer: false
+            });
+        };
+
+	        this.bloomComposer = new THREE.EffectComposer(this.renderer, createRenderTargetForComposer());
+	        if (typeof this.bloomComposer.setPixelRatio === 'function') {
+	            this.bloomComposer.setPixelRatio(pixelRatio);
+	        }
+	        this.bloomComposer.setSize(width, height);
+	        this.bloomComposer.renderToScreen = false;
 
         const bloomRenderPass = new THREE.RenderPass(this.scene, this.camera);
         this.bloomComposer.addPass(bloomRenderPass);
@@ -1059,7 +1562,10 @@ class MarsMissionApp {
         );
         this.bloomComposer.addPass(this.bloomPass);
 
-        this.finalComposer = new THREE.EffectComposer(this.renderer, createRenderTarget());
+	        this.finalComposer = new THREE.EffectComposer(
+	            this.renderer,
+	            createRenderTargetForComposer()
+        );
         if (typeof this.finalComposer.setPixelRatio === 'function') {
             this.finalComposer.setPixelRatio(pixelRatio);
         }
@@ -1069,6 +1575,7 @@ class MarsMissionApp {
         this.ssaaPass = null;
         this.smaaPass = null;
         this.debugPass = null;
+        this.contactShadowPass = null;
 
         const aaRequested = this.aaMode;
 
@@ -1084,6 +1591,18 @@ class MarsMissionApp {
             }
         } else {
             this.finalComposer.addPass(new THREE.RenderPass(this.scene, this.camera));
+        }
+
+	        if (this.aoMode === 'contact') {
+	            try {
+	                const overrides = getRequestedContactShadowParams();
+	                this.contactShadowPass = new ContactShadowPass(this.camera, overrides || undefined);
+	                this.finalComposer.addPass(this.contactShadowPass);
+	            } catch (err) {
+                console.warn('Failed to initialize ContactShadowPass; disabling ao=contact.', err);
+                this.contactShadowPass = null;
+                this.aoMode = 'off';
+            }
         }
 
         this.additivePass = new THREE.ShaderPass(AdditiveBlendShader);
@@ -1108,18 +1627,224 @@ class MarsMissionApp {
             this.finalComposer.addPass(this.debugPass);
         }
 
-        if (typeof THREE.OutputPass === 'function') {
-            this.outputPass = new THREE.OutputPass();
-            this.finalComposer.addPass(this.outputPass);
-        } else {
-            console.warn('OutputPass unavailable; final output may look incorrect.');
-        }
-    }
+	        if (typeof THREE.OutputPass === 'function') {
+	            this.outputPass = new THREE.OutputPass();
+	            this.finalComposer.addPass(this.outputPass);
+	        } else {
+	            console.warn('OutputPass unavailable; final output may look incorrect.');
+	        }
 
-     setupLighting() {
-         // Ambient light
-         const ambientLight = new THREE.AmbientLight(0x101820, this.getRequestedAmbientIntensity());
-         this.scene.add(ambientLight);
+	    }
+
+	    ensureContactShadowDepthTargets(width, height, pixelRatio) {
+	        if (!this.renderer || !this.scene || !this.camera) return;
+	        if (typeof THREE.WebGLRenderTarget !== 'function') return;
+
+	        if (this.contactShadowDepthUnsupported) {
+	            return;
+	        }
+
+	        if (typeof THREE.DepthTexture !== 'function') {
+	            console.warn('DepthTexture unavailable; disabling ao=contact.');
+	            this.contactShadowSceneDepthRT = null;
+	            this.contactShadowShipDepthRT = null;
+	            this.contactShadowDepthUnsupported = true;
+	            if (this.aoMode === 'contact') {
+	                this.aoMode = 'off';
+	            }
+	            return;
+	        }
+
+	        const w = Math.max(1, Math.floor(width * pixelRatio));
+	        const h = Math.max(1, Math.floor(height * pixelRatio));
+
+	        const createDepthTarget = (name) => {
+	            const rt = new THREE.WebGLRenderTarget(w, h, {
+	                minFilter: THREE.NearestFilter,
+	                magFilter: THREE.NearestFilter,
+	                format: THREE.RGBAFormat,
+	                type: THREE.UnsignedByteType,
+	                depthBuffer: true,
+	                stencilBuffer: false
+	            });
+	            rt.texture.name = name;
+	            const depthTexture = new THREE.DepthTexture(w, h);
+	            depthTexture.type = THREE.UnsignedShortType;
+	            depthTexture.format = THREE.DepthFormat;
+	            depthTexture.minFilter = THREE.NearestFilter;
+	            depthTexture.magFilter = THREE.NearestFilter;
+	            depthTexture.generateMipmaps = false;
+	            rt.depthTexture = depthTexture;
+	            return rt;
+	        };
+
+	        const ensureSize = (rt, name) => {
+	            if (!rt) return createDepthTarget(name);
+	            const dt = rt.depthTexture;
+	            const ok =
+	                dt &&
+	                dt.isDepthTexture &&
+	                dt.image &&
+	                dt.image.width === w &&
+	                dt.image.height === h;
+	            if (ok) return rt;
+	            try {
+	                rt.dispose();
+	            } catch (e) {
+	                // ignore
+	            }
+	            return createDepthTarget(name);
+	        };
+
+	        this.contactShadowSceneDepthRT = ensureSize(this.contactShadowSceneDepthRT, 'mm_sceneDepth');
+	        this.contactShadowShipDepthRT = ensureSize(this.contactShadowShipDepthRT, 'mm_shipDepth');
+
+	        if (!this.contactShadowDepthMaterial) {
+	            this.contactShadowDepthMaterial = new THREE.MeshDepthMaterial();
+	            this.contactShadowDepthMaterial.blending = THREE.NoBlending;
+	        }
+	    }
+
+	    setupContactShadowDebugView() {
+	        if (this.contactShadowDebugScene) return;
+	        if (!this.renderer) return;
+
+	        this.contactShadowDebugScene = new THREE.Scene();
+	        this.contactShadowDebugCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+	        this.contactShadowDebugMaterial = new THREE.ShaderMaterial({
+	            uniforms: THREE.UniformsUtils.clone(ContactShadowDebugShader.uniforms),
+	            vertexShader: ContactShadowDebugShader.vertexShader,
+	            fragmentShader: ContactShadowDebugShader.fragmentShader,
+	            depthTest: false,
+	            depthWrite: false
+	        });
+	        this.contactShadowDebugMaterial.toneMapped = false;
+
+	        const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.contactShadowDebugMaterial);
+	        quad.frustumCulled = false;
+	        this.contactShadowDebugMesh = quad;
+	        this.contactShadowDebugScene.add(quad);
+	    }
+
+	    renderContactShadowDepthTargets() {
+	        if (!this.renderer || !this.scene || !this.camera) return false;
+	        if (!this.contactShadowSceneDepthRT || !this.contactShadowShipDepthRT) return false;
+	        if (!this.contactShadowDepthMaterial) return false;
+
+	        const renderer = this.renderer;
+	        const scene = this.scene;
+	        const camera = this.camera;
+
+	        const prevTarget = renderer.getRenderTarget();
+	        const prevOverride = scene.overrideMaterial;
+	        const prevMask = camera.layers.mask;
+	        const prevShadowAutoUpdate = renderer.shadowMap ? renderer.shadowMap.autoUpdate : null;
+	        const prevShadowNeedsUpdate = renderer.shadowMap ? renderer.shadowMap.needsUpdate : null;
+
+	        if (renderer.shadowMap && typeof renderer.shadowMap.autoUpdate === 'boolean') {
+	            renderer.shadowMap.autoUpdate = false;
+	            renderer.shadowMap.needsUpdate = false;
+	        }
+
+	        // 1) Full-scene depth.
+	        camera.layers.mask = prevMask;
+	        renderer.setRenderTarget(this.contactShadowSceneDepthRT);
+	        renderer.clear(true, true, true);
+	        scene.overrideMaterial = prevOverride;
+	        renderer.render(scene, camera);
+
+	        // 2) Ship-only depth via layer.
+	        camera.layers.set(CONTACT_SHADOW_LAYER);
+	        renderer.setRenderTarget(this.contactShadowShipDepthRT);
+	        renderer.clear(true, true, true);
+	        scene.overrideMaterial = this.contactShadowDepthMaterial;
+	        renderer.render(scene, camera);
+
+	        camera.layers.mask = prevMask;
+	        scene.overrideMaterial = prevOverride;
+	        renderer.setRenderTarget(prevTarget);
+	        if (renderer.shadowMap && typeof renderer.shadowMap.autoUpdate === 'boolean') {
+	            renderer.shadowMap.autoUpdate = prevShadowAutoUpdate;
+	            renderer.shadowMap.needsUpdate = prevShadowNeedsUpdate;
+	        }
+
+	        return true;
+	    }
+
+    renderContactShadowDebug() {
+        if (!this.contactShadowDebugMaterial || !this.contactShadowDebugScene || !this.contactShadowDebugCamera) {
+            return false;
+        }
+
+        const uniforms = this.contactShadowDebugMaterial.uniforms;
+        const sceneDepth = this.contactShadowSceneDepthRT ? this.contactShadowSceneDepthRT.depthTexture : null;
+        const shipDepth = this.contactShadowShipDepthRT ? this.contactShadowShipDepthRT.depthTexture : null;
+
+	        if (sceneDepth && shipDepth) {
+	            uniforms.tSceneDepth.value = sceneDepth;
+	            uniforms.tShipDepth.value = shipDepth;
+	            uniforms.uDepthAvailable.value = 1.0;
+	        } else {
+	            uniforms.uDepthAvailable.value = 0.0;
+	        }
+
+        uniforms.uDebugMode.value = this.csDebugMode;
+        uniforms.uNear.value = this.camera ? this.camera.near : 0.01;
+        uniforms.uFar.value = this.camera ? this.camera.far : 3000.0;
+        if (this.camera) {
+            if (!this._contactShadowDebugRefPos) {
+                this._contactShadowDebugRefPos = new THREE.Vector3();
+            }
+            this._contactShadowDebugRefPos.set(0, 0, 0);
+            const shipMesh =
+                (this.objects && this.objects.spacecraft && typeof this.objects.spacecraft.getMesh === 'function')
+                    ? this.objects.spacecraft.getMesh()
+                    : null;
+            if (shipMesh && typeof shipMesh.getWorldPosition === 'function') {
+                shipMesh.getWorldPosition(this._contactShadowDebugRefPos);
+            }
+            const dist = this.camera.position.distanceTo(this._contactShadowDebugRefPos);
+            uniforms.uDebugMaxZ.value = THREE.MathUtils.clamp(dist * 2.0, 5.0, 200.0);
+        } else {
+            uniforms.uDebugMaxZ.value = 50.0;
+        }
+
+        const overrides = getRequestedContactShadowParams() || {};
+        if (typeof overrides.maxDistance === 'number') uniforms.uMaxDistance.value = overrides.maxDistance;
+        if (typeof overrides.thickness === 'number') uniforms.uThickness.value = overrides.thickness;
+        if (typeof overrides.steps === 'number') uniforms.uSteps.value = overrides.steps;
+
+	        uniforms.uVisibilityEps.value = 0.002;
+
+	        if (this.camera) {
+	            uniforms.uProjectionMatrix.value.copy(this.camera.projectionMatrix);
+	            uniforms.uInvProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
+	            uniforms.uViewMatrix.value.copy(this.camera.matrixWorldInverse);
+	            uniforms.uInvViewMatrix.value.copy(this.camera.matrixWorld);
+	        }
+
+	        const renderer = this.renderer;
+	        const prevToneMapping = renderer.toneMapping;
+	        const prevExposure = renderer.toneMappingExposure;
+	        const prevTarget = renderer.getRenderTarget();
+
+	        renderer.toneMapping = THREE.NoToneMapping;
+	        renderer.toneMappingExposure = 1.0;
+	        renderer.setRenderTarget(null);
+	        renderer.render(this.contactShadowDebugScene, this.contactShadowDebugCamera);
+
+	        renderer.setRenderTarget(prevTarget);
+	        renderer.toneMapping = prevToneMapping;
+	        renderer.toneMappingExposure = prevExposure;
+
+	        return true;
+	    }
+
+	     setupLighting() {
+	         // Ambient light
+	         const ambientLight = new THREE.AmbientLight(0x101820, this.getRequestedAmbientIntensity());
+	         this.scene.add(ambientLight);
  
          const hemiLight = new THREE.HemisphereLight(0xfff2e3, 0x05080c, this.getRequestedHemisphereIntensity());
          this.scene.add(hemiLight);
@@ -2280,9 +3005,9 @@ class MarsMissionApp {
         this.scene.add(orbitLine);
     }
 
-     createSpacecraft() {
-         const SpacecraftClass =
-             (typeof globalThis !== 'undefined' && globalThis.Spacecraft) ? globalThis.Spacecraft : undefined;
+	     createSpacecraft() {
+	         const SpacecraftClass =
+	             (typeof globalThis !== 'undefined' && globalThis.Spacecraft) ? globalThis.Spacecraft : undefined;
          if (typeof SpacecraftClass !== 'function') {
              console.error('Spacecraft is not defined. Check that /static/spacecraft.js loaded before main.js.');
              if (typeof showToast === 'function') {
@@ -2291,15 +3016,24 @@ class MarsMissionApp {
              return;
          }
 
-         this.objects.spacecraft = new SpacecraftClass(this.scene);
-         window.__spacecraft = this.objects.spacecraft;
+	         this.objects.spacecraft = new SpacecraftClass(this.scene);
+	         window.__spacecraft = this.objects.spacecraft;
 
-         if (this.planetShadowEnabled) {
-             this.installPlanetShadowForSpacecraft();
-             this.updatePlanetShadowUniforms();
-         }
+	         if (this.objects.spacecraft) {
+	             if (typeof this.objects.spacecraft.setMaterialMode === 'function') {
+	                 this.objects.spacecraft.setMaterialMode(this.materialMode);
+	             }
+	             if (typeof this.objects.spacecraft.setContactShadowLayer === 'function') {
+	                 this.objects.spacecraft.setContactShadowLayer(CONTACT_SHADOW_LAYER);
+	             }
+	         }
 
-     }
+	         if (this.planetShadowEnabled) {
+	             this.installPlanetShadowForSpacecraft();
+	             this.updatePlanetShadowUniforms();
+	         }
+
+	     }
 
 
      updateSpacecraftTrail(position) {
@@ -2670,38 +3404,43 @@ class MarsMissionApp {
         window.addEventListener('resize', () => this.onWindowResize());
     }
 
-    onWindowResize() {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
-        this.camera.updateProjectionMatrix();
-        const width = window.innerWidth;
-        const height = window.innerHeight;
-        const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
-            ? this.renderer.getPixelRatio()
-            : (window.devicePixelRatio || 1);
+	    onWindowResize() {
+	        this.camera.aspect = window.innerWidth / window.innerHeight;
+	        this.camera.updateProjectionMatrix();
+	        const width = window.innerWidth;
+	        const height = window.innerHeight;
+	        const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
+	            ? this.renderer.getPixelRatio()
+	            : (window.devicePixelRatio || 1);
 
-        this.renderer.setSize(width, height);
-        if (this.bloomComposer) {
-            if (typeof this.bloomComposer.setPixelRatio === 'function') {
-                this.bloomComposer.setPixelRatio(pixelRatio);
-            }
-            this.bloomComposer.setSize(width, height);
-        }
-        if (this.finalComposer) {
-            if (typeof this.finalComposer.setPixelRatio === 'function') {
-                this.finalComposer.setPixelRatio(pixelRatio);
-            }
-            this.finalComposer.setSize(width, height);
-        }
-        if (this.bloomPass) {
-            this.bloomPass.resolution.set(width * pixelRatio, height * pixelRatio);
-        }
-        if (this.ssaaPass && typeof this.ssaaPass.setSize === 'function') {
-            this.ssaaPass.setSize(width * pixelRatio, height * pixelRatio);
-        }
-        if (this.smaaPass && typeof this.smaaPass.setSize === 'function') {
-            this.smaaPass.setSize(width * pixelRatio, height * pixelRatio);
-        }
-    }
+	        this.renderer.setSize(width, height);
+	        if (this.bloomComposer) {
+	            if (typeof this.bloomComposer.setPixelRatio === 'function') {
+	                this.bloomComposer.setPixelRatio(pixelRatio);
+	            }
+	            this.bloomComposer.setSize(width, height);
+	        }
+	        if (this.finalComposer) {
+	            if (typeof this.finalComposer.setPixelRatio === 'function') {
+	                this.finalComposer.setPixelRatio(pixelRatio);
+	            }
+	            this.finalComposer.setSize(width, height);
+	        }
+	        if (this.bloomPass) {
+	            this.bloomPass.resolution.set(width * pixelRatio, height * pixelRatio);
+	        }
+	        if (this.ssaaPass && typeof this.ssaaPass.setSize === 'function') {
+	            this.ssaaPass.setSize(width * pixelRatio, height * pixelRatio);
+	        }
+	        if (this.smaaPass && typeof this.smaaPass.setSize === 'function') {
+	            this.smaaPass.setSize(width * pixelRatio, height * pixelRatio);
+	        }
+
+	        const wantsContactShadowDepth = this.aoMode === 'contact' || this.csDebugMode !== 0;
+	        if (wantsContactShadowDepth) {
+	            this.ensureContactShadowDepthTargets(width, height, pixelRatio);
+	        }
+	    }
 
      updateConnectionStatus(connected) {
          if (typeof updateStatusIndicator === 'function') {
@@ -3101,13 +3840,36 @@ class MarsMissionApp {
         const postMode = this.getRequestedPostMode();
         const isRawPost = postMode === 'raw';
 
-        if (!isRawPost) {
-            this.updateLensFlare();
-        } else {
-            this.flareElements.forEach(f => f.sprite.visible = false);
-        }
+	        if (!isRawPost) {
+	            this.updateLensFlare();
+	        } else {
+	            this.flareElements.forEach(f => f.sprite.visible = false);
+	        }
 
-        const disableBloom = isRawPost;
+	        const wantsContactShadowDepth = this.aoMode === 'contact' || this.csDebugMode !== 0;
+	        if (wantsContactShadowDepth) {
+	            const width = window.innerWidth;
+	            const height = window.innerHeight;
+	            const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
+	                ? this.renderer.getPixelRatio()
+	                : (window.devicePixelRatio || 1);
+
+	            this.ensureContactShadowDepthTargets(width, height, pixelRatio);
+	            this.renderContactShadowDepthTargets();
+
+	            if (this.contactShadowPass && typeof this.contactShadowPass.setDepthTextures === 'function') {
+	                const sceneDepth = this.contactShadowSceneDepthRT ? this.contactShadowSceneDepthRT.depthTexture : null;
+	                const shipDepth = this.contactShadowShipDepthRT ? this.contactShadowShipDepthRT.depthTexture : null;
+	                this.contactShadowPass.setDepthTextures(sceneDepth, shipDepth);
+	            }
+	        }
+
+	        if (this.csDebugMode !== 0) {
+	            this.renderContactShadowDebug();
+	            return;
+	        }
+
+	        const disableBloom = isRawPost;
 
         if (
             !disableBloom &&
