@@ -148,6 +148,15 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。如
 8. 清理浏览器噪音：
    - 增加 `<link rel="icon" href="data:,">` 避免 `/favicon.ico 404`
    - 避免在图片未加载时强制 `texture.needsUpdate = true`，减少 `Texture marked for update but no image data found` 警告
+9. Phase 3A（Contact Shadows / 飞船近场自遮蔽）：
+   - `?ao=contact`：飞船材质注入 + 专用 ship depth prepass（保证可采样、每帧更新的 depthTexture）
+   - 语义：仅影响太阳直射（directDiffuse/directSpecular），不影响 IBL/ambient/hemi，避免“本影里仍有阴影变化”
+   - 调参：`csDist/csThick/csStr/csSteps`
+   - 调试：`csDebug=1`（深度结构），`csDebug=2`（遮蔽场 occlusion 0..1，全屏替换输出）
+10. 飞船白模基准：
+   - `?mat=white`：仅飞船切白模（纯白漫反射基准），用于隔离光照分量/验证 contact 阴影
+11. 行星遮挡太阳直射（解析硬阴影）：
+   - `?ps=1`：对飞船材质注入 ray-sphere occlusion（只影响太阳直射，不影响 IBL/ambient/hemi）
 
 ### 已知问题/观察（记录，非阻塞）
 - Firefox 可能对 Google Fonts 的 `Chakra Petch` 报 `maxp: Bad maxZones`（疑似 CDN/缓存导致字体解析警告），不影响渲染逻辑。

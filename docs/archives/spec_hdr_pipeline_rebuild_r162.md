@@ -235,6 +235,9 @@
 - Debug pass：`?debug=exposure` / `?debug=luma`，位于 OutputPass 前。
 - `iblIntensity` Option A：`?ibl=`，集中管理 PBR 材质 `envMapIntensity`，保存 baseline 防漂移。
 - Phase 2（物理摄影感照明）第一步：支持 `?exp`/`?sun`/`?amb`/`?hemi` 并默认降低 fill light。
+- Phase 3A（Contact Shadows / 飞船近场自遮蔽）：`?ao=contact`（飞船材质注入 + ship depth prepass），并提供 `csDebug=1/2` 全屏调试输出。
+- 飞船白模基准：`?mat=white`（仅飞船，用于隔离光照分量）。
+- 行星遮挡太阳直射：`?ps=1`（飞船材质解析遮挡；只影响太阳直射，不影响 IBL/ambient/hemi）。
 
 ### 升级后遇到的问题与处理
 - r162 升级导致 `onBeforeCompile` 注入的旧 shader 变量名不兼容（`vUv` / `emissiveMapTexelToLinear` 等），引发 Shader 编译失败并表现为“贴图不显示”。已按 r162 chunk 的命名修复。
@@ -246,5 +249,5 @@
 - HDR RT 强约束（HalfFloat 不满足则显式降级）
 - HDR Bloom/Composite 的域划分与参数标定
 - 光照能量分配重建（ambient/hemi 收敛，主光与 IBL 关系标定）
-- AO/Contact shadow
+- SSAO/SAO（可选，Phase 3B；在 Contact Shadows 稳定后再引入）
 - CinematicShader 作为末端显示域 pass 的重新接入（延后）

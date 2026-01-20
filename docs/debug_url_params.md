@@ -267,13 +267,13 @@
 - **默认值**：`off`
 - **可选值**：
   - `off` / `0` / `none`
-  - `contact`（优先实现）：屏幕空间近场接触阴影（深度 + 太阳方向短距离 raymarch）
+  - `contact`（优先实现）：方向性近场接触阴影（深度 + 太阳方向短距离 raymarch；仅影响太阳直射）
   - `ssao`（后续可选）：屏幕空间环境光遮蔽（更重，需更强降噪/边缘保真）
 
 说明：
 - `ao=contact` 与 `ps=1`（行星遮挡太阳直射）互补：
   - `ps=1` 负责“星球挡太阳”的硬遮挡阴影（只影响太阳直射贡献）。
-  - `ao=contact` 负责“飞船近场自遮蔽/接触尺度层次”的补偿。
+  - `ao=contact` 负责“飞船近场自遮蔽/接触尺度层次”的补偿（只作用于太阳直射，不影响 IBL/ambient/hemi）。
 - 这两个都不应把整张画面压灰；默认强度必须保守，确保不干扰 Phase 2 的照明标定。
 
 推荐验证组合：
@@ -292,15 +292,16 @@
 - `flare=1|0`：独立控制 lens flare（post flare）
 
 Contact Shadows 调参（已实现，Phase 3A）：
-- `csDist=<float>`：raymarch 最大距离（默认 `0.14`）
-- `csThick=<float>`：厚度/bias（默认 `0.004`）
-- `csStr=<float>`：强度（默认 `0.8`）
-- `csSteps=<int>`：步数（默认 `18`，范围 1..24）
+- `csDist=<float>`：raymarch 最大距离（默认 `0.18`；范围 `0.0..0.5`；单位为 Three.js scene units，越大遮蔽越“宽/厚”但更容易脏/穿帮）
+- `csThick=<float>`：厚度/bias（默认 `0.003`；范围 `0.0..0.05`；用于抑制自交/深度精度伪影，越大越“干净”但更容易漏遮蔽）
+- `csStr=<float>`：强度（默认 `1.1`；范围 `0.0..2.0`；仅影响 `ao=contact` 的实际着色，不影响 `csDebug=2` 输出的 raw occlusion）
+- `csSteps=<int>`：步数（默认 `22`；范围 `1..24`；越大越稳定/细腻但更耗）
 
 Contact Shadows 调试（已实现，全屏替换输出，不经过 tone mapping）：
 - `csDebug=0`：关闭
-- `csDebug=1`：查看深度场结构（对比增强；飞船被遮挡时会显示品红）
-- `csDebug=2`：查看遮蔽场（occlusion 0..1；只在飞船可见像素输出）
+- `csDebug=1`：查看深度场结构（对比增强；仅显示飞船 depth）
+- `csDebug=2`：查看遮蔽场（occlusion 0..1；仅显示飞船像素）
+- `csDebug` 与 `ao` 独立：`csDebug!=0` 时仅切换 debug 输出（全屏替换），不会强制开启 `ao=contact`；反之亦然。
 
 飞船白模（已实现，用于隔离光照分量；仅影响飞船）：
 - `mat=default`：原材质（默认）
@@ -329,6 +330,10 @@ Contact Shadows 调试（已实现，全屏替换输出，不经过 tone mapping
 | Warp | `speed` / `warp` | (无) | 刷新后强制 Warp（0..5） |
 | Shadow | `ps` | `off` | 行星遮挡太阳直射（飞船解析） |
 | AO | `ao` | `off` | `off` / `contact` / `ssao`（Phase 3） |
+| AO | `csDist` | `0.18` | Contact raymarch 最大距离（0..0.5，Three.js scene units） |
+| AO | `csThick` | `0.003` | Contact 厚度/bias（0..0.05） |
+| AO | `csStr` | `1.1` | Contact 强度（0..2；仅影响实际着色） |
+| AO | `csSteps` | `22` | Contact 步数（1..24） |
 | Debug | `csDebug` | `0` | `0` / `1` / `2`（Contact Shadows debug） |
 | Material | `mat` | `default` | `default` / `white`（仅飞船） |
 | PostFX | `bloom` | (规划) | `1` / `0`（Phase 4，独立 bloom 开关） |

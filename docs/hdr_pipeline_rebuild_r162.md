@@ -251,18 +251,16 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 
 #### Phase 3A — Screen-space Contact Shadows（MVP，先做）
 - 原理：基于 **深度纹理（DepthTexture）** 重建像素位置，在 **太阳光方向** 做短距离 raymarch（近场可见性近似），得到接触阴影因子。
-- 放置位置（必须）：位于 OutputPass 之前；在 `finalComposer` 内建议顺序为：
-  - Base Render（`RenderPass`/`SSAARenderPass`）
-  - ContactShadowPass（近场遮蔽）
-  - Bloom composite（base + bloom）
-  - AA（`SMAAPass`，如启用）
-  - Output（`OutputPass`）
-- 工程前置（必须）：为后处理链路提供可采样深度：
-  - `WebGLRenderTarget` 仅 `depthBuffer=true` 不等价于可在 shader 中采样；需要显式挂载 `DepthTexture`（或使用等效机制）。
+- 当前实现（已落地，避免“玄学深度/污染行星”）：
+  - 专用 ship depth prepass：每帧单独渲一张只包含飞船的 `DepthTexture`（不依赖 composer 内部 depth，确保“有且是本帧”）。
+  - 飞船材质注入：在飞船 `MeshStandard/PhysicalMaterial` 的光照末端对 `reflectedLight.directDiffuse/directSpecular` 乘接触阴影因子（只影响太阳直射，不影响 IBL/ambient/hemi）。
+  - 输入语义收敛：depth 只包含飞船 → 接触阴影不会“糊”到行星/背景上。
+  - 调试输出：`csDebug=1/2` 走全屏替换输出，并强制 `NoToneMapping`（绝对/可解释）。
+- 工程前置（必须）：不要把“有 depth buffer”当成“有可采样 depth texture”。
 - 约束（必须）：
   - Contact Shadows 只做“接触尺度”（半径/最大距离必须小、强度必须保守），避免退化成“全局发灰 AO”。
-  - 默认应优先衰减“直射光观感”（哪怕在实现上先以颜色乘因子近似，也必须控制强度，避免压暗环境光导致脏灰）。
-- 参数与开关（要求）：增加可回滚的 feature flag（URL params 记录在 `docs/debug_url_params.md`），至少支持：off / contact。
+  - 只应衰减直射光；否则会把环境光也压暗，导致脏灰/本影内仍可见“阴影变化”。
+- 参数与开关（要求）：`ao=contact`、`csDebug`、`csDist/csThick/csStr/csSteps`、`mat=white` 等统一记录在 `docs/debug_url_params.md`。
 - 验收（DoD）：
   - 飞船模型在侧光/背光下的结构边缘与细节更有层次，但画面不出现明显灰雾。
   - 相机运动时无明显大面积闪烁/条带（允许少量局部伪影；需可通过减小半径/步数/强度抑制）。
@@ -294,7 +292,7 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 #### Full-Post 推荐顺序（规范化目标）
 - HDR 域（scene-referred，tone mapping 前）：
   1) Base Render（`RenderPass`/`SSAARenderPass`）
-  2) Contact Shadows（如启用）
+  2) Contact Shadows（如启用；当前实现为飞船材质注入，不是 composer pass）
   3) SSAO/SAO（可选，如启用）
   4) Bloom 提取与模糊（HDR bloom）
   5) Composite（base + bloom）

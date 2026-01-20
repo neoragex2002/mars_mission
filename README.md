@@ -185,6 +185,10 @@ mars_mission/
 
 ## 自定义与开发
 
+### 调试 URL 参数（渲染/HDR/光照）
+
+完整列表与推荐组合见：`docs/debug_url_params.md`（包含 `post=raw`、`mat=white`、`ao=contact`、`csDebug`、`ps` 等）。
+
 ### 调整任务参数
 
 编辑 `backend/orbit_engine.py`（例如）：

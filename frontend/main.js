@@ -162,10 +162,10 @@ const ContactShadowShader = {
         uDepthAvailable: { value: 0.0 },
         uSunPosWorld: { value: new THREE.Vector3(0, 0, 0) },
 
-        uMaxDistance: { value: 0.14 },
-        uThickness: { value: 0.004 },
-        uStrength: { value: 0.8 },
-        uSteps: { value: 18 },
+        uMaxDistance: { value: 0.18 },
+        uThickness: { value: 0.003 },
+        uStrength: { value: 1.1 },
+        uSteps: { value: 22 },
 
         uMinWorldRadius: { value: 0.35 },
         uMaxViewDistance: { value: 80.0 },
@@ -307,7 +307,6 @@ const ContactShadowShader = {
 
 const ContactShadowDebugShader = {
     uniforms: {
-        tSceneDepth: { value: null },
         tShipDepth: { value: null },
 
         uProjectionMatrix: { value: new THREE.Matrix4() },
@@ -323,9 +322,9 @@ const ContactShadowDebugShader = {
         uFar: { value: 3000.0 },
         uDebugMaxZ: { value: 50.0 },
 
-        uMaxDistance: { value: 0.14 },
-        uThickness: { value: 0.004 },
-        uSteps: { value: 18 },
+        uMaxDistance: { value: 0.18 },
+        uThickness: { value: 0.003 },
+        uSteps: { value: 22 },
         uVisibilityEps: { value: 0.002 }
     },
     vertexShader: `
@@ -336,7 +335,6 @@ const ContactShadowDebugShader = {
         }
     `,
     fragmentShader: `
-        uniform sampler2D tSceneDepth;
         uniform sampler2D tShipDepth;
 
         uniform mat4 uProjectionMatrix;
@@ -386,54 +384,36 @@ const ContactShadowDebugShader = {
             }
 
             float shipDepth = texture2D(tShipDepth, vUv).x;
-            float sceneDepth = texture2D(tSceneDepth, vUv).x;
-
             bool shipValid = shipDepth < 1.0;
-            bool sceneValid = sceneDepth < 1.0;
-
-            if (!sceneValid && !shipValid) {
+            if (!shipValid) {
                 gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
                 return;
             }
 
-            vec3 shipView = shipValid ? reconstructViewPosition(vUv, shipDepth) : vec3(0.0);
-            vec3 sceneView = sceneValid ? reconstructViewPosition(vUv, sceneDepth) : vec3(0.0);
-
-            bool shipVisible = shipValid && sceneValid && (abs(shipView.z - sceneView.z) <= uVisibilityEps);
+            vec3 shipView = reconstructViewPosition(vUv, shipDepth);
 
             if (uDebugMode < 1.5) {
-                // Depth debug (contrast-enhanced). Ship-visible pixels show ship depth; otherwise show scene depth.
-                if (shipValid && sceneValid && !shipVisible) {
-                    // Spacecraft exists in ship-only depth, but isn't visible in scene depth (occluded).
-                    gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);
-                    return;
-                }
-
-                vec3 viewPos = shipVisible ? shipView : (sceneValid ? sceneView : shipView);
+                // Depth debug (contrast-enhanced).
+                vec3 viewPos = shipView;
                 float z = max(-viewPos.z, 0.0);
                 float maxZ = max(uDebugMaxZ, 1e-3);
 
-                float dn = clamp(z / maxZ, 0.0, 1.0);
-                float shade = pow(1.0 - dn, 0.65);
-
-                float v = dn * 24.0;
-                float tri = abs(fract(v) - 0.5);
-                float line = 1.0 - smoothstep(0.0, 0.035, tri);
-
-                vec3 base = vec3(shade);
-                vec3 lineColor = vec3(1.0, 0.92, 0.25);
-                vec3 color = mix(base, lineColor, line * 0.35);
+	                float dn = clamp(log2(1.0 + z) / log2(1.0 + maxZ), 0.0, 1.0);
+	                float shade = pow(1.0 - dn, 0.45);
+	
+	                float v = dn * 48.0;
+	                float tri = abs(fract(v) - 0.5);
+	                float line = 1.0 - smoothstep(0.0, 0.06, tri);
+	
+	                vec3 base = vec3(shade);
+	                vec3 lineColor = vec3(1.0, 0.92, 0.25);
+	                vec3 color = mix(base, lineColor, line * 0.55);
 
                 gl_FragColor = vec4(color, 1.0);
                 return;
             }
 
             // Occlusion debug (0..1). Only meaningful on visible spacecraft pixels.
-            if (!shipVisible) {
-                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-                return;
-            }
-
             vec3 pWorld = (uInvViewMatrix * vec4(shipView, 1.0)).xyz;
 
             vec3 toSunWorld = uSunPosWorld - pWorld;
@@ -628,8 +608,10 @@ class MarsMissionApp {
          this.lastPhase = null;
          this.lastSpacecraftPosition = null;
 
-         this.planetShadowEnabled = this.isPlanetShadowEnabled();
+        this.planetShadowEnabled = this.isPlanetShadowEnabled();
          this.planetShadowUniforms = null;
+
+         this.contactShadowUniforms = null;
 
          this.contactShadowSceneDepthRT = null;
          this.contactShadowShipDepthRT = null;
@@ -1593,17 +1575,8 @@ class MarsMissionApp {
             this.finalComposer.addPass(new THREE.RenderPass(this.scene, this.camera));
         }
 
-	        if (this.aoMode === 'contact') {
-	            try {
-	                const overrides = getRequestedContactShadowParams();
-	                this.contactShadowPass = new ContactShadowPass(this.camera, overrides || undefined);
-	                this.finalComposer.addPass(this.contactShadowPass);
-	            } catch (err) {
-                console.warn('Failed to initialize ContactShadowPass; disabling ao=contact.', err);
-                this.contactShadowPass = null;
-                this.aoMode = 'off';
-            }
-        }
+	        // NOTE: `ao=contact` is implemented as a spacecraft material patch (sun-direct only),
+	        // not as a post-process pass. We keep csDebug as a full-screen debug view.
 
         this.additivePass = new THREE.ShaderPass(AdditiveBlendShader);
         this.additivePass.uniforms.tBloom.value = null;
@@ -1646,7 +1619,6 @@ class MarsMissionApp {
 
 	        if (typeof THREE.DepthTexture !== 'function') {
 	            console.warn('DepthTexture unavailable; disabling ao=contact.');
-	            this.contactShadowSceneDepthRT = null;
 	            this.contactShadowShipDepthRT = null;
 	            this.contactShadowDepthUnsupported = true;
 	            if (this.aoMode === 'contact') {
@@ -1696,7 +1668,6 @@ class MarsMissionApp {
 	            return createDepthTarget(name);
 	        };
 
-	        this.contactShadowSceneDepthRT = ensureSize(this.contactShadowSceneDepthRT, 'mm_sceneDepth');
 	        this.contactShadowShipDepthRT = ensureSize(this.contactShadowShipDepthRT, 'mm_shipDepth');
 
 	        if (!this.contactShadowDepthMaterial) {
@@ -1729,7 +1700,7 @@ class MarsMissionApp {
 
 	    renderContactShadowDepthTargets() {
 	        if (!this.renderer || !this.scene || !this.camera) return false;
-	        if (!this.contactShadowSceneDepthRT || !this.contactShadowShipDepthRT) return false;
+	        if (!this.contactShadowShipDepthRT) return false;
 	        if (!this.contactShadowDepthMaterial) return false;
 
 	        const renderer = this.renderer;
@@ -1747,14 +1718,7 @@ class MarsMissionApp {
 	            renderer.shadowMap.needsUpdate = false;
 	        }
 
-	        // 1) Full-scene depth.
-	        camera.layers.mask = prevMask;
-	        renderer.setRenderTarget(this.contactShadowSceneDepthRT);
-	        renderer.clear(true, true, true);
-	        scene.overrideMaterial = prevOverride;
-	        renderer.render(scene, camera);
-
-	        // 2) Ship-only depth via layer.
+	        // Ship-only depth via layer.
 	        camera.layers.set(CONTACT_SHADOW_LAYER);
 	        renderer.setRenderTarget(this.contactShadowShipDepthRT);
 	        renderer.clear(true, true, true);
@@ -1772,26 +1736,20 @@ class MarsMissionApp {
 	        return true;
 	    }
 
-    renderContactShadowDebug() {
-        if (!this.contactShadowDebugMaterial || !this.contactShadowDebugScene || !this.contactShadowDebugCamera) {
-            return false;
-        }
-
-        const uniforms = this.contactShadowDebugMaterial.uniforms;
-        const sceneDepth = this.contactShadowSceneDepthRT ? this.contactShadowSceneDepthRT.depthTexture : null;
-        const shipDepth = this.contactShadowShipDepthRT ? this.contactShadowShipDepthRT.depthTexture : null;
-
-	        if (sceneDepth && shipDepth) {
-	            uniforms.tSceneDepth.value = sceneDepth;
-	            uniforms.tShipDepth.value = shipDepth;
-	            uniforms.uDepthAvailable.value = 1.0;
-	        } else {
-	            uniforms.uDepthAvailable.value = 0.0;
+	    renderContactShadowDebug() {
+	        if (!this.contactShadowDebugMaterial || !this.contactShadowDebugScene || !this.contactShadowDebugCamera) {
+	            return false;
 	        }
 
-        uniforms.uDebugMode.value = this.csDebugMode;
-        uniforms.uNear.value = this.camera ? this.camera.near : 0.01;
-        uniforms.uFar.value = this.camera ? this.camera.far : 3000.0;
+	        const uniforms = this.contactShadowDebugMaterial.uniforms;
+	        const shipDepth = this.contactShadowShipDepthRT ? this.contactShadowShipDepthRT.depthTexture : null;
+
+	        uniforms.tShipDepth.value = shipDepth;
+	        uniforms.uDepthAvailable.value = shipDepth ? 1.0 : 0.0;
+
+	        uniforms.uDebugMode.value = this.csDebugMode;
+	        uniforms.uNear.value = this.camera ? this.camera.near : 0.01;
+	        uniforms.uFar.value = this.camera ? this.camera.far : 3000.0;
         if (this.camera) {
             if (!this._contactShadowDebugRefPos) {
                 this._contactShadowDebugRefPos = new THREE.Vector3();
@@ -3033,7 +2991,219 @@ class MarsMissionApp {
 	             this.updatePlanetShadowUniforms();
 	         }
 
+	         if (this.aoMode === 'contact') {
+	             this.installContactShadowForSpacecraft();
+	         }
+
 	     }
+
+    ensureContactShadowUniforms() {
+        if (this.contactShadowUniforms) {
+            return this.contactShadowUniforms;
+        }
+
+        const overrides = getRequestedContactShadowParams() || {};
+	        const defaults = {
+	            maxDistance: 0.18,
+	            thickness: 0.003,
+	            strength: 1.1,
+	            steps: 22
+	        };
+
+        const maxDistance = (typeof overrides.maxDistance === 'number') ? overrides.maxDistance : defaults.maxDistance;
+        const thickness = (typeof overrides.thickness === 'number') ? overrides.thickness : defaults.thickness;
+        const strength = (typeof overrides.strength === 'number') ? overrides.strength : defaults.strength;
+        const steps = (typeof overrides.steps === 'number') ? overrides.steps : defaults.steps;
+
+        this.contactShadowUniforms = {
+            uMMContactEnabled: { value: 1.0 },
+            uMMDepthAvailable: { value: 0.0 },
+            uMMShipDepth: { value: null },
+            uMMProjectionMatrix: { value: new THREE.Matrix4() },
+            uMMInvProjectionMatrix: { value: new THREE.Matrix4() },
+            uMMSunPosView: { value: new THREE.Vector3(0, 0, 0) },
+            uMMCsMaxDistance: { value: maxDistance },
+            uMMCsThickness: { value: thickness },
+            uMMCsStrength: { value: strength },
+            uMMCsSteps: { value: steps }
+        };
+
+        return this.contactShadowUniforms;
+    }
+
+    updateContactShadowUniforms() {
+        if (this.aoMode !== 'contact') {
+            return;
+        }
+        const uniforms = this.ensureContactShadowUniforms();
+
+        const shipDepth = this.contactShadowShipDepthRT ? this.contactShadowShipDepthRT.depthTexture : null;
+        uniforms.uMMShipDepth.value = shipDepth;
+        uniforms.uMMDepthAvailable.value = shipDepth ? 1.0 : 0.0;
+
+        if (this.camera) {
+            uniforms.uMMProjectionMatrix.value.copy(this.camera.projectionMatrix);
+            uniforms.uMMInvProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
+        }
+
+        if (this.sunViewPosition) {
+            uniforms.uMMSunPosView.value.copy(this.sunViewPosition);
+        }
+    }
+
+    installContactShadowForSpacecraft() {
+        if (this.aoMode !== 'contact') return;
+        if (!this.objects || !this.objects.spacecraft) return;
+
+        if (this.contactShadowDepthUnsupported) {
+            return;
+        }
+
+        const shipMesh = this.objects.spacecraft.getMesh();
+        if (!shipMesh) return;
+
+        const uniforms = this.ensureContactShadowUniforms();
+
+        const applyToMaterial = (material) => {
+            if (!material) return;
+            if (!(material.isMeshStandardMaterial || material.isMeshPhysicalMaterial)) return;
+            if (material.userData && material.userData.mmContactShadowInstalled) return;
+
+            const prevCompile = material.onBeforeCompile;
+            material.onBeforeCompile = (shader) => {
+                if (typeof prevCompile === 'function') {
+                    prevCompile(shader);
+                }
+
+                shader.uniforms.uMMContactEnabled = uniforms.uMMContactEnabled;
+                shader.uniforms.uMMDepthAvailable = uniforms.uMMDepthAvailable;
+                shader.uniforms.uMMShipDepth = uniforms.uMMShipDepth;
+                shader.uniforms.uMMProjectionMatrix = uniforms.uMMProjectionMatrix;
+                shader.uniforms.uMMInvProjectionMatrix = uniforms.uMMInvProjectionMatrix;
+                shader.uniforms.uMMSunPosView = uniforms.uMMSunPosView;
+                shader.uniforms.uMMCsMaxDistance = uniforms.uMMCsMaxDistance;
+                shader.uniforms.uMMCsThickness = uniforms.uMMCsThickness;
+                shader.uniforms.uMMCsStrength = uniforms.uMMCsStrength;
+                shader.uniforms.uMMCsSteps = uniforms.uMMCsSteps;
+
+                if (!shader.fragmentShader.includes('mmContactShadowFactor')) {
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        '#include <common>',
+                        `#include <common>
+
+uniform float uMMContactEnabled;
+uniform float uMMDepthAvailable;
+uniform sampler2D uMMShipDepth;
+uniform mat4 uMMProjectionMatrix;
+uniform mat4 uMMInvProjectionMatrix;
+uniform vec3 uMMSunPosView;
+uniform float uMMCsMaxDistance;
+uniform float uMMCsThickness;
+uniform float uMMCsStrength;
+uniform float uMMCsSteps;
+
+#define MM_CS_MAX_STEPS 24
+
+vec3 mmReconstructViewPosition(vec2 uv, float depth) {
+    float z = depth * 2.0 - 1.0;
+    vec4 clip = vec4(uv * 2.0 - 1.0, z, 1.0);
+    vec4 view = uMMInvProjectionMatrix * clip;
+    return view.xyz / max(view.w, 1e-6);
+}
+
+vec2 mmProjectToUv(vec3 viewPos) {
+    vec4 clip = uMMProjectionMatrix * vec4(viewPos, 1.0);
+    vec3 ndc = clip.xyz / max(clip.w, 1e-6);
+    return ndc.xy * 0.5 + 0.5;
+}
+
+float mmContactShadowFactor(vec3 fragViewPos) {
+    if (uMMContactEnabled < 0.5) return 1.0;
+    if (uMMDepthAvailable < 0.5) return 1.0;
+
+    vec3 toSunView = uMMSunPosView - fragViewPos;
+    float toSunLen = length(toSunView);
+    if (toSunLen <= 1e-6) return 1.0;
+
+    vec3 rayDirView = toSunView / toSunLen;
+    float maxDist = min(uMMCsMaxDistance, toSunLen);
+
+    float stepsF = clamp(floor(uMMCsSteps + 0.5), 1.0, float(MM_CS_MAX_STEPS));
+    float occlusion = 0.0;
+    float startDist = max(uMMCsThickness * 2.0, 1e-5);
+
+    for (int i = 0; i < MM_CS_MAX_STEPS; i++) {
+        if (float(i) >= stepsF) break;
+
+        float t = float(i) / max(stepsF - 1.0, 1.0);
+        float dist = startDist + t * maxDist;
+
+        vec3 sampleView = fragViewPos + rayDirView * dist;
+        vec2 suv = mmProjectToUv(sampleView);
+        if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) {
+            break;
+        }
+
+        float sDepth = texture2D(uMMShipDepth, suv).x;
+        if (sDepth >= 1.0) {
+            continue;
+        }
+
+        vec3 occView = mmReconstructViewPosition(suv, sDepth);
+        if (occView.z > sampleView.z + uMMCsThickness) {
+            float w = 1.0 - smoothstep(0.0, maxDist, dist);
+            occlusion = max(occlusion, w);
+            break;
+        }
+    }
+
+    float shadow = clamp(1.0 - uMMCsStrength * occlusion, 0.0, 1.0);
+    return shadow;
+}`
+                    );
+                }
+
+                if (!shader.fragmentShader.includes('mmContactShadowApplied')) {
+                    const before = shader.fragmentShader;
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        '#include <lights_fragment_end>',
+                        `#include <lights_fragment_end>
+
+// mmContactShadowApplied
+if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
+    float mmContact = mmContactShadowFactor(geometryPosition);
+    reflectedLight.directDiffuse *= mmContact;
+    reflectedLight.directSpecular *= mmContact;
+}`
+                    );
+
+                    if (shader.fragmentShader === before) {
+                        console.warn('Failed to inject contact shadows; ao=contact may have no effect.');
+                    }
+                }
+
+                material.userData.mmContactShadowShader = shader;
+            };
+
+            if (!material.userData) {
+                material.userData = {};
+            }
+            material.userData.mmContactShadowInstalled = true;
+            material.needsUpdate = true;
+        };
+
+        shipMesh.traverse((node) => {
+            if (!node || node.isMesh !== true) return;
+            if (node.isPoints || node.isLine || node.isSprite) return;
+            if (!node.material) return;
+
+            if (Array.isArray(node.material)) {
+                node.material.forEach((m) => applyToMaterial(m));
+            } else {
+                applyToMaterial(node.material);
+            }
+        });
+    }
 
 
      updateSpacecraftTrail(position) {
@@ -3856,12 +4026,7 @@ class MarsMissionApp {
 
 	            this.ensureContactShadowDepthTargets(width, height, pixelRatio);
 	            this.renderContactShadowDepthTargets();
-
-	            if (this.contactShadowPass && typeof this.contactShadowPass.setDepthTextures === 'function') {
-	                const sceneDepth = this.contactShadowSceneDepthRT ? this.contactShadowSceneDepthRT.depthTexture : null;
-	                const shipDepth = this.contactShadowShipDepthRT ? this.contactShadowShipDepthRT.depthTexture : null;
-	                this.contactShadowPass.setDepthTextures(sceneDepth, shipDepth);
-	            }
+	            this.updateContactShadowUniforms();
 	        }
 
 	        if (this.csDebugMode !== 0) {
