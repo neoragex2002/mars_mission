@@ -272,10 +272,22 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 - 实现要点：
   - 优先 half-res AO + 边缘保真的 blur/上采样，避免在高 DPR 下成本过高。
   - 法线来源策略需明确：优先显式法线（NormalPass/GBuffer）；若走深度重建法线，需接受质量与伪影 trade-off。
+- 当前实现（已落地，ship-only SSAO；不引入额外 gbuffer）：
+  - 复用飞船 depth prepass（与 Contact Shadows 共用 DepthTexture 输入）。
+  - AO 计算在可调分辨率（`ssaoScale`）的 RT 中进行，并提供可选 depth-aware blur。
+  - 仅衰减飞船的间接光（`indirectDiffuse/indirectSpecular`：IBL/ambient/hemi），不影响太阳直射。
+  - debug：`ssaoDebug=1` 全屏替换输出（强制 `NoToneMapping`），便于直接观察 AO 因子。
 - 默认策略：SSAO/SAO 默认关闭，仅作为可选高质量开关；参数与开关同样记录在 `docs/debug_url_params.md`。
 - 验收（DoD）：
   - 细节凹槽/舱段交界更立体，但暗部不糊、不脏、不出现明显 halo。
   - 运动稳定性可接受；不达标则保持默认关闭。
+
+#### 补充：飞船自阴影（ship-only shadow map，太阳直射）
+- 目标：提供更“语义正确”的太阳直射自阴影（相比 contact 更接近真实 shadow map），且不污染行星。
+- 当前实现（已落地）：
+  - `sShadow=1`：专用飞船 shadow depth prepass + 飞船材质注入 compare（仅影响太阳直射，不影响 IBL/ambient/hemi）。
+  - 质量控制：tight fit / texel snapping / bias（含 normal/slope）/ 可调软硬与采样数（Poisson rotated PCF）。
+  - 参数与推荐组合见：`docs/debug_url_params.md`。
 
 ### Phase 4 — Post FX 恢复（HDR 规范化，逐项回归）
 
@@ -337,6 +349,9 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 6. 修复升级后 shader 注入不兼容导致的编译失败（旧 `vUv` 等变量名）。
 7. Phase 2（物理摄影感照明标定）第一步：支持 `?exp`/`?sun`/`?amb`/`?hemi` 并默认降低 fill light。
 8. 清理浏览器噪音：`data:,` favicon；避免 texture image 未就绪时强制 `needsUpdate=true`。
+9. Phase 3A（飞船 Contact Shadows）：`ao=contact` + 专用 ship depth prepass（DepthTexture），并提供 `csDebug=1/2` 全屏替换调试输出（强制 `NoToneMapping`）。
+10. Phase 3B（飞船 SSAO）：`ao=ssao`（ship-only，自研 shader + 复用 ship depth；仅衰减间接光），并提供 `ssaoDebug=1` 调试输出。
+11. 飞船太阳直射自阴影：`sShadow=1`（ship-only shadow map depth prepass + shader compare；提供 tight fit/snap、bias、软硬与采样数等参数）。
 
 ### 已知问题/观察（非阻塞）
 - Firefox 可能对 Google Fonts `Chakra Petch` 报 `maxp: Bad maxZones`（疑似 CDN/缓存导致），不影响渲染逻辑。

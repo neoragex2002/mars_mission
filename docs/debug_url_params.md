@@ -46,6 +46,10 @@
 ### 1.9 只看飞船 SSAO（环境光自遮蔽）
 - `/?post=raw&bg=off&mat=white&ao=ssao&sun=0&amb=0&hemi=0&ibl=1`
 
+### 1.10 日常回归用例（SSAO + 自阴影 + IBL）
+- `/?post=raw&bg=dim&mat=default&ibl=10&iblEnv=space&amb=0&hemi=0&ps=1&ao=ssao&sShadow=1&sShadowBias=0.0012&sShadowNBias=0.01&sShadowSBias=0.02&sShadowSoft=1.2&sShadowSamples=16&aa=ssaa`
+- `http://localhost:8712/?post=raw&bg=dim&mat=default&ibl=10&iblEnv=space&amb=0&hemi=0&ps=1&ao=ssao&sShadow=1&sShadowBias=0.0012&sShadowNBias=0.01&sShadowSBias=0.02&sShadowSoft=1.2&sShadowSamples=16&aa=ssaa`
+
 ---
 
 ## 2. 抗锯齿（AA）
@@ -275,8 +279,19 @@
 - **关闭**：`sShadow=0` / `off` / `false`
 
 含义：
-- 为飞船启用“太阳直射自阴影”（Directional shadow map），只影响飞船的太阳直射贡献（directDiffuse/directSpecular），不影响 IBL/ambient/hemi。
+- 为飞船启用“太阳直射自阴影”（ship-only shadow map depth prepass + shader compare），只影响飞船的太阳直射贡献（directDiffuse/directSpecular），不影响 IBL/ambient/hemi。
 - 与 `ps=1`（行星遮挡太阳直射）相容：当飞船片元处于行星本影时，直射为 0，因此自阴影不会在本影内产生可见变化。
+
+调参（已实现）：
+- `sShadowSoft=<float>`：自阴影软硬（PCF 半径，单位为 shadow map texels；默认 `0`=硬边；范围 `0..6`）
+- `sShadowSamples=<int>`：PCF 采样数（默认 `16`；范围 `1..25`；越大越自然但更耗）
+- `sShadowFit=1|0`：tight fit（默认 `1`；收紧 shadow frustum 到飞船 light-space AABB，减少分辨率浪费）
+- `sShadowSnap=1|0`：texel snapping（默认 `1`；将 frustum center 对齐到 texel 网格，降低边缘抖动）
+- `sShadowMarginXY=<float>`：tight fit 的 XY 边距（默认：按飞船尺寸自动；单位为 Three.js scene units）
+- `sShadowMarginZ=<float>`：tight fit 的 Z 边距（默认：按飞船尺寸自动；单位为 Three.js scene units）
+- `sShadowBias=<float>`：常量 bias（默认 `0.0012`；单位为 shadow depth 归一化 0..1）
+- `sShadowNBias=<float>`：normal bias（默认 `0`；掠射角增加 bias，缓解 acne）
+- `sShadowSBias=<float>`：slope bias（默认 `0`；基于 `fwidth(depth)` 的 bias，缓解高频抖动）
 
 推荐标定组合：
 - `/?post=raw&bg=off&mat=white&sShadow=1&ps=1&amb=0&hemi=0&ibl=0`
@@ -364,7 +379,16 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | Background | `city` | `1.0` | 地球夜灯 0..2 |
 | Warp | `speed` / `warp` | (无) | 刷新后强制 Warp（0..5） |
 | Shadow | `ps` | `off` | 行星遮挡太阳直射（飞船解析） |
-| Shadow | `sShadow` | `off` | 飞船自阴影（太阳直射 shadow map，仅飞船） |
+| Shadow | `sShadow` | `off` | 飞船自阴影（ship-only shadow map；仅影响太阳直射） |
+| Shadow | `sShadowSoft` | `0` | 自阴影软硬（PCF 半径，单位 texels；0=硬边） |
+| Shadow | `sShadowSamples` | `16` | 自阴影 PCF 采样数（1..25；越大越自然但更耗） |
+| Shadow | `sShadowFit` | `1` | 自阴影 tight fit（1=收紧 frustum） |
+| Shadow | `sShadowSnap` | `1` | 自阴影 texel snapping（1=对齐网格减少抖动） |
+| Shadow | `sShadowMarginXY` | auto | 自阴影 tight fit XY 边距（scene units） |
+| Shadow | `sShadowMarginZ` | auto | 自阴影 tight fit Z 边距（scene units） |
+| Shadow | `sShadowBias` | `0.0012` | 自阴影常量 bias（depth 0..1） |
+| Shadow | `sShadowNBias` | `0` | 自阴影 normal bias（掠射角增强） |
+| Shadow | `sShadowSBias` | `0` | 自阴影 slope bias（fwidth(depth)） |
 | AO | `ao` | `off` | `off` / `contact` / `ssao`（Phase 3） |
 | AO | `csDist` | `0.18` | Contact raymarch 最大距离（0..0.5，Three.js scene units） |
 | AO | `csThick` | `0.003` | Contact 厚度/bias（0..0.05） |

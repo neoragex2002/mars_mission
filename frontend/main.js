@@ -22,12 +22,12 @@ const CinematicShader = {
         uniform float grainIntensity;
         varying vec2 vUv;
 
-        // Pseudo-random generator
-        float random(vec2 p) {
-            return fract(sin(dot(p.xy ,vec2(12.9898,78.233))) * 43758.5453);
-        }
-
-        void main() {
+	        // Pseudo-random generator
+	        float random(vec2 p) {
+	            return fract(sin(dot(p.xy ,vec2(12.9898,78.233))) * 43758.5453);
+	        }
+	
+	        void main() {
             vec2 uv = vUv;
             
             // 1. Chromatic Aberration (RGB Shift based on distance from center)
@@ -828,6 +828,53 @@ function getRequestedSsaoParams() {
     };
 }
 
+function getRequestedSpacecraftSelfShadowParams() {
+    if (typeof window === 'undefined' || !window.location) {
+        return null;
+    }
+    if (typeof URLSearchParams === 'undefined') {
+        return null;
+    }
+
+    const params = new URLSearchParams(window.location.search || '');
+
+    const parseNum = (raw) => {
+        if (raw === null || raw === undefined) return null;
+        const v = Number(raw);
+        return Number.isFinite(v) ? v : null;
+    };
+
+    const parseBool = (raw) => {
+        if (raw === null || raw === undefined) return null;
+        const s = String(raw).trim().toLowerCase();
+        if (!s) return null;
+        if (s === '0' || s === 'off' || s === 'false') return false;
+        return true;
+    };
+
+    const softness = parseNum(params.get('sShadowSoft'));
+    const samples = parseNum(params.get('sShadowSamples'));
+    const fit = parseBool(params.get('sShadowFit'));
+    const snap = parseBool(params.get('sShadowSnap'));
+    const bias = parseNum(params.get('sShadowBias'));
+    const normalBias = parseNum(params.get('sShadowNBias'));
+    const slopeBias = parseNum(params.get('sShadowSBias'));
+    const marginXY = parseNum(params.get('sShadowMarginXY'));
+    const marginZ = parseNum(params.get('sShadowMarginZ'));
+
+    return {
+        softness: softness !== null ? THREE.MathUtils.clamp(softness, 0.0, 6.0) : undefined,
+        samples: samples !== null ? THREE.MathUtils.clamp(Math.round(samples), 1, 25) : undefined,
+        fit: fit !== null ? fit : undefined,
+        snap: snap !== null ? snap : undefined,
+        bias: bias !== null ? THREE.MathUtils.clamp(bias, 0.0, 0.05) : undefined,
+        normalBias: normalBias !== null ? THREE.MathUtils.clamp(normalBias, 0.0, 0.1) : undefined,
+        slopeBias: slopeBias !== null ? THREE.MathUtils.clamp(slopeBias, 0.0, 0.2) : undefined,
+        marginXY: marginXY !== null ? THREE.MathUtils.clamp(marginXY, 0.0, 2.0) : undefined,
+        marginZ: marginZ !== null ? THREE.MathUtils.clamp(marginZ, 0.0, 5.0) : undefined,
+    };
+}
+
 class MarsMissionApp {
     constructor() {
         this.scene = null;
@@ -899,19 +946,26 @@ class MarsMissionApp {
          this.lastPhase = null;
          this.lastSpacecraftPosition = null;
 
-        this.planetShadowEnabled = this.isPlanetShadowEnabled();
-         this.planetShadowUniforms = null;
+	        this.planetShadowEnabled = this.isPlanetShadowEnabled();
+	         this.planetShadowUniforms = null;
 
-         this.contactShadowUniforms = null;
-         this.ssaoUniforms = null;
+	         this.contactShadowUniforms = null;
+	         this.ssaoUniforms = null;
 
-        this.spacecraftSelfShadowEnabled = this.isSpacecraftSelfShadowEnabled();
-        this.spacecraftSelfShadowLight = null;
+	        this.spacecraftSelfShadowEnabled = this.isSpacecraftSelfShadowEnabled();
+	        this.spacecraftSelfShadowLight = null;
+	        this.spacecraftSelfShadowUniforms = null;
+	        this.spacecraftSelfShadowCamera = null;
+	        this.spacecraftSelfShadowDepthRT = null;
+	        this.spacecraftSelfShadowDepthMaterial = null;
+	        this._sShadowBiasMatrix = new THREE.Matrix4();
+	        this._sShadowLightPV = new THREE.Matrix4();
+	        this._sShadowMatrixView = new THREE.Matrix4();
 
-         this.contactShadowSceneDepthRT = null;
-         this.contactShadowShipDepthRT = null;
-         this.contactShadowDepthMaterial = null;
-         this.contactShadowDebugScene = null;
+	         this.contactShadowSceneDepthRT = null;
+	         this.contactShadowShipDepthRT = null;
+	         this.contactShadowDepthMaterial = null;
+	         this.contactShadowDebugScene = null;
          this.contactShadowDebugCamera = null;
          this.contactShadowDebugMesh = null;
          this.contactShadowDebugMaterial = null;
@@ -1858,10 +1912,14 @@ class MarsMissionApp {
                     this.aoMode === 'ssao' ||
                     this.csDebugMode !== 0 ||
                     this.ssaoDebugMode !== 0;
-		        if (wantsContactShadowDepth) {
-		            this.ensureContactShadowDepthTargets(width, height, pixelRatio);
-		            this.setupContactShadowDebugView();
-		        }
+			        if (wantsContactShadowDepth) {
+			            this.ensureContactShadowDepthTargets(width, height, pixelRatio);
+			            this.setupContactShadowDebugView();
+			        }
+
+	                if (this.spacecraftSelfShadowEnabled) {
+	                    this.ensureSpacecraftSelfShadowTargets();
+	                }
 
                 const wantsSsao = this.aoMode === 'ssao' || this.ssaoDebugMode !== 0;
                 if (wantsSsao) {
@@ -2027,10 +2085,80 @@ class MarsMissionApp {
 
 	        this.contactShadowShipDepthRT = ensureSize(this.contactShadowShipDepthRT, 'mm_shipDepth');
 
-	        if (!this.contactShadowDepthMaterial) {
-	            this.contactShadowDepthMaterial = new THREE.MeshDepthMaterial();
-	            this.contactShadowDepthMaterial.blending = THREE.NoBlending;
-	        }
+		        if (!this.contactShadowDepthMaterial) {
+		            this.contactShadowDepthMaterial = new THREE.MeshDepthMaterial();
+		            this.contactShadowDepthMaterial.blending = THREE.NoBlending;
+		        }
+			    }
+
+		    ensureSpacecraftSelfShadowTargets() {
+		        if (!this.spacecraftSelfShadowEnabled) return false;
+		        if (!this.renderer || !this.scene) return false;
+		        if (typeof THREE.WebGLRenderTarget !== 'function') return false;
+		        if (typeof THREE.DepthTexture !== 'function') {
+		            console.warn('DepthTexture unavailable; disabling sShadow.');
+		            this.spacecraftSelfShadowDepthRT = null;
+		            this.spacecraftSelfShadowCamera = null;
+		            return false;
+		        }
+
+		        const size = 4096;
+
+		        const needsNewTarget = () => {
+		            const rt = this.spacecraftSelfShadowDepthRT;
+		            if (!rt || !rt.depthTexture || !rt.depthTexture.isDepthTexture) return true;
+		            const img = rt.depthTexture.image;
+		            return !img || img.width !== size || img.height !== size;
+		        };
+
+		        if (needsNewTarget()) {
+		            if (this.spacecraftSelfShadowDepthRT) {
+		                try {
+		                    this.spacecraftSelfShadowDepthRT.dispose();
+		                } catch (e) {
+		                    // ignore
+		                }
+		            }
+		            const rt = new THREE.WebGLRenderTarget(size, size, {
+		                minFilter: THREE.NearestFilter,
+		                magFilter: THREE.NearestFilter,
+		                format: THREE.RGBAFormat,
+		                type: THREE.UnsignedByteType,
+		                depthBuffer: true,
+		                stencilBuffer: false
+		            });
+		            rt.texture.name = 'mm_sShadowDepthColor';
+		            const depthTexture = new THREE.DepthTexture(size, size);
+		            depthTexture.type = THREE.UnsignedShortType;
+		            depthTexture.format = THREE.DepthFormat;
+		            depthTexture.minFilter = THREE.NearestFilter;
+		            depthTexture.magFilter = THREE.NearestFilter;
+		            depthTexture.generateMipmaps = false;
+		            rt.depthTexture = depthTexture;
+		            this.spacecraftSelfShadowDepthRT = rt;
+		        }
+
+		        if (!this.spacecraftSelfShadowDepthMaterial) {
+		            this.spacecraftSelfShadowDepthMaterial = new THREE.MeshDepthMaterial();
+		            this.spacecraftSelfShadowDepthMaterial.blending = THREE.NoBlending;
+		        }
+
+		        if (!this.spacecraftSelfShadowCamera) {
+		            this.spacecraftSelfShadowCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 50);
+		            // Render ship-only via layer.
+		            this.spacecraftSelfShadowCamera.layers.set(CONTACT_SHADOW_LAYER);
+		        }
+
+		        if (this._sShadowBiasMatrix) {
+		            this._sShadowBiasMatrix.set(
+		                0.5, 0.0, 0.0, 0.5,
+		                0.0, 0.5, 0.0, 0.5,
+		                0.0, 0.0, 0.5, 0.5,
+		                0.0, 0.0, 0.0, 1.0
+		            );
+		        }
+
+		        return true;
 		    }
 
             ensureSsaoTargets(width, height, pixelRatio) {
@@ -2204,10 +2332,10 @@ class MarsMissionApp {
 	        this.contactShadowDebugScene.add(quad);
 	    }
 
-	    renderContactShadowDepthTargets() {
-	        if (!this.renderer || !this.scene || !this.camera) return false;
-	        if (!this.contactShadowShipDepthRT) return false;
-	        if (!this.contactShadowDepthMaterial) return false;
+		    renderContactShadowDepthTargets() {
+		        if (!this.renderer || !this.scene || !this.camera) return false;
+		        if (!this.contactShadowShipDepthRT) return false;
+		        if (!this.contactShadowDepthMaterial) return false;
 
 	        const renderer = this.renderer;
 	        const scene = this.scene;
@@ -2239,8 +2367,215 @@ class MarsMissionApp {
 	            renderer.shadowMap.needsUpdate = prevShadowNeedsUpdate;
 	        }
 
-	        return true;
-	    }
+		        return true;
+		    }
+
+			    updateSpacecraftSelfShadowCamera() {
+			        if (!this.spacecraftSelfShadowEnabled) return false;
+			        if (!this.spacecraftSelfShadowCamera) return false;
+			        if (!this.objects || !this.objects.spacecraft || typeof this.objects.spacecraft.getMesh !== 'function') return false;
+
+			        const shipMesh = this.objects.spacecraft.getMesh();
+			        if (!shipMesh) return false;
+
+			        if (!this._sShadowBox) this._sShadowBox = new THREE.Box3();
+			        if (!this._sShadowBoxCenter) this._sShadowBoxCenter = new THREE.Vector3();
+			        if (!this._sShadowBoxSize) this._sShadowBoxSize = new THREE.Vector3();
+			        if (!this._sShadowSphere) this._sShadowSphere = new THREE.Sphere();
+			        if (!this._sShadowSunDir) this._sShadowSunDir = new THREE.Vector3();
+			        if (!this._sShadowSunPos) this._sShadowSunPos = new THREE.Vector3();
+			        if (!this._sShadowTmpUp) this._sShadowTmpUp = new THREE.Vector3();
+			        if (!this._sShadowTmpVec) this._sShadowTmpVec = new THREE.Vector3();
+			        if (!this._sShadowCorners) {
+			            this._sShadowCorners = Array.from({ length: 8 }, () => new THREE.Vector3());
+			        }
+			        if (!this._sShadowCornerView) this._sShadowCornerView = new THREE.Vector3();
+
+			        const box = this._sShadowBox;
+			        const center = this._sShadowBoxCenter;
+			        const size = this._sShadowBoxSize;
+
+			        const overrides = getRequestedSpacecraftSelfShadowParams() || {};
+			        const fit = (typeof overrides.fit === 'boolean') ? overrides.fit : true;
+			        const snap = (typeof overrides.snap === 'boolean') ? overrides.snap : true;
+
+			        box.setFromObject(shipMesh);
+			        if (!Number.isFinite(box.min.x) || !Number.isFinite(box.max.x)) {
+			            return false;
+			        }
+
+			        box.getCenter(center);
+			        box.getSize(size);
+			        box.getBoundingSphere(this._sShadowSphere);
+			        const shipRadius = Math.max(0.01, this._sShadowSphere.radius);
+
+		        if (this.sunWorldPosition) {
+		            this._sShadowSunPos.copy(this.sunWorldPosition);
+		        } else {
+		            this._sShadowSunPos.set(0, 0, 0);
+		        }
+
+		        this._sShadowSunDir.copy(center).sub(this._sShadowSunPos);
+		        if (this._sShadowSunDir.lengthSq() <= 1e-12) {
+		            this._sShadowSunDir.set(1, 0, 0);
+		        } else {
+		            this._sShadowSunDir.normalize();
+		        }
+
+		        const cam = this.spacecraftSelfShadowCamera;
+		        const maxExtent = Math.max(size.x, size.y, size.z);
+		        const lightDistance = Math.max(2.0, shipRadius * 10.0, maxExtent * 6.0);
+
+		        // Choose a stable up vector to avoid gimbal issues when sunDir aligns with world up.
+		        this._sShadowTmpUp.set(0, 1, 0);
+		        if (Math.abs(this._sShadowSunDir.dot(this._sShadowTmpUp)) > 0.95) {
+		            this._sShadowTmpUp.set(1, 0, 0);
+			        }
+
+			        cam.up.copy(this._sShadowTmpUp);
+			        this._sShadowTmpVec.copy(this._sShadowSunDir).multiplyScalar(lightDistance);
+			        cam.position.copy(center).sub(this._sShadowTmpVec);
+			        cam.lookAt(center);
+			        cam.updateMatrixWorld();
+
+			        const defaultMarginXY = Math.max(0.02, shipRadius * 0.25);
+			        const defaultMarginZ = Math.max(0.2, shipRadius * 2.0);
+			        const marginXY = (typeof overrides.marginXY === 'number') ? overrides.marginXY : defaultMarginXY;
+			        const marginZ = (typeof overrides.marginZ === 'number') ? overrides.marginZ : defaultMarginZ;
+
+			        if (!fit) {
+			            const r = shipRadius + marginXY;
+			            cam.left = -r;
+			            cam.right = r;
+			            cam.bottom = -r;
+			            cam.top = r;
+			            cam.near = Math.max(0.01, lightDistance - shipRadius - marginZ);
+			            cam.far = lightDistance + shipRadius + marginZ;
+			            cam.updateProjectionMatrix();
+			            cam.updateMatrixWorld();
+			            return true;
+			        }
+
+			        // Tight fit: compute ship bounds in light-view space, then optionally snap the ortho frustum to texels.
+			        const corners = this._sShadowCorners;
+			        const min = box.min;
+			        const max = box.max;
+			        corners[0].set(min.x, min.y, min.z);
+			        corners[1].set(max.x, min.y, min.z);
+			        corners[2].set(min.x, max.y, min.z);
+			        corners[3].set(max.x, max.y, min.z);
+			        corners[4].set(min.x, min.y, max.z);
+			        corners[5].set(max.x, min.y, max.z);
+			        corners[6].set(min.x, max.y, max.z);
+			        corners[7].set(max.x, max.y, max.z);
+
+			        let minX = Infinity;
+			        let maxX = -Infinity;
+			        let minY = Infinity;
+			        let maxY = -Infinity;
+			        let minDepth = Infinity;
+			        let maxDepth = -Infinity;
+
+			        for (let i = 0; i < 8; i++) {
+			            this._sShadowCornerView.copy(corners[i]).applyMatrix4(cam.matrixWorldInverse);
+			            const vx = this._sShadowCornerView.x;
+			            const vy = this._sShadowCornerView.y;
+			            const vz = this._sShadowCornerView.z;
+			            if (!Number.isFinite(vx) || !Number.isFinite(vy) || !Number.isFinite(vz)) continue;
+
+			            minX = Math.min(minX, vx);
+			            maxX = Math.max(maxX, vx);
+			            minY = Math.min(minY, vy);
+			            maxY = Math.max(maxY, vy);
+
+			            const depth = -vz;
+			            minDepth = Math.min(minDepth, depth);
+			            maxDepth = Math.max(maxDepth, depth);
+			        }
+
+			        if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+			            return false;
+			        }
+
+			        minX -= marginXY;
+			        maxX += marginXY;
+			        minY -= marginXY;
+			        maxY += marginXY;
+
+			        minDepth = Math.max(0.01, minDepth - marginZ);
+			        maxDepth = Math.max(minDepth + 0.01, maxDepth + marginZ);
+
+			        if (snap) {
+			            const depthTex = this.spacecraftSelfShadowDepthRT ? this.spacecraftSelfShadowDepthRT.depthTexture : null;
+			            const img = depthTex && depthTex.image ? depthTex.image : null;
+			            const mapSize = (img && img.width) ? img.width : 2048;
+
+			            const w = Math.max(1e-6, maxX - minX);
+			            const h = Math.max(1e-6, maxY - minY);
+			            const texelX = w / Math.max(1, mapSize);
+			            const texelY = h / Math.max(1, mapSize);
+
+			            const cx = (minX + maxX) * 0.5;
+			            const cy = (minY + maxY) * 0.5;
+
+			            const snappedCx = Math.round(cx / texelX) * texelX;
+			            const snappedCy = Math.round(cy / texelY) * texelY;
+
+			            const dx = snappedCx - cx;
+			            const dy = snappedCy - cy;
+			            minX += dx;
+			            maxX += dx;
+			            minY += dy;
+			            maxY += dy;
+			        }
+
+			        cam.left = minX;
+			        cam.right = maxX;
+			        cam.bottom = minY;
+			        cam.top = maxY;
+			        cam.near = minDepth;
+			        cam.far = maxDepth;
+			        cam.updateProjectionMatrix();
+			        cam.updateMatrixWorld();
+
+			        return true;
+			    }
+
+		    renderSpacecraftSelfShadowDepthTarget() {
+		        if (!this.spacecraftSelfShadowEnabled) return false;
+		        if (!this.renderer || !this.scene) return false;
+		        if (!this.spacecraftSelfShadowDepthRT) return false;
+		        if (!this.spacecraftSelfShadowDepthMaterial) return false;
+		        if (!this.spacecraftSelfShadowCamera) return false;
+
+		        const renderer = this.renderer;
+		        const scene = this.scene;
+		        const camera = this.spacecraftSelfShadowCamera;
+
+		        const prevTarget = renderer.getRenderTarget();
+		        const prevOverride = scene.overrideMaterial;
+		        const prevShadowAutoUpdate = renderer.shadowMap ? renderer.shadowMap.autoUpdate : null;
+		        const prevShadowNeedsUpdate = renderer.shadowMap ? renderer.shadowMap.needsUpdate : null;
+
+		        if (renderer.shadowMap && typeof renderer.shadowMap.autoUpdate === 'boolean') {
+		            renderer.shadowMap.autoUpdate = false;
+		            renderer.shadowMap.needsUpdate = false;
+		        }
+
+		        renderer.setRenderTarget(this.spacecraftSelfShadowDepthRT);
+		        renderer.clear(true, true, true);
+		        scene.overrideMaterial = this.spacecraftSelfShadowDepthMaterial;
+		        renderer.render(scene, camera);
+
+		        scene.overrideMaterial = prevOverride;
+		        renderer.setRenderTarget(prevTarget);
+		        if (renderer.shadowMap && typeof renderer.shadowMap.autoUpdate === 'boolean') {
+		            renderer.shadowMap.autoUpdate = prevShadowAutoUpdate;
+		            renderer.shadowMap.needsUpdate = prevShadowNeedsUpdate;
+		        }
+
+		        return true;
+		    }
 
 		    renderContactShadowDebug() {
 	        if (!this.contactShadowDebugMaterial || !this.contactShadowDebugScene || !this.contactShadowDebugCamera) {
@@ -2536,169 +2871,24 @@ if (uMMSsaoEnabled > 0.5) {
 	     this.scene.add(hemiLight);
 	     this.hemiLight = hemiLight;
 	 
-	     // Point light from sun
-	     const sunLight = new THREE.PointLight(0xfff2e3, this.getRequestedSunIntensity(), 0, 2);
-	     sunLight.position.set(0, 0, 0);
-	     // Always keep the sun PointLight on the default layer; `sShadow=1` moves the spacecraft off layer 0.
-	     sunLight.layers.set(0);
-	     // NOTE: When `sShadow=1` we use a ship-only DirectionalLight shadow map for self-shadowing,
-	     // and keep the sun PointLight shadow disabled to avoid expensive cube shadow updates and
-	     // double-shadowing artifacts.
-	     sunLight.castShadow = !this.spacecraftSelfShadowEnabled;
-	     if (sunLight.castShadow) {
-	         sunLight.shadow.mapSize.width = 2048;
-	         sunLight.shadow.mapSize.height = 2048;
+		     // Point light from sun
+		     const sunLight = new THREE.PointLight(0xfff2e3, this.getRequestedSunIntensity(), 0, 2);
+		     sunLight.position.set(0, 0, 0);
+		     // Keep the sun PointLight on the default layer; `sShadow=1` is a ship-only shadow-map shader patch.
+		     sunLight.layers.set(0);
+		     // NOTE: When `sShadow=1` we keep sun cube shadows disabled to avoid expensive updates
+		     // (spacecraft self-shadow is handled by a dedicated ship-only depth pass).
+		     sunLight.castShadow = !this.spacecraftSelfShadowEnabled;
+		     if (sunLight.castShadow) {
+		         sunLight.shadow.mapSize.width = 2048;
+		         sunLight.shadow.mapSize.height = 2048;
 	         sunLight.shadow.camera.near = 0.5;
 	         sunLight.shadow.camera.far = 500;
 	         sunLight.shadow.bias = -0.0008;
-	     }
-	     this.scene.add(sunLight);
-	     this.sunLight = sunLight;
-
-	     if (this.spacecraftSelfShadowEnabled) {
-	         this.setupSpacecraftSelfShadowLight();
-	     }
-	 }
-
-		 setupSpacecraftSelfShadowLight() {
-		     if (!this.scene) return;
-		     if (!this.renderer || !this.renderer.shadowMap || this.renderer.shadowMap.enabled !== true) {
-		         return;
 		     }
-
-	     if (this.spacecraftSelfShadowLight) {
-	         return;
-	     }
-
-	     // NOTE: keep intensity > 0 so three.js includes the light in the lighting + shadow pipeline.
-	     // When `sShadow=1`, the spacecraft is moved off the sun PointLight layer and is lit by this
-	     // DirectionalLight (with intensity adjusted per-frame for 1/r^2 falloff).
-	     const light = new THREE.DirectionalLight(0xffffff, 0.0001);
-	     light.name = 'mm_spacecraftSelfShadow';
-	     light.castShadow = true;
-
-		     // Only affect / render shadows for the spacecraft layer.
-		     light.layers.set(CONTACT_SHADOW_LAYER);
-
-		     // Slightly higher-res + less blur for clearer self-shadow edges.
-		     light.shadow.mapSize.set(2048, 2048);
-		     light.shadow.bias = -0.00003;
-		     light.shadow.normalBias = 0.002;
-		     light.shadow.radius = 0;
-
-	     // Initialize a reasonable shadow camera volume (will be tightened per-frame once the ship exists).
-	     const cam = light.shadow.camera;
-	     cam.left = -1;
-	     cam.right = 1;
-	     cam.top = 1;
-	     cam.bottom = -1;
-	     cam.near = 0.1;
-	     cam.far = 50;
-	     cam.updateProjectionMatrix();
-
-	     this.scene.add(light);
-	     this.scene.add(light.target);
-
-	     this.spacecraftSelfShadowLight = light;
-
-	     if (!this._sShadowBox) {
-	         this._sShadowBox = new THREE.Box3();
-	     }
-	     if (!this._sShadowBoxCenter) {
-	         this._sShadowBoxCenter = new THREE.Vector3();
-	     }
-	     if (!this._sShadowBoxSize) {
-	         this._sShadowBoxSize = new THREE.Vector3();
-	     }
-	     if (!this._sShadowCorner) {
-	         this._sShadowCorner = new THREE.Vector3();
-	     }
-	     if (!this._sShadowCorners) {
-	         this._sShadowCorners = Array.from({ length: 8 }, () => new THREE.Vector3());
-	     }
-	     if (!this._sShadowSphere) {
-	         this._sShadowSphere = new THREE.Sphere();
-	     }
-	     if (!this._sShadowSunDir) {
-	         this._sShadowSunDir = new THREE.Vector3();
-	     }
-	     if (!this._sShadowSunPos) {
-	         this._sShadowSunPos = new THREE.Vector3();
-	     }
-	 }
-
-	 updateSpacecraftSelfShadowLight() {
-	     if (!this.spacecraftSelfShadowEnabled) return;
-	     const light = this.spacecraftSelfShadowLight;
-	     if (!light || !light.shadow || !light.shadow.camera) return;
-	     if (!this.scene) return;
-	     if (!this.objects || !this.objects.spacecraft || typeof this.objects.spacecraft.getMesh !== 'function') return;
-
-	     const shipMesh = this.objects.spacecraft.getMesh();
-	     if (!shipMesh) return;
-
-	     const box = this._sShadowBox;
-	     const center = this._sShadowBoxCenter;
-	     const size = this._sShadowBoxSize;
-
-	     box.setFromObject(shipMesh);
-	     if (!Number.isFinite(box.min.x) || !Number.isFinite(box.max.x)) {
-	         return;
-	     }
-
-	     box.getCenter(center);
-	     box.getSize(size);
-	     box.getBoundingSphere(this._sShadowSphere);
-	     const shipRadius = Math.max(0.01, this._sShadowSphere.radius);
-
-	     // Sun is at world origin today; keep the hook for future where it may move.
-	     if (this.sunWorldPosition) {
-	         this._sShadowSunPos.copy(this.sunWorldPosition);
-	     } else {
-	         this._sShadowSunPos.set(0, 0, 0);
-	     }
-
-	     this._sShadowSunDir.copy(center).sub(this._sShadowSunPos);
-	     if (this._sShadowSunDir.lengthSq() <= 1e-12) {
-	         this._sShadowSunDir.set(1, 0, 0);
-	     } else {
-	         this._sShadowSunDir.normalize();
-	     }
-
-	     const maxExtent = Math.max(size.x, size.y, size.z);
-	     const lightDistance = Math.max(2.0, shipRadius * 10.0, maxExtent * 6.0);
-	     light.position.copy(center).sub(this._sShadowCorner.copy(this._sShadowSunDir).multiplyScalar(lightDistance));
-	     light.target.position.copy(center);
-	     light.target.updateMatrixWorld();
-	     light.updateMatrixWorld();
-
-	     // Keep shadow camera volume simple and safe using the ship's bounding sphere.
-	     // (A tight AABB-in-light-space fit is possible, but this is more robust.)
-	     const shadowCam = light.shadow.camera;
-	     const marginXY = Math.max(0.02, shipRadius * 0.25);
-	     const marginZ = Math.max(0.2, shipRadius * 2.0);
-
-	     const r = shipRadius + marginXY;
-	     shadowCam.left = -r;
-	     shadowCam.right = r;
-	     shadowCam.bottom = -r;
-	     shadowCam.top = r;
-	     shadowCam.near = Math.max(0.01, lightDistance - shipRadius - marginZ);
-	     shadowCam.far = lightDistance + shipRadius + marginZ;
-	     shadowCam.updateProjectionMatrix();
-
-	     // Approximate 1/r^2 falloff to match the sun PointLight intensity at the spacecraft distance.
-	     const distToSun = Math.max(0.01, center.distanceTo(this._sShadowSunPos));
-	     if (this.sunLight && typeof this.sunLight.intensity === 'number') {
-	         light.intensity = Math.max(0.0001, this.sunLight.intensity / (distToSun * distToSun));
-	     } else {
-	         light.intensity = 0.0001;
-	     }
-
-	     if (light.shadow) {
-	         light.shadow.needsUpdate = true;
-	     }
-	 }
+		     this.scene.add(sunLight);
+		     this.sunLight = sunLight;
+		 }
 
 
     createNebulaTexture() {
@@ -3878,37 +4068,105 @@ if (uMMSsaoEnabled > 0.5) {
                      this.installSsaoForSpacecraft();
                  }
 
-			         if (this.spacecraftSelfShadowEnabled) {
-			             this.applySpacecraftSelfShadowFlags();
-			         }
-
 		     }
 
-	    applySpacecraftSelfShadowFlags() {
-	        if (!this.spacecraftSelfShadowEnabled) return;
-	        if (!this.objects || !this.objects.spacecraft || typeof this.objects.spacecraft.getMesh !== 'function') return;
-	        const shipMesh = this.objects.spacecraft.getMesh();
-	        if (!shipMesh) return;
-	        if (this.camera && this.camera.layers && typeof this.camera.layers.enable === 'function') {
-	            // Ensure the main camera can still see the spacecraft once we remove it from layer 0.
-	            this.camera.layers.enable(CONTACT_SHADOW_LAYER);
-	        }
-	        shipMesh.traverse((node) => {
-	            if (!node || node.isMesh !== true) return;
-	            if (node.isPoints || node.isLine || node.isSprite) return;
-	            if (node.layers && typeof node.layers.enable === 'function' && typeof node.layers.disable === 'function') {
-	                node.layers.enable(CONTACT_SHADOW_LAYER);
-	                node.layers.disable(0);
-	            }
-	            node.castShadow = true;
-	            node.receiveShadow = true;
-	        });
-	    }
+			    ensureSpacecraftSelfShadowUniforms() {
+			        if (this.spacecraftSelfShadowUniforms) {
+			            return this.spacecraftSelfShadowUniforms;
+			        }
 
-    ensureContactShadowUniforms() {
-        if (this.contactShadowUniforms) {
-            return this.contactShadowUniforms;
-        }
+			        const overrides = getRequestedSpacecraftSelfShadowParams() || {};
+
+			        // Bias is in normalized shadow-map depth (0..1).
+			        // Softness is a PCF radius in *texels* (0 = hard edge).
+			        const defaults = {
+			            bias: 0.0012,
+			            normalBias: 0.0,
+			            slopeBias: 0.0,
+			            softness: 0.0,
+			            samples: 16
+			        };
+
+			        const bias = (typeof overrides.bias === 'number') ? overrides.bias : defaults.bias;
+			        const normalBias = (typeof overrides.normalBias === 'number') ? overrides.normalBias : defaults.normalBias;
+			        const slopeBias = (typeof overrides.slopeBias === 'number') ? overrides.slopeBias : defaults.slopeBias;
+			        const softness = (typeof overrides.softness === 'number') ? overrides.softness : defaults.softness;
+			        const samples = (typeof overrides.samples === 'number') ? overrides.samples : defaults.samples;
+
+			        this.spacecraftSelfShadowUniforms = {
+			            uMMSShadowEnabled: { value: 1.0 },
+			            uMMSShadowDepthAvailable: { value: 0.0 },
+			            uMMSShadowDepth: { value: null },
+			            uMMSShadowMatrixView: { value: new THREE.Matrix4() },
+			            uMMSShadowBias: { value: bias },
+			            uMMSShadowNormalBias: { value: normalBias },
+			            uMMSShadowSlopeBias: { value: slopeBias },
+			            uMMSShadowLightDirView: { value: new THREE.Vector3(0, 0, -1) },
+			            uMMSShadowTexelSize: { value: new THREE.Vector2(1 / 2048, 1 / 2048) },
+			            uMMSShadowSoftness: { value: softness },
+			            uMMSShadowSamples: { value: samples }
+			        };
+
+			        return this.spacecraftSelfShadowUniforms;
+			    }
+
+			    updateSpacecraftSelfShadowUniforms() {
+			        if (!this.spacecraftSelfShadowEnabled) return;
+			        const uniforms = this.ensureSpacecraftSelfShadowUniforms();
+
+			        const depthTex = this.spacecraftSelfShadowDepthRT ? this.spacecraftSelfShadowDepthRT.depthTexture : null;
+			        uniforms.uMMSShadowDepth.value = depthTex;
+			        uniforms.uMMSShadowDepthAvailable.value = depthTex ? 1.0 : 0.0;
+
+			        if (!depthTex) return;
+			        if (!this.spacecraftSelfShadowCamera || !this.camera) return;
+
+			        if (uniforms.uMMSShadowTexelSize && uniforms.uMMSShadowTexelSize.value) {
+			            const img = depthTex.image;
+			            const w = img && img.width ? img.width : 0;
+			            const h = img && img.height ? img.height : 0;
+			            if (w > 0 && h > 0) {
+			                uniforms.uMMSShadowTexelSize.value.set(1 / w, 1 / h);
+			            }
+			        }
+
+			        if (uniforms.uMMSShadowLightDirView && uniforms.uMMSShadowLightDirView.value) {
+			            if (!this._sShadowLightDirWorld) {
+			                this._sShadowLightDirWorld = new THREE.Vector3();
+			            }
+			            if (!this._sShadowLightDirView) {
+			                this._sShadowLightDirView = new THREE.Vector3();
+			            }
+
+			            // Approximate constant light direction for bias: from ship center toward the sun.
+			            const sunPos = this.sunWorldPosition ? this.sunWorldPosition : null;
+			            const centerWorld = this._sShadowBoxCenter ? this._sShadowBoxCenter : null;
+			            if (sunPos && centerWorld) {
+			                this._sShadowLightDirWorld.copy(sunPos).sub(centerWorld);
+			                if (this._sShadowLightDirWorld.lengthSq() > 1e-12) {
+			                    this._sShadowLightDirWorld.normalize();
+			                    this._sShadowLightDirView.copy(this._sShadowLightDirWorld).transformDirection(this.camera.matrixWorldInverse);
+			                    uniforms.uMMSShadowLightDirView.value.copy(this._sShadowLightDirView);
+			                }
+			            }
+			        }
+
+			        // shadowMatrixView = bias * lightProjView * cameraInvView
+			        this._sShadowLightPV.multiplyMatrices(
+			            this.spacecraftSelfShadowCamera.projectionMatrix,
+			            this.spacecraftSelfShadowCamera.matrixWorldInverse
+		        );
+		        this._sShadowMatrixView.copy(this._sShadowLightPV);
+		        this._sShadowMatrixView.premultiply(this._sShadowBiasMatrix);
+		        this._sShadowMatrixView.multiply(this.camera.matrixWorld);
+
+		        uniforms.uMMSShadowMatrixView.value.copy(this._sShadowMatrixView);
+		    }
+
+	    ensureContactShadowUniforms() {
+	        if (this.contactShadowUniforms) {
+	            return this.contactShadowUniforms;
+	        }
 
         const overrides = getRequestedContactShadowParams() || {};
 	        const defaults = {
@@ -4113,17 +4371,191 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
         });
     }
 
-	    installSpacecraftSelfShadowForSpacecraft() {
-        if (!this.spacecraftSelfShadowEnabled) return;
+		    installSpacecraftSelfShadowForSpacecraft() {
+		        if (!this.spacecraftSelfShadowEnabled) return;
+		        if (!this.objects || !this.objects.spacecraft) return;
+		        if (!this.renderer || !this.scene || !this.camera) return;
+	
+		        const shipMesh = this.objects.spacecraft.getMesh();
+		        if (!shipMesh) return;
+	
+		        this.ensureSpacecraftSelfShadowTargets();
+		        const uniforms = this.ensureSpacecraftSelfShadowUniforms();
+	
+			        const applyToMaterial = (material) => {
+			            if (!material) return;
+			            if (!(material.isMeshStandardMaterial || material.isMeshPhysicalMaterial)) return;
+			            if (material.userData && material.userData.mmSpacecraftSelfShadowInstalled) return;
 
-        // The spacecraft GLTF loads asynchronously; ensure new meshes get the correct layer + shadow flags
-        // after material swaps / model load completes.
-        if (!this.spacecraftSelfShadowLight) {
-            this.setupSpacecraftSelfShadowLight();
-        }
-        this.applySpacecraftSelfShadowFlags();
-        this.updateSpacecraftSelfShadowLight();
-    }
+			            // We use `fwidth()` in the shader (for optional slope bias). Ensure derivatives are enabled on WebGL1.
+			            if (!material.extensions) {
+			                material.extensions = {};
+			            }
+			            material.extensions.derivatives = true;
+		
+			            const prevCompile = material.onBeforeCompile;
+			            material.onBeforeCompile = (shader) => {
+			                if (typeof prevCompile === 'function') {
+		                    prevCompile(shader);
+		                }
+	
+			                shader.uniforms.uMMSShadowEnabled = uniforms.uMMSShadowEnabled;
+				                shader.uniforms.uMMSShadowDepthAvailable = uniforms.uMMSShadowDepthAvailable;
+				                shader.uniforms.uMMSShadowDepth = uniforms.uMMSShadowDepth;
+				                shader.uniforms.uMMSShadowMatrixView = uniforms.uMMSShadowMatrixView;
+				                shader.uniforms.uMMSShadowBias = uniforms.uMMSShadowBias;
+				                shader.uniforms.uMMSShadowNormalBias = uniforms.uMMSShadowNormalBias;
+				                shader.uniforms.uMMSShadowSlopeBias = uniforms.uMMSShadowSlopeBias;
+				                shader.uniforms.uMMSShadowLightDirView = uniforms.uMMSShadowLightDirView;
+				                shader.uniforms.uMMSShadowTexelSize = uniforms.uMMSShadowTexelSize;
+				                shader.uniforms.uMMSShadowSoftness = uniforms.uMMSShadowSoftness;
+				                shader.uniforms.uMMSShadowSamples = uniforms.uMMSShadowSamples;
+			
+				                if (!shader.fragmentShader.includes('mmSpacecraftSelfShadowFactor')) {
+				                    shader.fragmentShader = shader.fragmentShader.replace(
+				                        '#include <common>',
+				                        `#include <common>
+			
+		uniform float uMMSShadowEnabled;
+		uniform float uMMSShadowDepthAvailable;
+		uniform sampler2D uMMSShadowDepth;
+		uniform mat4 uMMSShadowMatrixView;
+		uniform float uMMSShadowBias;
+		uniform float uMMSShadowNormalBias;
+		uniform float uMMSShadowSlopeBias;
+		uniform vec3 uMMSShadowLightDirView;
+		uniform vec2 uMMSShadowTexelSize;
+		uniform float uMMSShadowSoftness;
+		uniform float uMMSShadowSamples;
+
+		float mmSpacecraftShadowCompare(vec2 uv, float depth, float bias) {
+		    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1.0;
+		    float z = texture2D(uMMSShadowDepth, uv).x;
+		    if (z >= 1.0) return 1.0;
+		    return (depth > z + bias) ? 0.0 : 1.0;
+		}
+
+		float mmHash12(vec2 p) {
+		    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+		}
+
+		vec2 mmRotate2D(vec2 v, float a) {
+		    float s = sin(a);
+		    float c = cos(a);
+		    return vec2(c * v.x - s * v.y, s * v.x + c * v.y);
+		}
+			
+		float mmSpacecraftSelfShadowFactor(vec3 fragViewPos, vec3 fragNormalView) {
+		    if (uMMSShadowEnabled < 0.5) return 1.0;
+		    if (uMMSShadowDepthAvailable < 0.5) return 1.0;
+			
+		    vec4 sc = uMMSShadowMatrixView * vec4(fragViewPos, 1.0);
+		    float invW = 1.0 / max(sc.w, 1e-6);
+		    vec3 coord = sc.xyz * invW;
+			
+		    vec2 uv = coord.xy;
+		    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1.0;
+			
+		    float depth = coord.z;
+		    if (depth <= 0.0 || depth >= 1.0) return 1.0;
+
+		    float bias = uMMSShadowBias;
+		    if (uMMSShadowNormalBias > 0.0) {
+		        float ndl = saturate(dot(normalize(fragNormalView), normalize(uMMSShadowLightDirView)));
+		        bias += uMMSShadowNormalBias * (1.0 - ndl);
+		    }
+		    if (uMMSShadowSlopeBias > 0.0) {
+		        bias += uMMSShadowSlopeBias * fwidth(depth);
+		    }
+
+		    // Poisson rotated PCF for ship-only shadow map (softness in texels).
+		    float samplesF = clamp(floor(uMMSShadowSamples + 0.5), 1.0, 25.0);
+		    if (uMMSShadowSoftness <= 0.001 || samplesF <= 1.0) {
+		        return mmSpacecraftShadowCompare(uv, depth, bias);
+		    }
+
+		    // Stable per-fragment rotation (no temporal noise): hash of pixel coordinates.
+		    float theta = mmHash12(floor(gl_FragCoord.xy)) * 6.28318530718;
+		    vec2 texelRadius = uMMSShadowTexelSize * uMMSShadowSoftness;
+
+		    const int MM_SHADOW_MAX_SAMPLES = 25;
+		    const vec2 poisson[25] = vec2[25](
+		        vec2(-0.94201624, -0.39906216),
+		        vec2( 0.94558609, -0.76890725),
+		        vec2(-0.09418410, -0.92938870),
+		        vec2( 0.34495938,  0.29387760),
+		        vec2(-0.91588581,  0.45771432),
+		        vec2(-0.81544232, -0.87912464),
+		        vec2(-0.38277543,  0.27676845),
+		        vec2( 0.97484398,  0.75648379),
+		        vec2( 0.44323325, -0.97511554),
+		        vec2( 0.53742981, -0.47373420),
+		        vec2(-0.26496911, -0.41893023),
+		        vec2( 0.79197514,  0.19090188),
+		        vec2(-0.24188840,  0.99706507),
+		        vec2(-0.81409955,  0.91437590),
+		        vec2( 0.19984126,  0.78641367),
+		        vec2( 0.14383161, -0.14100790),
+		        vec2( 0.50000000,  0.00000000),
+		        vec2( 0.00000000,  0.50000000),
+		        vec2(-0.50000000,  0.00000000),
+		        vec2( 0.00000000, -0.50000000),
+		        vec2( 0.25000000,  0.25000000),
+		        vec2(-0.25000000,  0.25000000),
+		        vec2( 0.25000000, -0.25000000),
+		        vec2(-0.25000000, -0.25000000),
+		        vec2( 0.00000000,  0.00000000)
+		    );
+
+		    float sum = 0.0;
+		    for (int i = 0; i < MM_SHADOW_MAX_SAMPLES; i++) {
+		        if (float(i) >= samplesF) break;
+		        vec2 o = mmRotate2D(poisson[i], theta);
+		        vec2 duv = vec2(o.x * texelRadius.x, o.y * texelRadius.y);
+		        sum += mmSpacecraftShadowCompare(uv + duv, depth, bias);
+		    }
+
+		    return sum / samplesF;
+		}`
+				                    );
+				                }
+	
+		                if (!shader.fragmentShader.includes('mmSpacecraftSelfShadowApplied')) {
+		                    shader.fragmentShader = shader.fragmentShader.replace(
+		                        '#include <lights_fragment_end>',
+		                        `#include <lights_fragment_end>
+	
+	// mmSpacecraftSelfShadowApplied
+	if (uMMSShadowEnabled > 0.5 && uMMSShadowDepthAvailable > 0.5) {
+	    float mmSShadow = mmSpacecraftSelfShadowFactor(geometryPosition, geometryNormal);
+	    reflectedLight.directDiffuse *= mmSShadow;
+	    reflectedLight.directSpecular *= mmSShadow;
+	}`
+			                    );
+			                }
+	
+		                material.userData.mmSpacecraftSelfShadowShader = shader;
+		            };
+	
+		            if (!material.userData) {
+		                material.userData = {};
+		            }
+		            material.userData.mmSpacecraftSelfShadowInstalled = true;
+		            material.needsUpdate = true;
+		        };
+	
+		        shipMesh.traverse((node) => {
+		            if (!node || node.isMesh !== true) return;
+		            if (node.isPoints || node.isLine || node.isSprite) return;
+		            if (!node.material) return;
+	
+		            if (Array.isArray(node.material)) {
+		                node.material.forEach((m) => applyToMaterial(m));
+		            } else {
+		                applyToMaterial(node.material);
+		            }
+		        });
+		    }
 
 
      updateSpacecraftTrail(position) {
@@ -4884,8 +5316,7 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
 	            }
 	        }
 
-	        this.updateSpacecraftSelfShadowLight();
-        }
+	        }
 
         if (this.objects.sunGlow && this.objects.sunGlow.length >= 2) {
             const time = Date.now() * 0.002;
@@ -4948,17 +5379,23 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
 	            this.flareElements.forEach(f => f.sprite.visible = false);
 	        }
 
-		        const wantsContactShadowDepth =
+			        const wantsContactShadowDepth =
                     this.aoMode === 'contact' ||
                     this.aoMode === 'ssao' ||
                     this.csDebugMode !== 0 ||
                     this.ssaoDebugMode !== 0;
-		        if (wantsContactShadowDepth) {
-		            const width = window.innerWidth;
-		            const height = window.innerHeight;
-		            const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
-		                ? this.renderer.getPixelRatio()
-		                : (window.devicePixelRatio || 1);
+			        if (this.spacecraftSelfShadowEnabled) {
+			            this.ensureSpacecraftSelfShadowTargets();
+			            this.updateSpacecraftSelfShadowCamera();
+			            this.renderSpacecraftSelfShadowDepthTarget();
+			            this.updateSpacecraftSelfShadowUniforms();
+			        }
+			        if (wantsContactShadowDepth) {
+			            const width = window.innerWidth;
+			            const height = window.innerHeight;
+			            const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
+			                ? this.renderer.getPixelRatio()
+			                : (window.devicePixelRatio || 1);
 
 		            this.ensureContactShadowDepthTargets(width, height, pixelRatio);
 		            this.renderContactShadowDepthTargets();
