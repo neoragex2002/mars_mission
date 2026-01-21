@@ -958,6 +958,7 @@ class MarsMissionApp {
         this.bloomOcclusionMaterials = new Map();
         this.bloomHiddenObjects = new Map();
         this.darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        this.darkMaterial.toneMapped = false;
         this._mmBlackTexture = null;
         this.bloomDebugScene = null;
         this.bloomDebugCamera = null;
@@ -1196,6 +1197,126 @@ class MarsMissionApp {
             return 'raw';
         }
         return 'default';
+    }
+
+    getRequestedAtmoEnabled(fallbackEnabled) {
+        const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : true;
+        if (typeof window === 'undefined' || !window.location) {
+            return fallback;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return fallback;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('atmo') || '').trim().toLowerCase();
+        if (!raw || raw === 'auto') {
+            return fallback;
+        }
+        if (raw === '0' || raw === 'off' || raw === 'false' || raw === 'none') {
+            return false;
+        }
+        return true;
+    }
+
+    getRequestedGlowEnabled(fallbackEnabled) {
+        const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : false;
+        if (typeof window === 'undefined' || !window.location) {
+            return fallback;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return fallback;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('glow') || '').trim().toLowerCase();
+        if (!raw || raw === 'auto') {
+            return fallback;
+        }
+        if (raw === '0' || raw === 'off' || raw === 'false' || raw === 'none') {
+            return false;
+        }
+        return true;
+    }
+
+    getRequestedAtmoBloomEnabled(fallbackEnabled) {
+        const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : true;
+        if (typeof window === 'undefined' || !window.location) {
+            return fallback;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return fallback;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('atmoBloom') || '').trim().toLowerCase();
+        if (!raw || raw === 'auto') {
+            return fallback;
+        }
+        if (raw === '0' || raw === 'off' || raw === 'false' || raw === 'none') {
+            return false;
+        }
+        return true;
+    }
+
+    getRequestedGlowBloomEnabled(fallbackEnabled) {
+        const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : false;
+        if (typeof window === 'undefined' || !window.location) {
+            return fallback;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return fallback;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('glowBloom') || '').trim().toLowerCase();
+        if (!raw || raw === 'auto') {
+            return fallback;
+        }
+        if (raw === '0' || raw === 'off' || raw === 'false' || raw === 'none') {
+            return false;
+        }
+        return true;
+    }
+
+    getRequestedAtmoStrength() {
+        if (typeof window === 'undefined' || !window.location) {
+            return null;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return null;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('atmoStr') || '').trim();
+        if (!raw) {
+            return null;
+        }
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return null;
+        }
+        return THREE.MathUtils.clamp(value, 0.0, 6.0);
+    }
+
+    getRequestedGlowStrength() {
+        if (typeof window === 'undefined' || !window.location) {
+            return null;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return null;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('glowStr') || '').trim();
+        if (!raw) {
+            return null;
+        }
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return null;
+        }
+        return THREE.MathUtils.clamp(value, 0.0, 6.0);
     }
 
     getRequestedBloomEnabled(fallbackEnabled) {
@@ -1730,6 +1851,7 @@ class MarsMissionApp {
         this.createPlanet('earth', data.earth_orbit);
         this.createPlanet('mars', data.mars_orbit);
         this.createSpacecraft();
+        this.applyHdrMaterialPolicy();
         this.applyIblIntensity();
         updateMissionInfo(data.mission_info);
         const initialHorizonEnd =
@@ -2075,7 +2197,7 @@ class MarsMissionApp {
 	            const bloomRenderPass = new THREE.RenderPass(this.scene, this.camera);
 	            this.bloomComposer.addPass(bloomRenderPass);
 
-	            const bloomDefaults = { strength: 0.95, radius: 0.42, threshold: 0.82 };
+	            const bloomDefaults = { strength: 0.2, radius: 0.42, threshold: 0.82 };
 	            const bloomParams = this.getRequestedBloomParams();
 	            const bloomStrength =
 	                (typeof bloomParams.strength === 'number') ? bloomParams.strength : bloomDefaults.strength;
@@ -2135,6 +2257,9 @@ class MarsMissionApp {
 	        // not as a post-process pass. We keep csDebug as a full-screen debug view.
 
         this.additivePass = new THREE.ShaderPass(AdditiveBlendShader);
+        if (this.additivePass.material) {
+            this.additivePass.material.toneMapped = false;
+        }
         this.additivePass.uniforms.tBloom.value = this.ensureBlackTexture();
         this.additivePass.uniforms.bloomStrength.value = 1.0;
         this.finalComposer.addPass(this.additivePass);
@@ -2152,6 +2277,9 @@ class MarsMissionApp {
         const debugMode = this.getRequestedDebugMode();
         if (debugMode !== 'none') {
             this.debugPass = new THREE.ShaderPass(DebugViewShader);
+            if (this.debugPass.material) {
+                this.debugPass.material.toneMapped = false;
+            }
             this.debugPass.uniforms.debugMode.value = debugMode === 'luma' ? 2 : 1;
             this.finalComposer.addPass(this.debugPass);
         }
@@ -3414,11 +3542,40 @@ if (uMMSsaoEnabled > 0.5) {
          }
      }
 
-     toggleTextureColorMode() {
-         this.textureColorMode = (this.textureColorMode === 'srgb') ? 'linear' : 'srgb';
-         this.applyPlanetTextureColorMode();
-         console.info('Texture color mode:', this.textureColorMode);
-     }
+    toggleTextureColorMode() {
+        this.textureColorMode = (this.textureColorMode === 'srgb') ? 'linear' : 'srgb';
+        this.applyPlanetTextureColorMode();
+        console.info('Texture color mode:', this.textureColorMode);
+    }
+
+    applyHdrMaterialPolicy(root) {
+        const target = root || this.scene;
+        if (!target || typeof target.traverse !== 'function') return;
+
+        const applyToMaterial = (material) => {
+            if (!material) return;
+            if (!material.userData) {
+                material.userData = {};
+            }
+            if (material.userData.mmToneMappedLocked) return;
+            if (material.userData.mmToneMappedBaseline === undefined) {
+                material.userData.mmToneMappedBaseline = material.toneMapped;
+            }
+            if (material.toneMapped !== false) {
+                material.toneMapped = false;
+                material.needsUpdate = true;
+            }
+        };
+
+        target.traverse((child) => {
+            if (!child || !child.material) return;
+            if (Array.isArray(child.material)) {
+                child.material.forEach((material) => applyToMaterial(material));
+            } else {
+                applyToMaterial(child.material);
+            }
+        });
+    }
 
 
     disposeObject(obj) {
@@ -3665,6 +3822,7 @@ if (uMMSsaoEnabled > 0.5) {
         
         this.scene.add(this.objects.sun);
         this.sunTexture = sunTexture;
+        this.applyHdrMaterialPolicy(this.objects.sun);
     }
 
     createAtmosphereMaterial({
@@ -3672,6 +3830,7 @@ if (uMMSsaoEnabled > 0.5) {
         hazeColor,
         twilightColor,
         intensity = 0.12,
+        strength = 1.0,
         twilightWidth = 0.05,
         hazeStrength = 0.12,
         twilightStrength = 0.25,
@@ -3680,9 +3839,15 @@ if (uMMSsaoEnabled > 0.5) {
     }) {
         return new THREE.ShaderMaterial({
             transparent: true,
-            blending: THREE.AdditiveBlending,
+            blending: THREE.CustomBlending,
+            blendEquation: THREE.AddEquation,
+            blendSrc: THREE.OneFactor,
+            blendDst: THREE.OneFactor,
+            blendSrcAlpha: THREE.OneFactor,
+            blendDstAlpha: THREE.OneFactor,
             depthWrite: false,
             side: THREE.BackSide,
+            toneMapped: false,
             uniforms: {
                 rimColor: { value: rimColor.clone() },
                 hazeColor: { value: hazeColor.clone() },
@@ -3692,6 +3857,7 @@ if (uMMSsaoEnabled > 0.5) {
                 rimPowerNear: { value: 5.0 },
                 rimPowerFar: { value: 3.5 },
                 rimIntensity: { value: intensity },
+                atmoStrength: { value: strength },
                 hazeStrength: { value: hazeStrength },
                 twilightWidth: { value: twilightWidth },
                 twilightStrength: { value: twilightStrength },
@@ -3717,6 +3883,7 @@ if (uMMSsaoEnabled > 0.5) {
                 uniform float rimPowerNear;
                 uniform float rimPowerFar;
                 uniform float rimIntensity;
+                uniform float atmoStrength;
                 uniform float hazeStrength;
                 uniform float twilightWidth;
                 uniform float twilightStrength;
@@ -3729,12 +3896,12 @@ if (uMMSsaoEnabled > 0.5) {
 	                    vec3 N = normalize(vWorldNormal);
 	                    vec3 V = normalize(cameraPosition - vWorldPos);
 	                    float ndv = abs(dot(N, V));
-	                    float fresnel = pow(1.0 - ndv, mix(rimPowerNear, rimPowerFar, cameraFactor));
-	                    float outerFade = smoothstep(0.0, mix(0.06, 0.02, cameraFactor), ndv);
-	                    fresnel *= outerFade;
+	                    float rim = pow(1.0 - ndv, mix(rimPowerNear, rimPowerFar, cameraFactor));
+	                    float edge = smoothstep(0.0, mix(0.12, 0.04, cameraFactor), 1.0 - ndv);
+	                    rim *= edge;
 	                    float sunDot = dot(N, normalize(sunDirection));
 	                    float daySide = smoothstep(-0.2, 0.2, sunDot);
-	                    float rim = fresnel * rimIntensity * mix(0.35, 1.0, daySide);
+	                    rim = rim * rimIntensity * mix(0.35, 1.0, daySide);
 	                    float twilight = smoothstep(twilightWidth, 0.0, abs(sunDot));
                     float dayMask = smoothstep(0.0, 0.35, sunDot);
 
@@ -3742,8 +3909,9 @@ if (uMMSsaoEnabled > 0.5) {
                     color += twilight * twilightColor * twilightStrength;
                     color += hazeStrength * rim * mix(hazeColor, rimColor, dayMask);
 
-                    float alpha = clamp((rim + twilight * twilightAlpha) * alphaScale, 0.0, 1.0);
-                    gl_FragColor = vec4(color, alpha);
+                    float opacity = (rim + twilight * twilightAlpha) * alphaScale;
+                    color *= opacity * atmoStrength;
+                    gl_FragColor = vec4(color, 1.0);
                 }
             `
         });
@@ -4133,19 +4301,41 @@ if (uMMSsaoEnabled > 0.5) {
         
         this.scene.add(this.objects[name]);
 
-        if (this.getRequestedPostMode() !== 'raw') {
+        const postMode = this.getRequestedPostMode();
+        const atmoEnabled = this.getRequestedAtmoEnabled(postMode !== 'raw');
+        const glowEnabled = this.getRequestedGlowEnabled(false);
+        const atmoBloomEnabled = atmoEnabled && this.getRequestedAtmoBloomEnabled(postMode !== 'raw');
+        const glowBloomEnabled = glowEnabled && this.getRequestedGlowBloomEnabled(false);
+        const atmoStrength = this.getRequestedAtmoStrength();
+        const glowStrength = this.getRequestedGlowStrength();
+        const resolvedAtmoStrength = (typeof atmoStrength === 'number') ? atmoStrength : 1.0;
+        const resolvedGlowStrength = (typeof glowStrength === 'number') ? glowStrength : 0.6;
+
+        if (glowEnabled && resolvedGlowStrength > 0.0) {
             const glowTexture = this.createRadialTexture();
+            const glowColor = new THREE.Color(color);
+            glowColor.multiplyScalar(resolvedGlowStrength);
+
             const glowMaterial = new THREE.SpriteMaterial({
                 map: glowTexture,
-                color: color,
+                color: glowColor,
                 transparent: true,
-                opacity: 0.6,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false
+                opacity: 1.0,
+                blending: THREE.CustomBlending,
+                blendEquation: THREE.AddEquation,
+                blendSrc: THREE.OneFactor,
+                blendDst: THREE.OneFactor,
+                blendSrcAlpha: THREE.OneFactor,
+                blendDstAlpha: THREE.OneFactor,
+                depthWrite: false,
+                toneMapped: false
             });
 
             const glow = new THREE.Sprite(glowMaterial);
             glow.scale.set(size * 4, size * 4, 1.0);
+            if (glowBloomEnabled) {
+                glow.layers.enable(BLOOM_LAYER);
+            }
             this.objects[name].add(glow);
         }
 
@@ -4192,10 +4382,16 @@ if (uMMSsaoEnabled > 0.5) {
                 : size * 1.01;
 
         const atmosphereGeometry = new THREE.SphereGeometry(atmosphereRadius, 64, 64);
-        const atmosphereMaterial = this.createAtmosphereMaterial(atmospherePreset);
+        const atmosphereMaterial = this.createAtmosphereMaterial({
+            ...atmospherePreset,
+            strength: resolvedAtmoStrength
+        });
         const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
         atmosphere.userData.atmosphereRadius = atmosphereRadius;
-        atmosphere.visible = this.getRequestedPostMode() !== 'raw';
+        atmosphere.visible = atmoEnabled;
+        if (atmoBloomEnabled) {
+            atmosphere.layers.enable(BLOOM_LAYER);
+        }
 
         const planetWorldPos = new THREE.Vector3();
         const sunWorldPos = new THREE.Vector3();
@@ -4253,6 +4449,9 @@ if (uMMSsaoEnabled > 0.5) {
         orbitLine.frustumCulled = false;
         this.objects[`${name}Orbit`] = orbitLine;
         this.scene.add(orbitLine);
+
+        this.applyHdrMaterialPolicy(this.objects[name]);
+        this.applyHdrMaterialPolicy(orbitLine);
     }
 
 		     createSpacecraft() {

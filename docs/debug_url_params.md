@@ -50,6 +50,10 @@
 - `/?post=raw&bg=dim&mat=default&ibl=10&iblEnv=space&amb=0&hemi=0&ps=1&ao=ssao&sShadow=1&sShadowBias=0.0012&sShadowNBias=0.01&sShadowSBias=0.02&sShadowSoft=1.2&sShadowSamples=16&aa=ssaa`
 - `http://localhost:8712/?post=raw&bg=dim&mat=default&ibl=10&iblEnv=space&amb=0&hemi=0&ps=1&ao=ssao&sShadow=1&sShadowBias=0.0012&sShadowNBias=0.01&sShadowSBias=0.02&sShadowSoft=1.2&sShadowSamples=16&aa=ssaa`
 
+### 1.11 全效果（偏物理）
+- `/?post=raw&bg=dim&mat=default&ibl=10&iblEnv=space&amb=0&hemi=0&ps=1&ao=ssao&sShadow=1&sShadowBias=0.0012&sShadowNBias=0.01&sShadowSBias=0.02&sShadowSoft=1.2&sShadowSamples=16&aa=ssaa&bloom=1&atmo=1&atmoBloom=1&bloomTh=1.0&bloomRad=0.4&exp=1.2`
+- `http://localhost:8712/?post=raw&bg=dim&mat=default&ibl=10&iblEnv=space&amb=0&hemi=0&ps=1&ao=ssao&sShadow=1&sShadowBias=0.0012&sShadowNBias=0.01&sShadowSBias=0.02&sShadowSoft=1.2&sShadowSamples=16&aa=ssaa&bloom=1&atmo=1&atmoBloom=1&bloomTh=1.0&bloomRad=0.4&exp=1.2`
+
 ---
 
 ## 2. 抗锯齿（AA）
@@ -89,7 +93,7 @@
 
 含义：
 - `post=default`：启用 bloom 合成路径（并包含部分太阳/行星光晕等视觉元素）。
-- `post=raw`：关闭 bloom 合成与光晕类元素，用于做“物理摄影感基线标定”。
+- `post=raw`：**默认**关闭 bloom 合成与光晕类元素，用于做“物理摄影感基线标定”；可通过 `bloom=1`、`atmo=1` 等显式开关覆盖。
 
 示例：
 - `/?post=raw`
@@ -333,8 +337,22 @@
 ### 10.2 Sun Glow（已实现）
 - `sunGlow=1|0`：太阳光晕 sprites（非 bloom）开关；默认 `auto`（`post=raw` 默认关，其它默认开），显式指定会覆盖 `post` 的默认值（用于隔离“太阳光晕 vs bloom”贡献）。
 
-### 10.2 其它开关（规划中）
-- `atmo=1|0`：独立控制行星大气/fresnel
+### 10.3 Planet Atmosphere / Glow（Phase 4B，已实现）
+行星大气 Fresnel 与外圈 glow 走 HDR 口径（scene-referred），可独立控制是否参与 bloom。
+
+- `atmo=auto|1|0`：行星大气 Fresnel 开关（`auto` 默认随 `post`；`post=raw` 时默认关）
+- `atmoStr=<float>`：大气强度（默认 `1.0`；范围 `0..6`）
+- `atmoBloom=auto|1|0`：大气是否进入 bloom layer（`auto` 默认随 `post`）
+
+- `glow=auto|1|0`：行星外圈 glow sprites（默认 `auto`；当前默认关闭以避免与 bloom 双叠加）
+- `glowStr=<float>`：glow 强度（默认 `0.6`；范围 `0..6`）
+- `glowBloom=auto|1|0`：glow 是否进入 bloom layer（默认关闭）
+
+推荐验证：
+- 仅看 HDR 大气本体：`/?post=raw&bloom=0&atmo=1`
+- 让 halo 主要由 bloom 生成：`/?post=raw&bloom=1&atmo=1&atmoBloom=1&bloomTh=1.0&bloomRad=0.4`
+
+### 10.4 其它开关（规划中）
 - `flare=1|0`：独立控制 lens flare（post flare）
 
 Contact Shadows 调参（已实现，Phase 3A）：
@@ -419,5 +437,10 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | PostFX | `bloomTh` | `0.82` | bloom 阈值（0..5） |
 | PostFX | `bloomDebug` | `0` | `0` / `1`（bloom buffer debug） |
 | PostFX | `sunGlow` | auto | `1` / `0`（太阳光晕 sprites；默认随 `post`） |
-| PostFX | `atmo` | (规划) | `1` / `0`（Phase 4，大气/fresnel） |
+| PostFX | `atmo` | auto | `auto` / `1` / `0`（行星大气 Fresnel；默认随 `post`） |
+| PostFX | `atmoStr` | `1.0` | 大气强度（0..6） |
+| PostFX | `atmoBloom` | auto | `auto` / `1` / `0`（大气是否进入 bloom layer） |
+| PostFX | `glow` | auto | `auto` / `1` / `0`（行星外圈 glow；默认关闭） |
+| PostFX | `glowStr` | `0.6` | glow 强度（0..6） |
+| PostFX | `glowBloom` | auto | `auto` / `1` / `0`（glow 是否进入 bloom layer） |
 | PostFX | `flare` | (规划) | `1` / `0`（Phase 4，post lens flare） |

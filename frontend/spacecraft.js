@@ -221,11 +221,7 @@ class Spacecraft {
         this.createLandingLegs();
         this.createDetails();
 
-        this.mesh.traverse((child) => {
-            if (!child.isMesh) return;
-            if (child.isPoints || child.isLine || child.isSprite) return;
-            child.receiveShadow = true;
-        });
+        this.applyToneMappedPolicy();
 
         this.applyIblIntensity();
         this._applyPostCreateFlags();
@@ -264,10 +260,11 @@ class Spacecraft {
                      this.modelCalibrationRoot.rotateZ(this.modelRollCorrection);
                  }
  
-                 this.applyIblIntensity();
+             this.applyIblIntensity();
                   if (typeof window !== 'undefined' && window.app && typeof window.app.installPlanetShadowForSpacecraft === 'function') {
                       window.app.installPlanetShadowForSpacecraft();
                   }
+                  this.applyToneMappedPolicy();
                   this._applyPostCreateFlags();
               },
 
@@ -284,6 +281,26 @@ class Spacecraft {
 
 
          );
+     }
+
+     applyToneMappedPolicy() {
+         this.mesh.traverse((child) => {
+             if (child.material) {
+                 const material = child.material;
+                 const applyToneMapped = (m) => {
+                     if (!m) return;
+                     m.toneMapped = false;
+                 };
+                 if (Array.isArray(material)) {
+                     material.forEach((m) => applyToneMapped(m));
+                 } else {
+                     applyToneMapped(material);
+                 }
+             }
+             if (!child.isMesh) return;
+             if (child.isPoints || child.isLine || child.isSprite) return;
+             child.receiveShadow = true;
+         });
      }
 
      applySavedCalibration() {
@@ -366,6 +383,7 @@ class Spacecraft {
                 m.alphaTest = 0.0;
                 m.depthWrite = true;
                 m.depthTest = true;
+                m.toneMapped = false;
 
                 m.side = THREE.DoubleSide;
 
