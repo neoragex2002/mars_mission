@@ -98,9 +98,26 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 6. CinematicShader：grain/CA/vignette（位于 OutputPass 之后；HDR 管线稳定后再接入）
 7. Output Dither（可选，显示域末端）
 
+#### 4.1.1 当前代码实现映射（Informative）
+- 入口：`frontend/main.js` 的 `setupPostProcessing()`
+- `bloomComposer`：负责 `UnrealBloomPass` 的提取/模糊输出；由 `AdditiveBlendShader` 在 `finalComposer` 中与 base 合成。
+- `finalComposer`（按追加顺序，可能随参数开关变化）：
+  1) Base（`SSAARenderPass` 或 `RenderPass`）
+  2) Composite（`AdditiveBlendShader`：base + bloom）
+  3) Lens Flare（`LensFlareShader`，可选；HDR 域叠加，位于 OutputPass 之前）
+  4) AA（`SMAAPass`，可选）
+  5) Debug（`DebugViewShader`，可选；插在 OutputPass 前观察 HDR 域值）
+  6) Output（`OutputPass`：最终输出变换）
+  7) Cinematic（`CinematicShader`，可选；OutputPass 之后）
+  8) Dither（`OutputDitherShader`，可选；末端）
+- 备注：Contact Shadows / SSAO / ship-only self shadow 属于“prepass + 材质注入”的实现，不是 composer pass；其 debug 模式（如 `csDebug`/`ssaoDebug`/`bloomDebug`）可能走“全屏替换输出”，并在需要时强制 `NoToneMapping` 以保证可解释性。
+
 ### 4.2 Tone mapping 策略
-- HDR 域阶段：禁止 tone mapping（必须 NoToneMapping）。
+- 目标：HDR 域必须保持 scene-referred 的线性数值（允许 > 1），不得在 HDR 域提前发生 tone mapping。
 - 输出阶段：由 OutputPass 统一执行 tone mapping（baseline：`NeutralToneMapping`）。
+- 允许实现方式（任选其一，但必须保证“只在末端发生一次 tone mapping”）：
+  1) Renderer gating：HDR 域渲染期间临时设置 `renderer.toneMapping = THREE.NoToneMapping`，仅在 OutputPass 阶段恢复 tone mapping。
+  2) Material gating（当前实现）：保持 renderer.toneMapping 配置为目标 tone mapping，但将 HDR 域参与渲染的场景材质强制设为 `material.toneMapped=false`，并确保所有自定义全屏 pass 材质也为 `toneMapped=false`；最终由 OutputPass 统一应用 tone mapping/output transform。
 
 ### 4.3 ColorSpace 策略
 - `renderer.outputColorSpace = THREE.SRGBColorSpace`。
@@ -149,7 +166,11 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 
 ### 7.2 行为要求
 - 若满足要求：启用 HDR 管线（HalfFloat RT）。
-- 若不满足：显式降级到 LDR 管线，并输出明确提示。
+- 若不满足：降级到 LDR 管线，并输出明确提示（避免误以为仍在 HDR headroom 下调参）。
+
+当前实现说明（Informative）：
+- `frontend/main.js` 在 `setupPostProcessing()` 中检测 WebGL2 + float buffer 扩展；满足时使用 `HalfFloatType`，否则回退到 `UnsignedByteType`。
+- 目前回退提示偏弱（更接近“静默降级”）；建议补充一次性 `console.warn` 或 UI 标记以提升可观测性。
 
 ---
 
@@ -332,6 +353,7 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 #### Phase 4C — Lens Flare（最后恢复，改为 Post）
 - 定位：镜头伪影，当前作为 HDR post pass（OutputPass 之前）。
 - 实现路线（已完成）：将 lens flare 从 scene 内 sprites 迁移为 **OutputPass 之前的 HDR post pass**，在 HDR 域叠加，tone mapping 仍由 OutputPass 统一执行。
+- 调参（可选，按组控制便于“收敛/放大”表现力）：`flareCore`（核心/光晕）、`flareStreak`（花瓣/尖刺/拖影）、`flareGhost`（幽灵/弧形/色散）；参数默认值与范围见 `docs/debug_url_params.md`。
 - DoD：
   - flare 不应成为曝光问题的噪声源；默认不喧宾夺主。
   - bloom 强度变化不应让 flare 失控（与 bloom 解耦）。

@@ -36,7 +36,7 @@ http://localhost:8712
 - **交互式 3D**：鼠标旋转/平移/缩放，多种视角跟随（地球/火星/飞船/俯视/自由），支持平滑插值过渡；`top`/`free` 切换会强制同步 OrbitControls 状态以避免镜头跳变
 - **视觉效果（Three.js）**：
   - 高清晰度地球、晨昏线、大气辉光、大气云层、夜侧城市灯光（使用连续 night-side mask，减少屏幕空间抖动闪烁）...
-  - Neutral HDR tone mapping、HDR bloom、lens flare、轻微输出 dithering；电影化效果（胶片颗粒/色差/暗角）为可选项
+  - Neutral HDR tone mapping、HDR bloom、lens flare、dithering；电影化效果（胶片颗粒/色差/暗角）为可选项
 - **任务控制台 UI**：
   - 底部“Cinema Bar”控制条：播放/暂停/复位、时间轴、速度
   - 左右面板可折叠 + 右上角 HUD 沉浸模式

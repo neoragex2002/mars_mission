@@ -25,7 +25,7 @@
 - `frontend/assets/textures/unknown/`
 
 备注：
-- 代码运行时对资源的引用目前指向 `/static/assets/...` 路径（例如 `frontend/main.js:149`），仓库也已经在 `frontend/assets/textures/...` 下跟踪了其中一部分。
+- 代码运行时对资源的引用目前指向 `/static/assets/...` 路径（例如 `frontend/main.js` 中的 `TEXTURE_PATHS`），仓库也已经在 `frontend/assets/textures/...` 下跟踪了其中一部分。
 - 如果这些新目录是有意引入的（高分辨率替换资源），请确认它们要么被代码/文档引用，要么保持不入库，以避免仓库体积意外膨胀。
 
 ### 1.3 已执行的自动化检查
@@ -37,7 +37,7 @@
 ## 2) Review 结论（概要）
 
 ### 2.1 高风险 HDR 合规性关注点（需要浏览器侧验证）
-- 当前 pass 顺序为 `... -> OutputPass -> Cinematic -> OutputDither`（见 `frontend/main.js:2471-2494`）。
+- 当前 pass 顺序为 `... -> OutputPass -> Cinematic -> OutputDither`（见 `frontend/main.js` 的 `setupPostProcessing()` 里 finalComposer 的 pass 追加顺序）。
 - 取决于 r162 中 `OutputPass` + `EffectComposer` 对输出变换（output transform）的管理方式，这可能会 **意外破坏** “最终显示变换必须位于末端（final display transform is last）” 的规则（tone mapping / 输出色域转换可能不再是“真正最后写屏”的一步）。
 - 这是最值得优先验证的一项，因为它可能在无明显报错的情况下，让 HDR 基线与所有调试阈值悄然失效。
 
@@ -74,10 +74,10 @@
   - 当 Cinematic/Dither 运行时，中间 buffer 处于什么 color space / 显示域状态
 
 **证据**
-- `frontend/main.js:2471` 添加了 `OutputPass`
-- `frontend/main.js:2478` 在 `OutputPass` 之后添加了 `CinematicShader`
-- `frontend/main.js:2487` 在 `OutputPass` 之后添加了 `OutputDitherShader`（若启用 cinematic 则位于其之后）
-- `docs/hdr_pipeline_rebuild_r162.md:83-109` 规范性（normative）地要求“末端单次 tone mapping + output transform”
+- `frontend/main.js` 的 `setupPostProcessing()` 中添加了 `OutputPass`
+- `frontend/main.js` 的 `setupPostProcessing()` 中在 `OutputPass` 之后添加了 `CinematicShader`
+- `frontend/main.js` 的 `setupPostProcessing()` 中在 `OutputPass` 之后添加了 `OutputDitherShader`（若启用 cinematic 则位于其之后）
+- `docs/hdr_pipeline_rebuild_r162.md` 的 Phase 4（Full-Post 推荐顺序）规范性（normative）地要求“末端单次 tone mapping + output transform”
 
 **需要验证项（浏览器侧）**
 1) 视觉对比：
@@ -102,33 +102,28 @@
 
 ---
 
-### P1-1：文档规范要求 “HDR 域 NoToneMapping”，但实现依赖 `material.toneMapped=false`
+### P1-1（已对齐）：HDR 域 tone mapping gating 采用 Material gating（需确保覆盖新增材质）
 
 **描述**
-- 文档写明：“HDR 域阶段：禁止 tone mapping（必须 NoToneMapping）”（`docs/hdr_pipeline_rebuild_r162.md:101-104`）
-- 代码实际设置为：
-  - `renderer.toneMapping = THREE.NeutralToneMapping`（`frontend/main.js:2067`）
-  - 并通过 `applyHdrMaterialPolicy()` 将多数材质强制设为 `toneMapped=false`（`frontend/main.js:3753-3786`）
+- `docs/hdr_pipeline_rebuild_r162.md` 已明确允许两类实现（Renderer gating / Material gating）；当前代码选择 Material gating：
+  - renderer 保持目标 tone mapping 配置（便于 OutputPass 统一应用）
+  - 场景材质强制 `material.toneMapped=false`，并确保自定义全屏 pass 同样 `toneMapped=false`
+  - 最终由 OutputPass 统一执行 tone mapping/output transform
 
-**风险**
-- 如果能够保证在任何 HDR 域渲染发生之前，所有场景材质都已被设置为 `toneMapped=false`，那么这套实现通常是可工作的。
-- 但这属于“文档/实现不一致”，会变得脆弱：
-  - 未来新增的 mesh/material 若没有经过 `applyHdrMaterialPolicy()`，可能会重新引入“过早 tone mapping”。
-  - 按文档理解，reviewer 会默认 HDR passes 期间 renderer 处于 `NoToneMapping`，但代码并非如此。
+**残余风险**
+- 未来新增 mesh/material 若未经过 `applyHdrMaterialPolicy()`，可能恢复默认 `toneMapped=true`，导致 base render 过早 tone mapping。
 
 **建议**
-- 二选一：
-  1) 修改文档措辞：将“材质层面强制 toneMapped=false”纳入允许/推荐的实现方式；或
-  2) 修改实现以匹配文档：在 HDR passes 期间强制 `renderer.toneMapping = NoToneMapping`，并只在最终输出阶段应用 tone mapping。
+- 保持在新增/替换材质后调用 `applyHdrMaterialPolicy()`；并用 `?debug=exposure` 验证 OutputPass 前仍存在 >1 的 HDR 值且可解释。
 
-状态：需要统一规范/实现（SPEC/IMPLEMENTATION ALIGNMENT REQUIRED）。
+状态：已对齐（ALIGNED; VERIFY ON NEW MATERIALS）。
 
 ---
 
 ### P1-2：HDR 能力降级是静默的（缺少可观测性）
 
 **描述**
-- 代码检查 WebGL2 + float buffer extension，并在可用时使用 `HalfFloatType`（`frontend/main.js:2303-2311`）。
+- 代码检查 WebGL2 + float buffer extension，并在可用时使用 `HalfFloatType`（见 `frontend/main.js` 的 `setupPostProcessing()` 中 render target type 选择逻辑）。
 - 当不支持时，会静默回退到 `UnsignedByteType`，这会实质性降低 HDR headroom。
 
 **风险**
@@ -147,8 +142,8 @@
 ### P1-3：`cine` 参数解析是宽松容错的；文档表述更像严格枚举
 
 **描述**
-- 文档：`cine=auto|1|0`（`docs/debug_url_params.md:358-360`）
-- 代码：除 `0/off/false/none` 外的任何值均会开启（`frontend/main.js:1559-1577`）
+- 文档：`cine=auto|1|0`（见 `docs/debug_url_params.md`）
+- 代码：除 `0/off/false/none` 外的任何值均会开启（见 `frontend/main.js` 的 `getRequestedCinematicEnabled()`）
 
 **风险**
 - 这不是功能性 bug，但属于 QA 层面的“规范 vs 实现”陷阱（例如“为什么 cine=foo 也会开启？”）。
@@ -165,7 +160,7 @@
 ### P2-1：`applyHdrMaterialPolicy()` 记录 baseline 但未使用
 
 **描述**
-- 记录了 `material.userData.mmToneMappedBaseline`，但其它位置未引用（`frontend/main.js:3762-3766`）。
+- 记录了 `material.userData.mmToneMappedBaseline`，但其它位置未引用（见 `frontend/main.js` 的 `applyHdrMaterialPolicy()`）。
 
 **风险**
 - 风险较低，但会制造“似乎可以恢复 baseline”的暗示，而实际上没有恢复路径。
@@ -181,17 +176,17 @@
 
 ### 4.1 新增 `cine` 功能（文档 <-> 代码）
 期望：
-- 默认关闭（`docs/debug_url_params.md:358-360`、`README.md:191`）
-- `?cine=1` 开启（`frontend/main.js:1559-1577`、`frontend/main.js:2478`）
-- `debug!=none` 时强制关闭（`docs/debug_url_params.md:358-360`、`frontend/main.js:2478`）
+- 默认关闭（见 `docs/debug_url_params.md`、`README.md` “调试 URL 参数”章节）
+- `?cine=1` 开启（见 `frontend/main.js` 的 `getRequestedCinematicEnabled()` 与 `setupPostProcessing()`）
+- `debug!=none` 时强制关闭（见 `docs/debug_url_params.md` 与 `frontend/main.js` 的 `setupPostProcessing()`）
 
 手工验证 URL：
 - `/?cine=1`
 - `/?debug=exposure&cine=1`（cine 不应生效；debug 输出不应被“污染”）
 
 ### 4.2 管线顺序描述
-- 文档顺序包含 `OutputPass` -> Cinematic -> Dither（`docs/hdr_pipeline_rebuild_r162.md:83-109`）。
-- 代码与该顺序一致（`frontend/main.js:2471-2494`）。
+- 文档顺序包含 `OutputPass` -> Cinematic -> Dither（见 `docs/hdr_pipeline_rebuild_r162.md` 的 Full-Post 推荐顺序）。
+- 代码与该顺序一致（见 `frontend/main.js` 的 `setupPostProcessing()`）。
 
 重要：只有在“真正的输出边界”仍保持正确的 display transform 时，这个顺序才算“正确”。详见 P0-1。
 
@@ -201,9 +196,9 @@
 
 ### 5.1 色彩管理（Color management）
 确认：
-- 设置了 `renderer.outputColorSpace = THREE.SRGBColorSpace`（`frontend/main.js:2066`）。
-- 所有 albedo/baseColor 颜色贴图为 `SRGBColorSpace`（通过 `registerColorTexture()`，见 `frontend/main.js:3671-3707`）。
-- 所有数据贴图（normal/roughness/ao 等）保持 `NoColorSpace`（通过 `registerDataTexture()`，见 `frontend/main.js:3682-3699`）。
+- 设置了 `renderer.outputColorSpace = THREE.SRGBColorSpace`（见 `frontend/main.js` 的 `setupRenderer()`）。
+- 所有 albedo/baseColor 颜色贴图为 `SRGBColorSpace`（通过 `registerColorTexture()`，见 `frontend/main.js`）。
+- 所有数据贴图（normal/roughness/ao 等）保持 `NoColorSpace`（通过 `registerDataTexture()`，见 `frontend/main.js`）。
 
 手工检查：
 - 检查 Earth/Mars：albedo 观感应正常（不应出现 colorSpace 错误常见的“发白/过暗”）。
@@ -240,14 +235,14 @@
 ## 6) “物理向 vs 艺术向”分类（用于校准模式）
 
 ### 偏物理 / 工程近似（适合做 HDR 基线校准）
-- PBR materials + IBL via PMREM (`frontend/main.js:2160-2260`)
-- Global IBL intensity scaling with baseline preservation (`frontend/main.js:1900-1936`)
-- Bloom in HDR domain + additive composite (`frontend/main.js:2340-2440`, `frontend/main.js:150-204`)
+- PBR materials + IBL via PMREM（见 `frontend/main.js` 的 environment/PMREM 相关逻辑）
+- Global IBL intensity scaling with baseline preservation（见 `frontend/main.js` 的 IBL intensity 逻辑）
+- Bloom in HDR domain + additive composite（见 `frontend/main.js` 的 bloom composer + AdditiveBlendShader）
 - Contact shadow / SSAO as indirect-occlusion aids (approximate but useful for structure)
 
 ### 明确艺术向 / 镜头风格
-- `CinematicShader` (grain/CA/vignette + color bias) (`frontend/main.js:10-55`)
-- Lens flare post pass (`frontend/main.js:58+`, enable path in `frontend/main.js:2437-2449`)
+- `CinematicShader` (grain/CA/vignette + color bias)（见 `frontend/main.js`）
+- Lens flare post pass（见 `frontend/main.js` 的 `LensFlareShader` 与 `setupPostProcessing()` / `updateLensFlare()`）
 - Glow sprites / atmosphere rim effects (scene decoration, can lift shadows if overused)
 
 建议：

@@ -51,8 +51,8 @@
 - `http://localhost:8712/?post=raw&bg=dim&mat=default&ibl=10&iblEnv=space&amb=0&hemi=0&ps=1&ao=ssao&sShadow=1&sShadowBias=0.0012&sShadowNBias=0.01&sShadowSBias=0.02&sShadowSoft=1.2&sShadowSamples=16&aa=ssaa`
 
 ### 1.11 全效果（偏物理）
-- `/?post=raw&bg=dim&mat=default&ibl=10&iblEnv=space&amb=0&hemi=0&ps=1&ao=ssao&sShadow=1&sShadowBias=0.0012&sShadowNBias=0.01&sShadowSBias=0.02&sShadowSoft=1.2&sShadowSamples=16&aa=ssaa&bloom=1&atmo=1&atmoBloom=1&bloomTh=1.0&bloomRad=0.4&exp=1.2`
-- `http://localhost:8712/?post=raw&bg=dim&mat=default&ibl=10&iblEnv=space&amb=0&hemi=0&ps=1&ao=ssao&sShadow=1&sShadowBias=0.0012&sShadowNBias=0.01&sShadowSBias=0.02&sShadowSoft=1.2&sShadowSamples=16&aa=ssaa&bloom=1&atmo=1&atmoBloom=1&bloomTh=1.0&bloomRad=0.4&exp=1.2`
+- `/?post=raw&bg=dim&mat=default&ibl=10&iblEnv=space&amb=0&hemi=0&ps=1&ao=ssao&sShadow=1&sShadowBias=0.0012&sShadowNBias=0.01&sShadowSBias=0.02&sShadowSoft=1.2&sShadowSamples=16&aa=ssaa&bloom=1&atmo=1&atmoBloom=1&bloomTh=1.0&bloomRad=0.4&flare=1&flareCore=0.9&flareStreak=0.8&flareGhost=1.2&exp=1.2`
+- `http://localhost:8712/?post=raw&bg=dim&mat=default&ibl=10&iblEnv=space&amb=0&hemi=0&ps=1&ao=ssao&sShadow=1&sShadowBias=0.0012&sShadowNBias=0.01&sShadowSBias=0.02&sShadowSoft=1.2&sShadowSamples=16&aa=ssaa&bloom=1&atmo=1&atmoBloom=1&bloomTh=1.0&bloomRad=0.4&flare=1&flareCore=0.9&flareStreak=0.8&flareGhost=1.2&exp=1.2`
 
 ---
 
