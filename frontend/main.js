@@ -2,7 +2,8 @@
 
 const MM_FEATURES = Object.freeze({
     lensFlareVisibilitySmoothing: true,
-    outputDithering: true
+    outputDithering: true,
+    cinematicPass: true
 });
 
 // Custom Shader for Cinematic Effects (Grain + Chromatic Aberration)
@@ -1555,6 +1556,26 @@ class MarsMissionApp {
         return true;
     }
 
+    getRequestedCinematicEnabled(fallbackEnabled) {
+        const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : false;
+        if (typeof window === 'undefined' || !window.location) {
+            return fallback;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return fallback;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('cine') || '').trim().toLowerCase();
+        if (!raw || raw === 'auto') {
+            return fallback;
+        }
+        if (raw === '0' || raw === 'off' || raw === 'false' || raw === 'none') {
+            return false;
+        }
+        return true;
+    }
+
     getRequestedBgMode() {
         if (typeof window === 'undefined' || !window.location) {
             return 'default';
@@ -2383,6 +2404,7 @@ class MarsMissionApp {
         this.smaaPass = null;
         this.debugPass = null;
         this.contactShadowPass = null;
+        this.cinematicPass = null;
         this.ditherPass = null;
 
         const aaRequested = this.aaMode;
@@ -2451,6 +2473,15 @@ class MarsMissionApp {
             this.finalComposer.addPass(this.outputPass);
         } else {
             console.warn('OutputPass unavailable; final output may look incorrect.');
+        }
+
+        const cinematicEnabled = MM_FEATURES.cinematicPass && debugMode === 'none' && this.getRequestedCinematicEnabled(false);
+        if (cinematicEnabled) {
+            this.cinematicPass = new THREE.ShaderPass(CinematicShader);
+            if (this.cinematicPass.material) {
+                this.cinematicPass.material.toneMapped = false;
+            }
+            this.finalComposer.addPass(this.cinematicPass);
         }
 
         const ditherEnabled = MM_FEATURES.outputDithering && debugMode === 'none' && postMode !== 'raw' && this.outputPass;

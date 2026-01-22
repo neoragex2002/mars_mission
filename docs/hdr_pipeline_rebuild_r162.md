@@ -93,10 +93,10 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
    - SMAA（默认）：`SMAAPass`
    - SSAA（高质量）：`SSAARenderPass` 作为 base（见 r162 示例）
 5. Output：`OutputPass`
-6. Output Dither（可选，显示域末端；若启用 CinematicShader，建议置于其之后）
 
 **电影化（延后接入）**
-7. CinematicShader：grain/CA/vignette（位于 OutputPass 之后；若启用 Output Dither，建议置于其之前）
+6. CinematicShader：grain/CA/vignette（位于 OutputPass 之后；HDR 管线稳定后再接入）
+7. Output Dither（可选，显示域末端）
 
 ### 4.2 Tone mapping 策略
 - HDR 域阶段：禁止 tone mapping（必须 NoToneMapping）。
@@ -339,6 +339,7 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 #### Phase 4D — Cinematic（可选）
 - grain/CA/vignette 等应置于 OutputPass 之后，且默认强度弱；避免干扰 AA 与 HDR 调试。
 - 若启用 Output Dither，建议将 dither 作为显示域末端。
+- Cinematic 建议通过 `?cine=1` 显式开启；`debug!=none` 时应保持关闭。
 
 ---
 
@@ -361,6 +362,7 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 14. Phase 4C（Lens Flare）：迁移为 HDR post pass，弃用 scene sprites，保持 tone mapping 只在 OutputPass 执行。
 15. HDR 基线收敛：统一设置场景材质 `toneMapped=false`，确保 tone mapping 只由末端 `OutputPass` 执行。
 16. Output Dither：显示域末端加入轻微 dithering（debug/raw 自动禁用）。
+17. Cinematic（可选）：加入 `cine` 开关，默认关闭，需显式开启。
 
 ### 已知问题/观察（非阻塞）
 - Firefox 可能对 Google Fonts `Chakra Petch` 报 `maxp: Bad maxZones`（疑似 CDN/缓存导致），不影响渲染逻辑。

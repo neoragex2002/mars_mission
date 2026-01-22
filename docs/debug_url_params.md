@@ -355,6 +355,9 @@
 ### 10.4 Lens Flare（已实现）
 - `flare=auto|1|0`：独立控制 lens flare（HDR post pass）；默认 `auto`（随 `post`，`post=raw` 默认关），显式指定会覆盖 `post` 的默认值（允许 `post=raw&flare=1` 做 flare-only 标定）。
 
+### 10.5 Cinematic（可选）
+- `cine=auto|1|0`：显示域电影化效果（grain/CA/vignette）；默认关闭（`auto` 当前等同关闭），显式指定可开启；`debug!=none` 时强制关闭以避免污染调试视图。
+
 Contact Shadows 调参（已实现，Phase 3A）：
 - `csDist=<float>`：raymarch 最大距离（默认 `0.18`；范围 `0.0..0.5`；单位为 Three.js scene units，越大遮蔽越“宽/厚”但更容易脏/穿帮）
 - `csThick=<float>`：厚度/bias（默认 `0.003`；范围 `0.0..0.05`；用于抑制自交/深度精度伪影，越大越“干净”但更容易漏遮蔽）
@@ -445,3 +448,4 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | PostFX | `glowStr` | `0.6` | glow 强度（0..6） |
 | PostFX | `glowBloom` | auto | `auto` / `1` / `0`（glow 是否进入 bloom layer） |
 | PostFX | `flare` | `auto` | `auto` / `1` / `0`（lens flare HDR post pass；默认随 `post`） |
+| PostFX | `cine` | `off` | `auto` / `1` / `0`（Cinematic：grain/CA/vignette；默认关闭） |
