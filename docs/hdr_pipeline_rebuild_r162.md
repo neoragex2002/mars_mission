@@ -308,11 +308,11 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
   3) SSAO/SAO（可选，如启用）
   4) Bloom 提取与模糊（HDR bloom）
   5) Composite（base + bloom）
+  6) Lens Flare（HDR post pass；OutputPass 之前）
 - 显示域（display-referred）：
-  6) AA（`SMAAPass`，如启用）
-  7) Output（`OutputPass`）
+  7) AA（`SMAAPass`，如启用）
+  8) Output（`OutputPass`）
 - 显示域后（镜头/风格化，最后恢复）：
-  8) Lens Flare（定位为 display-referred 的镜头伪影）
   9) Film/Grain/CA/Vignette（如启用，默认弱）
 
 #### Phase 4A — Bloom（最先恢复）
@@ -328,8 +328,8 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 - 状态：已实现 HDR 口径的大气 Fresnel 与可选外圈 glow，并支持独立开关与 BloomLayer 参与控制（详见 `docs/debug_url_params.md`）。
 
 #### Phase 4C — Lens Flare（最后恢复，改为 Post）
-- 定位：镜头伪影，应当是 display-referred。
-- 实现路线（选定）：将 lens flare 从 scene 内 sprites 迁移为 **OutputPass 之后的 post pass**（更可控、与 HDR/bloom 解耦）。
+- 定位：镜头伪影，当前作为 HDR post pass（OutputPass 之前）。
+- 实现路线（已完成）：将 lens flare 从 scene 内 sprites 迁移为 **OutputPass 之前的 HDR post pass**，在 HDR 域叠加，tone mapping 仍由 OutputPass 统一执行。
 - DoD：
   - flare 不应成为曝光问题的噪声源；默认不喧宾夺主。
   - bloom 强度变化不应让 flare 失控（与 bloom 解耦）。
@@ -355,7 +355,8 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 11. 飞船太阳直射自阴影：`sShadow=1`（ship-only shadow map depth prepass + shader compare；提供 tight fit/snap、bias、软硬与采样数等参数）。
 12. Phase 4A（Bloom 开始解耦）：新增 `bloom=0/1` 独立开关（允许 `post=raw&bloom=1`），并提供 `bloomStr/bloomRad/bloomTh` 调参与 `bloomDebug=1` 全屏替换调试输出。
 13. Phase 4B（Atmosphere/Glow）：HDR 口径大气 Fresnel + 可选 glow（默认关闭），并提供 `atmo`/`glow`、`*Bloom`、`*Str` 等开关与调参。
-14. HDR 基线收敛：统一设置场景材质 `toneMapped=false`，确保 tone mapping 只由末端 `OutputPass` 执行。
+14. Phase 4C（Lens Flare）：迁移为 HDR post pass，弃用 scene sprites，保持 tone mapping 只在 OutputPass 执行。
+15. HDR 基线收敛：统一设置场景材质 `toneMapped=false`，确保 tone mapping 只由末端 `OutputPass` 执行。
 
 ### 已知问题/观察（非阻塞）
 - Firefox 可能对 Google Fonts `Chakra Petch` 报 `maxp: Bad maxZones`（疑似 CDN/缓存导致），不影响渲染逻辑。

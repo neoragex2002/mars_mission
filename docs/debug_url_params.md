@@ -325,7 +325,7 @@
 ## 10. Post FX（Phase 4）
 
 > Phase 4 负责在 HDR 基线稳定后，逐项恢复 Bloom / Atmosphere(Fresnel) / Glow / Lens Flare 等效果。
-> Lens Flare 计划迁移为 OutputPass 之后的 post pass（display-referred），避免与 HDR/bloom 强耦合。
+> Lens Flare 已迁移为 OutputPass 之前的 HDR post pass（tone mapping 仍由 OutputPass 统一执行）。
 
 ### 10.1 Bloom（已实现）
 - `bloom=1|0`：独立控制 bloom；默认 `auto`（`post=raw` 默认关，其它默认开），显式指定会覆盖 `post` 的默认值（允许 `post=raw&bloom=1` 做 bloom-only 标定）。
@@ -352,8 +352,8 @@
 - 仅看 HDR 大气本体：`/?post=raw&bloom=0&atmo=1`
 - 让 halo 主要由 bloom 生成：`/?post=raw&bloom=1&atmo=1&atmoBloom=1&bloomTh=1.0&bloomRad=0.4`
 
-### 10.4 其它开关（规划中）
-- `flare=1|0`：独立控制 lens flare（post flare）
+### 10.4 Lens Flare（已实现）
+- `flare=auto|1|0`：独立控制 lens flare（HDR post pass）；默认 `auto`（随 `post`，`post=raw` 默认关），显式指定会覆盖 `post` 的默认值（允许 `post=raw&flare=1` 做 flare-only 标定）。
 
 Contact Shadows 调参（已实现，Phase 3A）：
 - `csDist=<float>`：raymarch 最大距离（默认 `0.18`；范围 `0.0..0.5`；单位为 Three.js scene units，越大遮蔽越“宽/厚”但更容易脏/穿帮）
@@ -393,6 +393,7 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | AA | `aa` | `none` | `none` / `smaa` / `ssaa` |
 | AA | `aaLevel` | `1`(ssaa) | SSAA sampleLevel，0..5 |
 | Post | `post` | `default` | `default` / `raw` |
+| Post | `flare` | `auto` | lens flare 开关（HDR post pass；`auto` 随 `post`） |
 | Debug | `debug` | `none` | `exposure` / `luma` |
 | Env | `env` | `canvas` | `canvas` / `room` / `hdr` |
 | Env | `envUrl` | 内置 | 仅 `env=hdr` 生效 |
@@ -443,4 +444,4 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | PostFX | `glow` | auto | `auto` / `1` / `0`（行星外圈 glow；默认关闭） |
 | PostFX | `glowStr` | `0.6` | glow 强度（0..6） |
 | PostFX | `glowBloom` | auto | `auto` / `1` / `0`（glow 是否进入 bloom layer） |
-| PostFX | `flare` | (规划) | `1` / `0`（Phase 4，post lens flare） |
+| PostFX | `flare` | `auto` | `auto` / `1` / `0`（lens flare HDR post pass；默认随 `post`） |

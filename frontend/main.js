@@ -54,6 +54,91 @@ const CinematicShader = {
     `
 };
 
+const LensFlareShader = {
+    uniforms: {
+        tDiffuse: { value: null },
+        uSunPos: { value: new THREE.Vector2(0.5, 0.5) },
+        uVisibility: { value: 0.0 },
+        uStrength: { value: 0.0 }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform vec2 uSunPos;
+        uniform float uVisibility;
+        uniform float uStrength;
+        varying vec2 vUv;
+
+        const float PI = 3.141592653589793;
+
+        float polygonMask(vec2 p, float sides, float radius, float edge) {
+            float angle = atan(p.y, p.x);
+            float k = PI / sides;
+            float r = cos(floor(0.5 + angle / k) * k - angle) * length(p);
+            return smoothstep(radius, radius - edge, r);
+        }
+
+        float apertureMask(vec2 p, float sides, float curvature) {
+            float edge = 0.18;
+            float poly = polygonMask(p, sides, 1.0, edge);
+            float circ = smoothstep(1.0, 1.0 - edge, length(p));
+            return mix(poly, circ, curvature);
+        }
+
+        vec3 flareShape(vec2 uv, vec2 pos, float size, vec3 color, float intensity, vec2 axisDir, float anisotropy, float chroma, float sides, float curvature) {
+            vec2 d = uv - pos;
+            vec2 axis = axisDir;
+            vec2 perp = vec2(-axis.y, axis.x);
+            vec2 local = vec2(dot(d, axis), dot(d, perp));
+            local.x /= anisotropy;
+
+            vec2 offset = axis * chroma * size;
+            vec2 pR = (local - offset) / size;
+            vec2 pG = local / size;
+            vec2 pB = (local + offset) / size;
+
+            float mR = apertureMask(pR, sides, curvature);
+            float mG = apertureMask(pG, sides, curvature);
+            float mB = apertureMask(pB, sides, curvature);
+
+            return color * vec3(mR, mG, mB) * intensity;
+        }
+
+        void main() {
+            vec4 baseColor = texture2D(tDiffuse, vUv);
+            vec2 center = vec2(0.5, 0.5);
+            vec2 toCenter = center - uSunPos;
+            float axisLen = length(toCenter);
+            vec2 axisDir = (axisLen > 1e-4) ? (toCenter / axisLen) : vec2(1.0, 0.0);
+
+            float edge = min(min(uSunPos.x, 1.0 - uSunPos.x), min(uSunPos.y, 1.0 - uSunPos.y));
+            float edgeFade = smoothstep(0.02, 0.12, edge);
+            float visibility = uVisibility * edgeFade;
+
+            float sides = 9.0;
+            float curvature = 0.15;
+            float anisotropy = 1.08;
+            float chroma = 0.015;
+
+            vec3 flare = vec3(0.0);
+            flare += flareShape(vUv, uSunPos + toCenter * 0.00, 0.08, vec3(1.00, 0.92, 0.82), 0.70, axisDir, anisotropy, chroma, sides, curvature);
+            flare += flareShape(vUv, uSunPos + toCenter * 0.35, 0.04, vec3(0.90, 0.95, 1.00), 0.45, axisDir, 1.12, chroma, sides, curvature);
+            flare += flareShape(vUv, uSunPos + toCenter * 0.70, 0.06, vec3(1.00, 0.86, 0.72), 0.28, axisDir, 1.10, chroma, sides, curvature);
+            flare += flareShape(vUv, uSunPos + toCenter * 1.15, 0.03, vec3(0.82, 0.92, 1.00), 0.22, axisDir, 1.16, chroma, sides, curvature);
+            flare += flareShape(vUv, uSunPos + toCenter * 1.55, 0.11, vec3(0.96, 0.88, 0.78), 0.18, axisDir, 1.06, chroma, sides, curvature);
+
+            vec3 outColor = baseColor.rgb + flare * visibility * uStrength;
+            gl_FragColor = vec4(outColor, baseColor.a);
+        }
+    `
+};
+
 const TEXTURE_PATHS = Object.freeze({
     sunMap: '/static/assets/textures/sunmap.jpg',
 
@@ -910,12 +995,17 @@ class MarsMissionApp {
         this.additivePass = null;
         this.bloomPass = null;
         this.cinematicPass = null;
+        this.lensFlarePass = null;
         this.ssaaPass = null;
         this.smaaPass = null;
         this.debugPass = null;
         this.contactShadowPass = null;
         this.aaMode = 'none';
         this.raycaster = new THREE.Raycaster(); // For lens flare occlusion
+        this._flareSunWorld = new THREE.Vector3();
+        this._flareScreenPos = new THREE.Vector3();
+        this._flareScreenUv = new THREE.Vector2();
+        this._flareRayDir = new THREE.Vector3();
 
         this.objects = {
             sun: null,
@@ -1400,6 +1490,26 @@ class MarsMissionApp {
         const params = new URLSearchParams(window.location.search || '');
         const raw = String(params.get('sunGlow') || '').trim().toLowerCase();
         if (!raw) {
+            return fallback;
+        }
+        if (raw === '0' || raw === 'off' || raw === 'false' || raw === 'none') {
+            return false;
+        }
+        return true;
+    }
+
+    getRequestedLensFlareEnabled(fallbackEnabled) {
+        const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : true;
+        if (typeof window === 'undefined' || !window.location) {
+            return fallback;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return fallback;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('flare') || '').trim().toLowerCase();
+        if (!raw || raw === 'auto') {
             return fallback;
         }
         if (raw === '0' || raw === 'off' || raw === 'false' || raw === 'none') {
@@ -2263,6 +2373,20 @@ class MarsMissionApp {
         this.additivePass.uniforms.tBloom.value = this.ensureBlackTexture();
         this.additivePass.uniforms.bloomStrength.value = 1.0;
         this.finalComposer.addPass(this.additivePass);
+
+        const flareEnabled = this.getRequestedLensFlareEnabled(!isRawPost);
+        if (flareEnabled) {
+            this.lensFlarePass = new THREE.ShaderPass(LensFlareShader);
+            if (this.lensFlarePass.material) {
+                this.lensFlarePass.material.toneMapped = false;
+            }
+            this.lensFlarePass.uniforms.uSunPos.value.set(0.5, 0.5);
+            this.lensFlarePass.uniforms.uVisibility.value = 0.0;
+            this.lensFlarePass.uniforms.uStrength.value = 0.0;
+            this.finalComposer.addPass(this.lensFlarePass);
+        } else {
+            this.lensFlarePass = null;
+        }
 
         if (aaRequested === 'smaa') {
             if (typeof THREE.SMAAPass === 'function') {
@@ -3719,40 +3843,11 @@ if (uMMSsaoEnabled > 0.5) {
     }
 
     createLensFlare() {
-        const textures = {
-            main: this.createFlareTexture('glow'),
-            hexagon: this.createFlareTexture('hexagon'),
-            ring: this.createFlareTexture('ring')
-        };
-
-        this.flareElements = [];
-        
-        const flareConfigs = [
-            { dist: 0.0, size: 1.0, opacity: 0.32, color: 0xffd6a5, tex: 'main' },
-            { dist: 0.2, size: 0.15, opacity: 0.18, color: 0xffb27a, tex: 'hexagon' },
-            { dist: 0.4, size: 0.08, opacity: 0.10, color: 0x8ec1ff, tex: 'hexagon' },
-            { dist: 0.5, size: 0.3, opacity: 0.06, color: 0xb8d7ff, tex: 'ring' },
-            { dist: 0.6, size: 0.1, opacity: 0.10, color: 0x8ec1ff, tex: 'hexagon' },
-            { dist: 0.8, size: 0.2, opacity: 0.05, color: 0xb8d7ff, tex: 'ring' },
-            { dist: 1.1, size: 0.3, opacity: 0.08, color: 0xffb27a, tex: 'hexagon' }
-        ];
-
-        flareConfigs.forEach(cfg => {
-            const mat = new THREE.SpriteMaterial({
-                map: textures[cfg.tex],
-                color: cfg.color,
-                transparent: true,
-                opacity: cfg.opacity,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false,
-                depthTest: false
-            });
-            const sprite = new THREE.Sprite(mat);
-            sprite.scale.set(cfg.size, cfg.size, 1);
-            sprite.visible = false;
-            this.scene.add(sprite);
-            this.flareElements.push({ sprite, dist: cfg.dist });
-        });
+        if (this.lensFlarePass && this.lensFlarePass.uniforms) {
+            this.lensFlarePass.uniforms.uSunPos.value.set(0.5, 0.5);
+            this.lensFlarePass.uniforms.uVisibility.value = 0.0;
+            this.lensFlarePass.uniforms.uStrength.value = 0.0;
+        }
     }
 
     createSun() {
@@ -5425,24 +5520,37 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
 
 
     updateLensFlare() {
-        if (!this.flareElements || !this.objects.sun) return;
+        if (!this.lensFlarePass || !this.lensFlarePass.uniforms) return;
+        if (!this.objects.sun) {
+            this.lensFlarePass.uniforms.uVisibility.value = 0.0;
+            return;
+        }
 
-        const sunPos = new THREE.Vector3();
+        const postMode = this.getRequestedPostMode();
+        const flareEnabled = this.getRequestedLensFlareEnabled(postMode !== 'raw');
+        if (!flareEnabled) {
+            this.lensFlarePass.uniforms.uVisibility.value = 0.0;
+            return;
+        }
+
+        const sunPos = this._flareSunWorld;
         this.objects.sun.getWorldPosition(sunPos);
 
-        const screenPos = sunPos.clone();
+        const screenPos = this._flareScreenPos.copy(sunPos);
         screenPos.project(this.camera);
 
         const isVisibleOnScreen = (screenPos.x >= -1 && screenPos.x <= 1 &&
-                           screenPos.y >= -1 && screenPos.y <= 1 &&
-                           screenPos.z < 1);
+            screenPos.y >= -1 && screenPos.y <= 1 &&
+            screenPos.z < 1);
 
-        // Occlusion Check using Raycaster
-        let isOccluded = false;
+        let visibility = 0.0;
+
         if (isVisibleOnScreen) {
-            const direction = sunPos.clone().sub(this.camera.position).normalize();
-            this.raycaster.set(this.camera.position, direction);
-            
+            // Occlusion Check using Raycaster
+            let isOccluded = false;
+            this._flareRayDir.copy(sunPos).sub(this.camera.position).normalize();
+            this.raycaster.set(this.camera.position, this._flareRayDir);
+
             const obstacles = [];
             if (this.lensFlareOccluders && Array.isArray(this.lensFlareOccluders.earth)) {
                 obstacles.push(...this.lensFlareOccluders.earth);
@@ -5456,34 +5564,25 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
             }
 
             const intersects = this.raycaster.intersectObjects(obstacles, false);
-            
-            // If obstacle is closer than the sun, it's an occlusion
             if (intersects.length > 0) {
                 const distToSun = this.camera.position.distanceTo(sunPos);
                 if (intersects[0].distance < distToSun) {
                     isOccluded = true;
                 }
             }
+
+            if (!isOccluded) {
+                visibility = 1.0;
+            }
         }
 
-        if (!isVisibleOnScreen || isOccluded) {
-            this.flareElements.forEach(f => f.sprite.visible = false);
-            return;
-        }
+        this._flareScreenUv.set((screenPos.x + 1) * 0.5, (screenPos.y + 1) * 0.5);
+        this.lensFlarePass.uniforms.uSunPos.value.copy(this._flareScreenUv);
+        this.lensFlarePass.uniforms.uVisibility.value = visibility;
 
-        const sunVec = sunPos.clone().sub(this.camera.position);
-        const camDir = new THREE.Vector3();
-        this.camera.getWorldDirection(camDir);
-
-        this.flareElements.forEach(f => {
-            const dist = f.dist;
-            const pos = this.camera.position.clone()
-                .add(sunVec.clone().multiplyScalar(dist))
-                .add(camDir.clone().multiplyScalar(1 - dist).multiplyScalar(0.5));
-            
-            f.sprite.position.copy(pos);
-            f.sprite.visible = true;
-        });
+        const sunIntensity = this.getRequestedSunIntensity();
+        const strength = Math.max(0.0, sunIntensity) * 0.03;
+        this.lensFlarePass.uniforms.uStrength.value = strength;
     }
 
     animate() {
@@ -5797,14 +5896,7 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
             this.cinematicPass.uniforms.time.value = Date.now() * 0.001;
         }
 
-        const postMode = this.getRequestedPostMode();
-        const isRawPost = postMode === 'raw';
-
-	        if (!isRawPost) {
-	            this.updateLensFlare();
-	        } else {
-	            this.flareElements.forEach(f => f.sprite.visible = false);
-	        }
+        this.updateLensFlare();
 
 			        const wantsContactShadowDepth =
                     this.aoMode === 'contact' ||
@@ -5845,6 +5937,8 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
             return;
         }
 
+	        const postMode = this.getRequestedPostMode();
+	        const isRawPost = postMode === 'raw';
 	        const bloomEnabled = this.getRequestedBloomEnabled(!isRawPost);
 	        const bloomDebugMode = this.getRequestedBloomDebugMode();
 	        const wantsBloom = bloomEnabled || bloomDebugMode !== 0;
