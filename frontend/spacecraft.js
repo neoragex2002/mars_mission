@@ -16,6 +16,35 @@ class Spacecraft {
         this.landingLegs = [];
         this.sharedTextures = {};
 
+        this.panelTrackingNodes = [];
+        this.panelTrackingStates = new Map();
+        this.panelTrackingEnabled = true;
+        this.panelTrackingLimitEnabled = false;
+        this.panelTrackingMaxDeg = 80;
+        this.panelTrackingMaxSpeedDeg = 12;
+        this.panelTrackingEpsilon = 1e-3;
+        this.panelTrackingLastSimDays = null;
+        this.panelTrackingInitialized = false;
+
+        this._panelTrackingAxis = new THREE.Vector3(1, 0, 0);
+        this._panelTrackingSunDirWorld = new THREE.Vector3();
+        this._panelTrackingShipWorldPos = new THREE.Vector3();
+        this._panelTrackingMeshWorldQuat = new THREE.Quaternion();
+        this._panelTrackingParentQuat = new THREE.Quaternion();
+        this._panelTrackingParentQuatInv = new THREE.Quaternion();
+        this._panelTrackingTmpQuat = new THREE.Quaternion();
+        this._panelTrackingTmpQuat2 = new THREE.Quaternion();
+        this._panelTrackingTmpVec = new THREE.Vector3();
+        this._panelTrackingTmpVec2 = new THREE.Vector3();
+        this._panelTrackingAxisWorld = new THREE.Vector3();
+        this._panelTrackingAxisLocal = new THREE.Vector3();
+        this._panelTrackingFrontModel = new THREE.Vector3(0, 0, -1);
+        this._panelTrackingFrontWorld = new THREE.Vector3();
+        this._panelTrackingFrontLocal = new THREE.Vector3();
+        this._panelTrackingNormalProj = new THREE.Vector3();
+        this._panelTrackingSunProj = new THREE.Vector3();
+        this._panelTrackingCross = new THREE.Vector3();
+
         this.materialMode = 'default';
         this._originalMaterials = new Map();
         this._whiteMaterial = null;
@@ -212,7 +241,30 @@ class Spacecraft {
         this.scene.add(this.mesh);
     }
 
+    resetPanelTracking() {
+        this.panelTrackingNodes = [];
+        this.panelTrackingStates.clear();
+        this.panelTrackingLastSimDays = null;
+        this.panelTrackingInitialized = false;
+    }
+
+    collectPanelTrackingNodes(root) {
+        this.resetPanelTracking();
+        if (!root || typeof root.traverse !== 'function') return;
+
+        root.traverse((child) => {
+            if (!child || !child.name) return;
+            if (child.name !== 'Maxar_PPE_Array') return;
+            this.panelTrackingNodes.push(child);
+            this.panelTrackingStates.set(child, {
+                baseQuat: child.quaternion.clone(),
+                currentAngle: 0.0
+            });
+        });
+    }
+
     createProceduralModel() {
+        this.resetPanelTracking();
         this.createBody();
         this.createCockpit();
         this.createSolarPanels();
@@ -252,6 +304,7 @@ class Spacecraft {
                  this.mesh.add(normalized);
                  this.modelRoot = normalized;
                  this.modelLoaded = true;
+                 this.collectPanelTrackingNodes(normalized);
  
                  if (this.modelCalibrationRoot) {
                      this.modelCalibrationRoot.rotation.set(0, 0, 0);
@@ -925,6 +978,131 @@ class Spacecraft {
             this.solarPanelLeft.rotation.z = panelAngle;
             this.solarPanelRight.rotation.z = -panelAngle;
         }
+    }
+
+    _shortestAngle(angle) {
+        const twoPi = Math.PI * 2;
+        let wrapped = (angle + Math.PI) % twoPi;
+        if (wrapped < 0) {
+            wrapped += twoPi;
+        }
+        return wrapped - Math.PI;
+    }
+
+    _unwrapAngle(target, reference) {
+        if (!Number.isFinite(reference)) return target;
+        const twoPi = Math.PI * 2;
+        const diff = target - reference;
+        const k = Math.round(diff / twoPi);
+        return target - k * twoPi;
+    }
+
+    updateSolarTracking(sunWorldPosition, simDays) {
+        if (!this.panelTrackingEnabled) return;
+        if (!sunWorldPosition || typeof sunWorldPosition.x !== 'number') return;
+        if (!Number.isFinite(simDays)) return;
+        if (!this.mesh || this.panelTrackingNodes.length === 0) return;
+
+        this.mesh.updateWorldMatrix(true, false);
+
+        const sunDirWorld = this._panelTrackingSunDirWorld;
+        const shipWorldPos = this._panelTrackingShipWorldPos;
+        this.mesh.getWorldPosition(shipWorldPos);
+        sunDirWorld.copy(sunWorldPosition).sub(shipWorldPos);
+        if (sunDirWorld.lengthSq() <= 1e-10) return;
+        sunDirWorld.normalize();
+
+        const basis = this.modelCalibrationRoot || this.modelRoot || this.mesh;
+        basis.getWorldQuaternion(this._panelTrackingMeshWorldQuat);
+        const axisWorld = this._panelTrackingAxisWorld.copy(this._panelTrackingAxis)
+            .applyQuaternion(this._panelTrackingMeshWorldQuat);
+        const frontWorld = this._panelTrackingFrontWorld.copy(this._panelTrackingFrontModel)
+            .applyQuaternion(this._panelTrackingMeshWorldQuat);
+
+        let dtSec = 0.0;
+        if (this.panelTrackingLastSimDays === null || !Number.isFinite(this.panelTrackingLastSimDays)) {
+            this.panelTrackingLastSimDays = simDays;
+            this.panelTrackingInitialized = false;
+        } else {
+            const dtDays = simDays - this.panelTrackingLastSimDays;
+            this.panelTrackingLastSimDays = simDays;
+            if (dtDays < 0) {
+                this.panelTrackingInitialized = false;
+                dtSec = 0.0;
+            } else {
+                dtSec = dtDays * 86400.0;
+            }
+        }
+
+        if (dtSec > 1.0) {
+            dtSec = 1.0;
+        }
+
+        const maxSpeedRad = (this.panelTrackingMaxSpeedDeg * Math.PI) / 180.0;
+        const limitEnabled = !!this.panelTrackingLimitEnabled
+            && Number.isFinite(this.panelTrackingMaxDeg)
+            && this.panelTrackingMaxDeg > 0;
+        const limitRad = limitEnabled ? (this.panelTrackingMaxDeg * Math.PI) / 180.0 : null;
+        const epsilon = this.panelTrackingEpsilon;
+        const shouldSnap = !this.panelTrackingInitialized;
+        if (dtSec <= 0 && !shouldSnap) {
+            return;
+        }
+
+        for (const node of this.panelTrackingNodes) {
+            if (!node || !node.parent) continue;
+            const state = this.panelTrackingStates.get(node);
+            if (!state || !state.baseQuat) continue;
+
+            node.parent.getWorldQuaternion(this._panelTrackingParentQuat);
+            this._panelTrackingParentQuatInv.copy(this._panelTrackingParentQuat).invert();
+            const sunDirParent = this._panelTrackingTmpVec.copy(sunDirWorld)
+                .applyQuaternion(this._panelTrackingParentQuatInv);
+
+            const axisParent = this._panelTrackingAxisLocal.copy(axisWorld)
+                .applyQuaternion(this._panelTrackingParentQuatInv);
+            if (axisParent.lengthSq() <= 1e-10) {
+                continue;
+            }
+            axisParent.normalize();
+
+            const frontParent = this._panelTrackingFrontLocal.copy(frontWorld)
+                .applyQuaternion(this._panelTrackingParentQuatInv);
+
+            const normalProj = this._panelTrackingNormalProj.copy(frontParent);
+            normalProj.addScaledVector(axisParent, -normalProj.dot(axisParent));
+            const sunProj = this._panelTrackingSunProj.copy(sunDirParent);
+            sunProj.addScaledVector(axisParent, -sunProj.dot(axisParent));
+
+            if (normalProj.lengthSq() < epsilon || sunProj.lengthSq() < epsilon) {
+                continue;
+            }
+
+            normalProj.normalize();
+            sunProj.normalize();
+
+            const cross = this._panelTrackingCross.copy(normalProj).cross(sunProj);
+            let targetAngle = Math.atan2(cross.dot(axisParent), normalProj.dot(sunProj));
+            if (limitEnabled) {
+                targetAngle = Math.max(-limitRad, Math.min(limitRad, targetAngle));
+            } else {
+                targetAngle = this._unwrapAngle(targetAngle, state.currentAngle);
+            }
+
+            if (shouldSnap) {
+                state.currentAngle = targetAngle;
+            } else {
+                const delta = this._shortestAngle(targetAngle - state.currentAngle);
+                const maxStep = maxSpeedRad * dtSec;
+                const step = Math.max(-maxStep, Math.min(maxStep, delta));
+                state.currentAngle += step;
+            }
+
+            const deltaQuat = this._panelTrackingTmpQuat2.setFromAxisAngle(axisParent, state.currentAngle);
+            node.quaternion.copy(state.baseQuat).premultiply(deltaQuat);
+        }
+
+        this.panelTrackingInitialized = true;
     }
 
     setThrusterActive(active) {

@@ -5718,6 +5718,12 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
  
 	             this.objects.sun.getWorldPosition(this.sunWorldPosition);
 
+                 if (this.objects.spacecraft && typeof this.objects.spacecraft.updateSolarTracking === 'function') {
+                     // Solar panel tracking (comment out to disable for other models).
+                     const simDays = this.getDisplaySimulationTimeDays();
+                     this.objects.spacecraft.updateSolarTracking(this.sunWorldPosition, simDays);
+                 }
+
 	             this.updatePlanetShadowUniforms();
 	             
 	             this.sunViewPosition.copy(this.sunWorldPosition);
