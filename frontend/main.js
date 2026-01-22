@@ -1,5 +1,10 @@
 // Main.js - Main application entry point
 
+const MM_FEATURES = Object.freeze({
+    lensFlareVisibilitySmoothing: true,
+    outputDithering: true
+});
+
 // Custom Shader for Cinematic Effects (Grain + Chromatic Aberration)
 const CinematicShader = {
     uniforms: {
@@ -229,6 +234,36 @@ const DebugViewShader = {
             } else {
                 gl_FragColor = vec4(exposureRamp(luma), 1.0);
             }
+        }
+    `
+};
+
+const OutputDitherShader = {
+    uniforms: {
+        tDiffuse: { value: null },
+        uStrength: { value: 1.0 / 512.0 }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uStrength;
+        varying vec2 vUv;
+
+        float hash(vec2 p) {
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+        }
+
+        void main() {
+            vec4 color = texture2D(tDiffuse, vUv);
+            float noise = hash(gl_FragCoord.xy);
+            color.rgb += (noise - 0.5) * uStrength;
+            gl_FragColor = color;
         }
     `
 };
@@ -996,6 +1031,7 @@ class MarsMissionApp {
         this.bloomPass = null;
         this.cinematicPass = null;
         this.lensFlarePass = null;
+        this.ditherPass = null;
         this.ssaaPass = null;
         this.smaaPass = null;
         this.debugPass = null;
@@ -1006,6 +1042,7 @@ class MarsMissionApp {
         this._flareScreenPos = new THREE.Vector3();
         this._flareScreenUv = new THREE.Vector2();
         this._flareRayDir = new THREE.Vector3();
+        this._flareVisibilitySmoothed = 0.0;
 
         this.objects = {
             sun: null,
@@ -1479,7 +1516,7 @@ class MarsMissionApp {
     }
 
     getRequestedSunGlowEnabled(fallbackEnabled) {
-        const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : true;
+        const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : false;
         if (typeof window === 'undefined' || !window.location) {
             return fallback;
         }
@@ -1489,7 +1526,7 @@ class MarsMissionApp {
 
         const params = new URLSearchParams(window.location.search || '');
         const raw = String(params.get('sunGlow') || '').trim().toLowerCase();
-        if (!raw) {
+        if (!raw || raw === 'auto') {
             return fallback;
         }
         if (raw === '0' || raw === 'off' || raw === 'false' || raw === 'none') {
@@ -2346,6 +2383,7 @@ class MarsMissionApp {
         this.smaaPass = null;
         this.debugPass = null;
         this.contactShadowPass = null;
+        this.ditherPass = null;
 
         const aaRequested = this.aaMode;
 
@@ -2408,12 +2446,21 @@ class MarsMissionApp {
             this.finalComposer.addPass(this.debugPass);
         }
 
-	        if (typeof THREE.OutputPass === 'function') {
-	            this.outputPass = new THREE.OutputPass();
-	            this.finalComposer.addPass(this.outputPass);
-	        } else {
-	            console.warn('OutputPass unavailable; final output may look incorrect.');
-	        }
+        if (typeof THREE.OutputPass === 'function') {
+            this.outputPass = new THREE.OutputPass();
+            this.finalComposer.addPass(this.outputPass);
+        } else {
+            console.warn('OutputPass unavailable; final output may look incorrect.');
+        }
+
+        const ditherEnabled = MM_FEATURES.outputDithering && debugMode === 'none' && postMode !== 'raw' && this.outputPass;
+        if (ditherEnabled) {
+            this.ditherPass = new THREE.ShaderPass(OutputDitherShader);
+            if (this.ditherPass.material) {
+                this.ditherPass.material.toneMapped = false;
+            }
+            this.finalComposer.addPass(this.ditherPass);
+        }
 
 	    }
 
@@ -3856,9 +3903,7 @@ if (uMMSsaoEnabled > 0.5) {
             this.scene.remove(this.objects.sun);
         }
 
-        const postMode = this.getRequestedPostMode();
-        const isRawPost = postMode === 'raw';
-        const sunGlowEnabled = this.getRequestedSunGlowEnabled(!isRawPost);
+        const sunGlowEnabled = this.getRequestedSunGlowEnabled(false);
 
         const geometry = new THREE.SphereGeometry(0.2, 64, 64);
         const sunTexture = this.textureLoader.load(TEXTURE_PATHS.sunMap);
@@ -5519,10 +5564,14 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
      }
 
 
-    updateLensFlare() {
+    updateLensFlare(dtSec) {
         if (!this.lensFlarePass || !this.lensFlarePass.uniforms) return;
+        const smoothingEnabled = MM_FEATURES.lensFlareVisibilitySmoothing;
         if (!this.objects.sun) {
             this.lensFlarePass.uniforms.uVisibility.value = 0.0;
+            if (smoothingEnabled) {
+                this._flareVisibilitySmoothed = 0.0;
+            }
             return;
         }
 
@@ -5530,6 +5579,9 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
         const flareEnabled = this.getRequestedLensFlareEnabled(postMode !== 'raw');
         if (!flareEnabled) {
             this.lensFlarePass.uniforms.uVisibility.value = 0.0;
+            if (smoothingEnabled) {
+                this._flareVisibilitySmoothed = 0.0;
+            }
             return;
         }
 
@@ -5543,7 +5595,7 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
             screenPos.y >= -1 && screenPos.y <= 1 &&
             screenPos.z < 1);
 
-        let visibility = 0.0;
+        let targetVisibility = 0.0;
 
         if (isVisibleOnScreen) {
             // Occlusion Check using Raycaster
@@ -5572,12 +5624,25 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
             }
 
             if (!isOccluded) {
-                visibility = 1.0;
+                targetVisibility = 1.0;
             }
         }
 
         this._flareScreenUv.set((screenPos.x + 1) * 0.5, (screenPos.y + 1) * 0.5);
         this.lensFlarePass.uniforms.uSunPos.value.copy(this._flareScreenUv);
+        let visibility = targetVisibility;
+        if (smoothingEnabled) {
+            const safeDt = (typeof dtSec === 'number' && Number.isFinite(dtSec)) ? dtSec : 0.0;
+            if (!Number.isFinite(this._flareVisibilitySmoothed)) {
+                this._flareVisibilitySmoothed = 0.0;
+            }
+            const tauIn = 0.06;
+            const tauOut = 0.12;
+            const tau = (targetVisibility > this._flareVisibilitySmoothed) ? tauIn : tauOut;
+            const alpha = 1.0 - Math.exp(-safeDt / Math.max(0.001, tau));
+            this._flareVisibilitySmoothed += (targetVisibility - this._flareVisibilitySmoothed) * alpha;
+            visibility = this._flareVisibilitySmoothed;
+        }
         this.lensFlarePass.uniforms.uVisibility.value = visibility;
 
         const sunIntensity = this.getRequestedSunIntensity();
@@ -5896,7 +5961,7 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
             this.cinematicPass.uniforms.time.value = Date.now() * 0.001;
         }
 
-        this.updateLensFlare();
+        this.updateLensFlare(dtSec);
 
 			        const wantsContactShadowDepth =
                     this.aoMode === 'contact' ||

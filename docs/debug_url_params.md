@@ -335,7 +335,7 @@
 - `bloomDebug=0|1`：bloom buffer 调试输出（全屏替换，强制 `NoToneMapping`；用于观察 bloom 形态/能量）
 
 ### 10.2 Sun Glow（已实现）
-- `sunGlow=1|0`：太阳光晕 sprites（非 bloom）开关；默认 `auto`（`post=raw` 默认关，其它默认开），显式指定会覆盖 `post` 的默认值（用于隔离“太阳光晕 vs bloom”贡献）。
+- `sunGlow=auto|1|0`：太阳光晕 sprites（非 bloom，偏艺术向装饰）开关；默认关闭（`auto` 当前等同关闭），显式指定可开启（用于隔离“太阳光晕 vs bloom”贡献）。
 
 ### 10.3 Planet Atmosphere / Glow（Phase 4B，已实现）
 行星大气 Fresnel 与外圈 glow 走 HDR 口径（scene-referred），可独立控制是否参与 bloom。
@@ -344,7 +344,7 @@
 - `atmoStr=<float>`：大气强度（默认 `1.0`；范围 `0..6`）
 - `atmoBloom=auto|1|0`：大气是否进入 bloom layer（`auto` 默认随 `post`）
 
-- `glow=auto|1|0`：行星外圈 glow sprites（默认 `auto`；当前默认关闭以避免与 bloom 双叠加）
+- `glow=auto|1|0`：行星外圈 glow sprites（偏艺术向装饰；当前默认关闭以避免与 bloom 双叠加）
 - `glowStr=<float>`：glow 强度（默认 `0.6`；范围 `0..6`）
 - `glowBloom=auto|1|0`：glow 是否进入 bloom layer（默认关闭）
 
@@ -437,11 +437,11 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | PostFX | `bloomRad` | `0.42` | bloom 半径（0..1） |
 | PostFX | `bloomTh` | `0.82` | bloom 阈值（0..5） |
 | PostFX | `bloomDebug` | `0` | `0` / `1`（bloom buffer debug） |
-| PostFX | `sunGlow` | auto | `1` / `0`（太阳光晕 sprites；默认随 `post`） |
+| PostFX | `sunGlow` | `off` | `auto` / `1` / `0`（太阳光晕 sprites；偏艺术向装饰） |
 | PostFX | `atmo` | auto | `auto` / `1` / `0`（行星大气 Fresnel；默认随 `post`） |
 | PostFX | `atmoStr` | `1.0` | 大气强度（0..6） |
 | PostFX | `atmoBloom` | auto | `auto` / `1` / `0`（大气是否进入 bloom layer） |
-| PostFX | `glow` | auto | `auto` / `1` / `0`（行星外圈 glow；默认关闭） |
+| PostFX | `glow` | `off` | `auto` / `1` / `0`（行星外圈 glow；偏艺术向装饰） |
 | PostFX | `glowStr` | `0.6` | glow 强度（0..6） |
 | PostFX | `glowBloom` | auto | `auto` / `1` / `0`（glow 是否进入 bloom layer） |
 | PostFX | `flare` | `auto` | `auto` / `1` / `0`（lens flare HDR post pass；默认随 `post`） |
