@@ -65,7 +65,12 @@ const LensFlareShader = {
         tDiffuse: { value: null },
         uSunPos: { value: new THREE.Vector2(0.5, 0.5) },
         uVisibility: { value: 0.0 },
-        uStrength: { value: 0.0 }
+        uStrength: { value: 0.0 },
+        uFlareCore: { value: 1.0 },
+        uFlareStreak: { value: 1.0 },
+        uFlareGhost: { value: 1.0 },
+        uAspect: { value: 1.0 },
+        uTime: { value: 0.0 }
     },
     vertexShader: `
         varying vec2 vUv;
@@ -79,9 +84,70 @@ const LensFlareShader = {
         uniform vec2 uSunPos;
         uniform float uVisibility;
         uniform float uStrength;
+        uniform float uFlareCore;
+        uniform float uFlareStreak;
+        uniform float uFlareGhost;
+        uniform float uAspect;
+        uniform float uTime;
         varying vec2 vUv;
 
         const float PI = 3.141592653589793;
+
+        float hash11(float p) {
+            return fract(sin(p) * 43758.5453123);
+        }
+
+        float hash12(vec2 p) {
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+        }
+
+        float noise1(float x) {
+            float i = floor(x);
+            float f = fract(x);
+            float u = f * f * (3.0 - 2.0 * f);
+            return mix(hash11(i), hash11(i + 1.0), u);
+        }
+
+        float noise2(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+
+            float a = hash12(i);
+            float b = hash12(i + vec2(1.0, 0.0));
+            float c = hash12(i + vec2(0.0, 1.0));
+            float d = hash12(i + vec2(1.0, 1.0));
+
+            return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+        }
+
+        float ringMask(vec2 p, float radius, float width) {
+            float d = length(p);
+            float a = smoothstep(radius - width, radius, d);
+            float b = smoothstep(radius, radius + width, d);
+            return max(0.0, a - b);
+        }
+
+        float ringGaussian(vec2 p, float radius, float width) {
+            float d = abs(length(p) - radius);
+            float w = max(width, 1e-4);
+            return exp(-(d * d) / (w * w));
+        }
+
+        float saturate(float x) {
+            return clamp(x, 0.0, 1.0);
+        }
+
+        float wrapAngle(float a) {
+            return mod(a + PI, 2.0 * PI) - PI;
+        }
+
+        float arcAngleMask(float angle, float center, float halfLen, float feather, float power) {
+            float d = abs(wrapAngle(angle - center));
+            float m = 1.0 - smoothstep(max(0.0, halfLen - feather), halfLen, d);
+            float taper = pow(saturate(1.0 - d / max(halfLen, 1e-3)), power);
+            return m * taper;
+        }
 
         float polygonMask(vec2 p, float sides, float radius, float edge) {
             float angle = atan(p.y, p.x);
@@ -113,31 +179,174 @@ const LensFlareShader = {
             float mG = apertureMask(pG, sides, curvature);
             float mB = apertureMask(pB, sides, curvature);
 
-            return color * vec3(mR, mG, mB) * intensity;
+            // Soft falloff so ghosts read as "optical" rather than flat polygons.
+            float falloff = exp(-dot(pG, pG) * 2.4);
+            float edgeGlow = ringMask(pG, 0.85, 0.08);
+            float shape = falloff + edgeGlow * 0.35;
+
+            return color * vec3(mR, mG, mB) * (intensity * shape);
         }
 
         void main() {
             vec4 baseColor = texture2D(tDiffuse, vUv);
-            vec2 center = vec2(0.5, 0.5);
-            vec2 toCenter = center - uSunPos;
-            float axisLen = length(toCenter);
-            vec2 axisDir = (axisLen > 1e-4) ? (toCenter / axisLen) : vec2(1.0, 0.0);
+            // Work in centered, aspect-corrected UV so flare shapes remain circular across aspect ratios.
+            vec2 uv = vUv - 0.5;
+            uv.x *= uAspect;
+            vec2 sun = uSunPos - 0.5;
+            sun.x *= uAspect;
 
             float edge = min(min(uSunPos.x, 1.0 - uSunPos.x), min(uSunPos.y, 1.0 - uSunPos.y));
             float edgeFade = smoothstep(0.02, 0.12, edge);
             float visibility = uVisibility * edgeFade;
 
-            float sides = 9.0;
-            float curvature = 0.15;
-            float anisotropy = 1.08;
-            float chroma = 0.015;
+            if (visibility <= 1e-4 || uStrength <= 1e-4) {
+                gl_FragColor = baseColor;
+                return;
+            }
+
+            float t = uTime;
+            // Subtle, smooth jitter to avoid a "perfectly static" look (kept small to prevent flicker).
+            vec2 jitter = vec2(noise1(t * 0.35), noise1(t * 0.35 + 19.0));
+            jitter = (jitter - 0.5) * 2.0;
+            sun += jitter * (0.0022 * visibility);
+
+            vec2 toCenter = -sun;
+            float axisLen = length(toCenter);
+            vec2 axisDir = (axisLen > 1e-4) ? (toCenter / axisLen) : vec2(1.0, 0.0);
+            vec2 perpDir = vec2(-axisDir.y, axisDir.x);
+
+            vec2 main = uv - sun;
+            float ang = atan(main.y, main.x);
+            float dist = length(main);
+            float dist01 = pow(max(dist, 1e-6), 0.10);
+
+            // Stable-ish angular noise; time is intentionally low-frequency (avoid shimmer).
+            float n = noise2(vec2((ang - t * 0.11) * 16.0, dist01 * 32.0));
+            float rot = t * 0.09 + (n - 0.5) * 0.5;
 
             vec3 flare = vec3(0.0);
-            flare += flareShape(vUv, uSunPos + toCenter * 0.00, 0.08, vec3(1.00, 0.92, 0.82), 0.70, axisDir, anisotropy, chroma, sides, curvature);
-            flare += flareShape(vUv, uSunPos + toCenter * 0.35, 0.04, vec3(0.90, 0.95, 1.00), 0.45, axisDir, 1.12, chroma, sides, curvature);
-            flare += flareShape(vUv, uSunPos + toCenter * 0.70, 0.06, vec3(1.00, 0.86, 0.72), 0.28, axisDir, 1.10, chroma, sides, curvature);
-            flare += flareShape(vUv, uSunPos + toCenter * 1.15, 0.03, vec3(0.82, 0.92, 1.00), 0.22, axisDir, 1.16, chroma, sides, curvature);
-            flare += flareShape(vUv, uSunPos + toCenter * 1.55, 0.11, vec3(0.96, 0.88, 0.78), 0.18, axisDir, 1.06, chroma, sides, curvature);
+            float coreStrength = uFlareCore;
+            float streakStrength = uFlareStreak;
+            float ghostStrength = uFlareGhost;
+
+            // Veiling glare: broad, soft glow around the light source.
+            float hazeWide = exp(-dist * dist * 0.55);
+            float hazeTight = exp(-dist * dist * 3.2);
+            flare += vec3(1.0, 0.92, 0.80) * (hazeWide * 0.35 + hazeTight * 0.55) * 0.2 * coreStrength; //!!
+
+            // Core (Shadertoy-inspired): inverse-distance with angular/noise modulation.
+            float core = 1.0 / (dist * 16.0 + 1.0);
+            float coreMod = sin((ang + t * 0.055 + noise1(abs(ang) * 2.5 + n * 2.0) * 2.0) * 12.0);
+            core = core + core * (coreMod * 0.12 + dist01 * 0.22 + 0.85);
+            flare += vec3(1.4, 1.2, 1.0) * core * 0.25 * coreStrength;
+
+            // Outer halo ring: break up perfect circles, add "lens structure".
+            float haloRing = ringMask(main, 0.18, 0.045);
+            haloRing *= 0.65 + 0.35 * pow(abs(sin((ang + rot) * 3.0 + n * 6.2831853)), 2.0);
+            flare += vec3(1.0, 0.90, 0.75) * haloRing * 0.25 * coreStrength;
+
+            // Diffraction petals + spikes (bigger, more visible).
+            float petalsA = pow(abs(cos((ang + rot) * 6.0 + n * 2.0)), 6.0);
+            float petalsB = pow(abs(cos((ang - rot * 1.3) * 3.0 - n * 1.5)), 4.0);
+            float petals = petalsA + petalsB * 0.70;
+            float petalsFalloff = smoothstep(0.03, 0.16, dist) * (1.0 / (dist * 1.75 + 0.10));
+            flare += vec3(1.0, 0.97, 0.92) * petals * petalsFalloff * 0.055 * streakStrength;
+
+            float spikes = pow(abs(cos((ang + rot) * 12.0)), 14.0);
+            float spikesFalloff = smoothstep(0.04, 0.22, dist) * (1.0 / (dist * 2.8 + 0.22));
+            flare += vec3(1.0, 0.99, 0.97) * spikes * spikesFalloff * 0.045 * streakStrength;
+
+            // Axis-aligned streaks.
+            vec2 mainLocal = vec2(dot(main, axisDir), dot(main, perpDir));
+            float streakH = exp(-abs(mainLocal.y) * 55.0) / (abs(mainLocal.x) * 12.0 + 1.0);
+            float streakV = exp(-abs(mainLocal.x) * 75.0) / (abs(mainLocal.y) * 24.0 + 1.0);
+            float streaks = streakH * 0.12 + streakV * 0.04;
+            streaks *= 0.85 + 0.15 * noise1(t * 0.6 + 5.0);
+            flare += vec3(1.0, 0.94, 0.86) * streaks * streakStrength;
+
+            // Aperture ghosts (structured) with more visible faceting.
+            float sides = 7.0;
+            float curvature = 0.08;
+            float anisotropy = 1.10 + 0.03 * sin(t * 0.17);
+            float chroma = 0.018 * (0.90 + 0.10 * sin(t * 0.11 + 1.7));
+
+            float wander = (noise1(t * 0.22 + 7.0) - 0.5) * 0.03;
+            vec2 wanderShift = axisDir * wander + perpDir * (noise1(t * 0.21 + 11.0) - 0.5) * 0.01;
+            float flicker0 = 0.94 + 0.06 * noise1(t * 0.55 + 3.0);
+            float flicker1 = 0.94 + 0.06 * noise1(t * 0.55 + 9.0);
+            float flicker2 = 0.94 + 0.06 * noise1(t * 0.55 + 15.0);
+
+            flare += flareShape(uv, sun + toCenter * 0.00 + wanderShift * 0.15, 0.085, vec3(1.00, 0.92, 0.82), 0.90 * flicker0, axisDir, anisotropy, chroma, sides, curvature) * ghostStrength;
+            flare += flareShape(uv, sun + toCenter * 0.35 + wanderShift * 0.35, 0.045, vec3(0.90, 0.95, 1.00), 0.55 * flicker1, axisDir, 1.14, chroma, sides, curvature) * ghostStrength;
+            flare += flareShape(uv, sun + toCenter * 0.70 + wanderShift * 0.55, 0.065, vec3(1.00, 0.86, 0.72), 0.32 * flicker2, axisDir, 1.12, chroma, sides, curvature) * ghostStrength;
+            flare += flareShape(uv, sun + toCenter * 1.15 + wanderShift * 0.70, 0.035, vec3(0.82, 0.92, 1.00), 0.24 * flicker1, axisDir, 1.18, chroma, sides, curvature) * ghostStrength;
+            flare += flareShape(uv, sun + toCenter * 1.55 + wanderShift * 0.85, 0.12, vec3(0.96, 0.88, 0.78), 0.20 * flicker0, axisDir, 1.08, chroma, sides, curvature) * ghostStrength;
+
+            // Arc ghosts: directional partial arcs (avoid full rings with simple breaks).
+            vec2 gp0 = sun + toCenter * 0.55 + wanderShift * 0.50;
+            vec2 gd0 = uv - gp0;
+            vec2 gd0L = vec2(dot(gd0, axisDir), dot(gd0, perpDir));
+            gd0L.x *= 1.35;
+            gd0L.y *= 0.85;
+            float a0 = atan(gd0L.y, gd0L.x);
+            float radius0 = 0.18 * (1.0 + 0.06 * sin(a0 * 2.0 + rot * 1.3) + 0.05 * (noise1(a0 * 3.0 + t * 0.07) - 0.5));
+            float width0 = 0.030 * (0.85 + 0.30 * sin(a0 * 3.0 - rot));
+            vec2 chromaArc0 = vec2(0.008, 0.0);
+            float r0R = ringGaussian(gd0L - chromaArc0, radius0 * 1.01, width0);
+            float r0G = ringGaussian(gd0L, radius0, width0);
+            float r0B = ringGaussian(gd0L + chromaArc0, radius0 * 0.99, width0);
+            float arcCenter0 = 0.95 + rot * 0.35 + (noise1(t * 0.09 + 2.0) - 0.5) * 0.35;
+            float arc0 = arcAngleMask(a0, arcCenter0, 0.65, 0.22, 1.9);
+            float arcNoise0 = 0.70 + 0.30 * noise1(a0 * 2.0 + t * 0.12 + 10.0);
+            flare += vec3(r0R, r0G, r0B) * arc0 * arcNoise0 * vec3(1.0, 0.62, 0.28) * 1.55 * ghostStrength;
+
+            vec2 gp1 = sun + toCenter * 1.05 + wanderShift * 0.65;
+            vec2 gd1 = uv - gp1;
+            vec2 gd1L = vec2(dot(gd1, axisDir), dot(gd1, perpDir));
+            gd1L.x *= 1.22;
+            gd1L.y *= 0.90;
+            float a1 = atan(gd1L.y, gd1L.x);
+            float radius1 = 0.125 * (1.0 + 0.08 * sin(a1 * 2.0 - rot * 1.1) + 0.05 * (noise1(a1 * 3.0 + t * 0.08 + 4.0) - 0.5));
+            float width1 = 0.024 * (0.90 + 0.30 * sin(a1 * 2.5 + rot * 0.7));
+            vec2 chromaArc1 = vec2(-0.007, 0.0);
+            float r1R = ringGaussian(gd1L - chromaArc1, radius1 * 1.01, width1);
+            float r1G = ringGaussian(gd1L, radius1, width1);
+            float r1B = ringGaussian(gd1L + chromaArc1, radius1 * 0.99, width1);
+            float arcCenter1 = -1.05 - rot * 0.25 + (noise1(t * 0.08 + 8.0) - 0.5) * 0.30;
+            float arc1 = arcAngleMask(a1, arcCenter1, 0.58, 0.20, 2.2);
+            float arcNoise1 = 0.70 + 0.30 * noise1(a1 * 2.0 + t * 0.10 + 22.0);
+            flare += vec3(r1R, r1G, r1B) * arc1 * arcNoise1 * vec3(0.55, 0.85, 1.0) * 1.35 * ghostStrength;
+
+            // Non-linear radial distortion from center -> adds richer ghost distribution.
+            vec2 uvd = uv * length(uv);
+
+            // Group A: smooth ghosts (gaussian-ish)
+            float g2r = max(1.0 / (1.0 + 32.0 * pow(length(uvd + 0.80 * sun), 2.0)), 0.0) * 0.18;
+            float g2g = max(1.0 / (1.0 + 32.0 * pow(length(uvd + 0.85 * sun), 2.0)), 0.0) * 0.16;
+            float g2b = max(1.0 / (1.0 + 32.0 * pow(length(uvd + 0.90 * sun), 2.0)), 0.0) * 0.14;
+
+            // Group B: tighter ghosts (sharper falloff)
+            vec2 uvx = mix(uv, uvd, -0.5);
+            float g4r = max(0.01 - pow(length(uvx + 0.40 * sun), 2.4), 0.0) * 2.4;
+            float g4g = max(0.01 - pow(length(uvx + 0.45 * sun), 2.4), 0.0) * 2.0;
+            float g4b = max(0.01 - pow(length(uvx + 0.50 * sun), 2.4), 0.0) * 1.4;
+
+            // Group C: sharp, high-frequency ghosts (adds "radial petal" breakup).
+            uvx = mix(uv, uvd, -0.4);
+            float g5r = max(0.01 - pow(length(uvx + 0.20 * sun), 5.5), 0.0) * 1.1;
+            float g5g = max(0.01 - pow(length(uvx + 0.40 * sun), 5.5), 0.0) * 1.1;
+            float g5b = max(0.01 - pow(length(uvx + 0.60 * sun), 5.5), 0.0) * 1.1;
+
+            // Group D: forward ghosts (same side as the sun)
+            uvx = mix(uv, uvd, -0.5);
+            float g6r = max(0.01 - pow(length(uvx - 0.30 * sun), 1.6), 0.0) * 1.8;
+            float g6g = max(0.01 - pow(length(uvx - 0.325 * sun), 1.6), 0.0) * 1.2;
+            float g6b = max(0.01 - pow(length(uvx - 0.35 * sun), 1.6), 0.0) * 1.6;
+
+            // Break up the "perfectly uniform" look with a subtle angular modulation.
+            float smear = 0.55 + 0.45 * pow(abs(sin((ang + rot) * 6.0 + n * 2.0)), 2.2);
+            float smear2 = 0.70 + 0.30 * noise1(ang * 2.0 + t * 0.12 + 1.0);
+            flare += vec3(g2r + g4r + g5r + g6r, g2g + g4g + g5g + g6g, g2b + g4b + g5b + g6b) * (0.85 * smear * smear2) * ghostStrength;
 
             vec3 outColor = baseColor.rgb + flare * visibility * uStrength;
             gl_FragColor = vec4(outColor, baseColor.a);
@@ -1556,6 +1765,43 @@ class MarsMissionApp {
         return true;
     }
 
+    getRequestedFlareGroupStrength(paramName, fallbackValue, minValue, maxValue) {
+        const fallback = (typeof fallbackValue === 'number' && Number.isFinite(fallbackValue)) ? fallbackValue : 1.0;
+        if (typeof window === 'undefined' || !window.location) {
+            return fallback;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return fallback;
+        }
+
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get(paramName) || '').trim();
+        if (!raw) {
+            return fallback;
+        }
+
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return fallback;
+        }
+
+        const minV = (typeof minValue === 'number' && Number.isFinite(minValue)) ? minValue : 0.0;
+        const maxV = (typeof maxValue === 'number' && Number.isFinite(maxValue)) ? maxValue : 2.0;
+        return THREE.MathUtils.clamp(value, minV, maxV);
+    }
+
+    getRequestedFlareCoreStrength() {
+        return this.getRequestedFlareGroupStrength('flareCore', 1.0, 0.0, 1.6);
+    }
+
+    getRequestedFlareStreakStrength() {
+        return this.getRequestedFlareGroupStrength('flareStreak', 1.0, 0.0, 1.4);
+    }
+
+    getRequestedFlareGhostStrength() {
+        return this.getRequestedFlareGroupStrength('flareGhost', 1.0, 0.0, 1.8);
+    }
+
     getRequestedCinematicEnabled(fallbackEnabled) {
         const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : false;
         if (typeof window === 'undefined' || !window.location) {
@@ -2443,6 +2689,21 @@ class MarsMissionApp {
             this.lensFlarePass.uniforms.uSunPos.value.set(0.5, 0.5);
             this.lensFlarePass.uniforms.uVisibility.value = 0.0;
             this.lensFlarePass.uniforms.uStrength.value = 0.0;
+            if (this.lensFlarePass.uniforms.uFlareCore) {
+                this.lensFlarePass.uniforms.uFlareCore.value = 1.0;
+            }
+            if (this.lensFlarePass.uniforms.uFlareStreak) {
+                this.lensFlarePass.uniforms.uFlareStreak.value = 1.0;
+            }
+            if (this.lensFlarePass.uniforms.uFlareGhost) {
+                this.lensFlarePass.uniforms.uFlareGhost.value = 1.0;
+            }
+            if (this.lensFlarePass.uniforms.uAspect) {
+                this.lensFlarePass.uniforms.uAspect.value = (height > 0) ? (width / height) : 1.0;
+            }
+            if (this.lensFlarePass.uniforms.uTime) {
+                this.lensFlarePass.uniforms.uTime.value = 0.0;
+            }
             this.finalComposer.addPass(this.lensFlarePass);
         } else {
             this.lensFlarePass = null;
@@ -3925,6 +4186,15 @@ if (uMMSsaoEnabled > 0.5) {
             this.lensFlarePass.uniforms.uSunPos.value.set(0.5, 0.5);
             this.lensFlarePass.uniforms.uVisibility.value = 0.0;
             this.lensFlarePass.uniforms.uStrength.value = 0.0;
+            if (this.lensFlarePass.uniforms.uFlareCore) {
+                this.lensFlarePass.uniforms.uFlareCore.value = 1.0;
+            }
+            if (this.lensFlarePass.uniforms.uFlareStreak) {
+                this.lensFlarePass.uniforms.uFlareStreak.value = 1.0;
+            }
+            if (this.lensFlarePass.uniforms.uFlareGhost) {
+                this.lensFlarePass.uniforms.uFlareGhost.value = 1.0;
+            }
         }
     }
 
@@ -5549,6 +5819,9 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
 	        if (this.smaaPass && typeof this.smaaPass.setSize === 'function') {
 	            this.smaaPass.setSize(width * pixelRatio, height * pixelRatio);
 	        }
+            if (this.lensFlarePass && this.lensFlarePass.uniforms && this.lensFlarePass.uniforms.uAspect) {
+                this.lensFlarePass.uniforms.uAspect.value = (height > 0) ? (width / height) : 1.0;
+            }
 
 		        const wantsContactShadowDepth =
                     this.aoMode === 'contact' ||
@@ -5676,9 +5949,24 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
         }
         this.lensFlarePass.uniforms.uVisibility.value = visibility;
 
+        if (this.lensFlarePass.uniforms.uFlareCore) {
+            this.lensFlarePass.uniforms.uFlareCore.value = this.getRequestedFlareCoreStrength();
+        }
+        if (this.lensFlarePass.uniforms.uFlareStreak) {
+            this.lensFlarePass.uniforms.uFlareStreak.value = this.getRequestedFlareStreakStrength();
+        }
+        if (this.lensFlarePass.uniforms.uFlareGhost) {
+            this.lensFlarePass.uniforms.uFlareGhost.value = this.getRequestedFlareGhostStrength();
+        }
+
         const sunIntensity = this.getRequestedSunIntensity();
-        const strength = Math.max(0.0, sunIntensity) * 0.03;
+        const strength = Math.max(0.0, sunIntensity) * 0.02;
         this.lensFlarePass.uniforms.uStrength.value = strength;
+
+        if (this.lensFlarePass.uniforms.uTime) {
+            const nowMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+            this.lensFlarePass.uniforms.uTime.value = nowMs * 0.001;
+        }
     }
 
     animate() {

@@ -190,6 +190,15 @@ mars_mission/
 完整列表与推荐组合见：`docs/debug_url_params.md`（包含 `post=raw`、`mat=white`、`ao=contact`、`csDebug`、`ps` 等）。
 电影化后期默认关闭，如需开启可用 `?cine=1`（grain/CA/vignette）。
 
+Lens flare 为 HDR 域的 post pass，可用 `flare=auto|1|0` 独立控制；并支持按组微调：
+
+- `flareCore`：核心/光晕组强度（默认 `1.0`；范围 `0..1.6`）
+- `flareStreak`：花瓣/尖刺/拖影组强度（默认 `1.0`；范围 `0..1.4`）
+- `flareGhost`：幽灵/弧形/色散组强度（默认 `1.0`；范围 `0..1.8`）
+
+示例：
+- flare-only 标定：`/?post=raw&flare=1&flareCore=0.9&flareStreak=0.8&flareGhost=1.1`
+
 ### 调整任务参数
 
 编辑 `backend/orbit_engine.py`（例如）：
