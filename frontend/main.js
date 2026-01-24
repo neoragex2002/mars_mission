@@ -6,6 +6,125 @@ const MM_FEATURES = Object.freeze({
     cinematicPass: true
 });
 
+// Optional cfg overlay: `/?cfg=preset.cfg` (or multiple `cfg=` values).
+// Config files live under `/static/config/` and are parsed as JSON objects.
+let MM_CFG = null;
+
+function _sanitizeCfgPath(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return null;
+    if (s.startsWith('/') || s.startsWith('\\')) return null;
+    if (!/^[a-zA-Z0-9._/-]+$/.test(s)) return null;
+
+    const parts = s.split('/');
+    if (parts.some((p) => !p || p === '.' || p === '..')) return null;
+    return parts.join('/');
+}
+
+async function loadCfgFilesFromUrl() {
+    if (typeof window === 'undefined' || !window.location) return;
+    if (typeof URLSearchParams === 'undefined' || typeof fetch !== 'function') return;
+
+    const urlParams = new URLSearchParams(window.location.search || '');
+    const rawCfgList = urlParams.getAll('cfg').map(_sanitizeCfgPath).filter(Boolean);
+
+    const merged = Object.create(null);
+    const sources = [];
+
+    if (!rawCfgList.length) {
+        MM_CFG = { sources, params: merged };
+        window.MM_CFG = MM_CFG;
+        return;
+    }
+
+    for (const cfgPath of rawCfgList) {
+        const encoded = cfgPath.split('/').map(encodeURIComponent).join('/');
+        const url = `/static/config/${encoded}`;
+
+        try {
+            const res = await fetch(url, { cache: 'no-store' });
+            if (!res.ok) {
+                console.warn(`[cfg] Failed to load ${cfgPath}: HTTP ${res.status}`);
+                continue;
+            }
+
+            const text = await res.text();
+            const obj = JSON.parse(text);
+            if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+                console.warn(`[cfg] Ignoring ${cfgPath}: expected a JSON object at top-level`);
+                continue;
+            }
+
+            Object.keys(obj).forEach((k) => {
+                merged[k] = obj[k];
+            });
+            sources.push(cfgPath);
+        } catch (err) {
+            console.warn(`[cfg] Failed to load ${cfgPath}:`, err);
+        }
+    }
+
+    MM_CFG = { sources, params: merged };
+    window.MM_CFG = MM_CFG;
+    if (sources.length) {
+        console.info(`[cfg] Loaded ${sources.join(', ')}`);
+    }
+}
+
+function getEffectiveParams() {
+    if (typeof window === 'undefined' || !window.location) return null;
+    if (typeof URLSearchParams === 'undefined') return null;
+
+    const params = new URLSearchParams(window.location.search || '');
+    const cfg = (MM_CFG && MM_CFG.params) ? MM_CFG.params : null;
+    if (!cfg) return params;
+
+    Object.keys(cfg).forEach((k) => {
+        // URL params always win; cfg only fills missing keys.
+        const existingValues = params.getAll(k);
+        if (existingValues.length) {
+            // Treat `?key=` as "unset" only when *all* occurrences are empty.
+            // This avoids surprising behavior when a key is repeated with a later non-empty value.
+            const allEmpty = existingValues.every((v) => String(v).trim() === '');
+            if (allEmpty) {
+                console.warn(`[cfg] URL param "${k}" is present but empty; ignoring it so cfg/defaults can apply.`);
+                params.delete(k);
+            } else {
+                return;
+            }
+        }
+
+        const v = cfg[k];
+        if (v === null || v === undefined) return;
+
+        // Keep cfg simple and predictable: only accept primitives.
+        const t = typeof v;
+        if (t === 'string') {
+            const s = String(v);
+            if (!s.trim()) return;
+            params.set(k, s);
+            return;
+        }
+        if (t === 'number') {
+            if (!Number.isFinite(v)) {
+                console.warn(`[cfg] Ignoring "${k}": expected a finite number, got ${String(v)}`);
+                return;
+            }
+            params.set(k, String(v));
+            return;
+        }
+        if (t === 'boolean') {
+            params.set(k, v ? 'true' : 'false');
+            return;
+        }
+
+        // object/array/etc: ignore to avoid `[object Object]` silently breaking parsers.
+        console.warn(`[cfg] Ignoring "${k}": cfg values must be string/number/boolean (got ${t})`);
+    });
+
+    return params;
+}
+
 // Custom Shader for Cinematic Effects (Grain + Chromatic Aberration)
 const CinematicShader = {
     uniforms: {
@@ -1121,7 +1240,8 @@ function getRequestedContactShadowParams() {
         return null;
     }
 
-    const params = new URLSearchParams(window.location.search || '');
+    const params = getEffectiveParams();
+    if (!params) return null;
 
     const rawMaxDist = params.get('csDist');
     const rawThickness = params.get('csThick');
@@ -1155,7 +1275,8 @@ function getRequestedSsaoParams() {
         return null;
     }
 
-    const params = new URLSearchParams(window.location.search || '');
+    const params = getEffectiveParams();
+    if (!params) return null;
 
     const parseNum = (raw) => {
         if (raw === null || raw === undefined) return null;
@@ -1190,7 +1311,8 @@ function getRequestedSpacecraftSelfShadowParams() {
         return null;
     }
 
-    const params = new URLSearchParams(window.location.search || '');
+    const params = getEffectiveParams();
+    if (!params) return null;
 
     const parseNum = (raw) => {
         if (raw === null || raw === undefined) return null;
@@ -1436,7 +1558,8 @@ class MarsMissionApp {
             return 'none';
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return 'none';
         const raw = String(params.get('aa') || '').trim().toLowerCase();
         if (!raw || raw === '0' || raw === 'off' || raw === 'none') {
             return 'none';
@@ -1458,7 +1581,8 @@ class MarsMissionApp {
             return 'canvas';
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return 'canvas';
         const raw = String(params.get('env') || '').trim().toLowerCase();
         if (!raw || raw === 'canvas') {
             return 'canvas';
@@ -1480,7 +1604,8 @@ class MarsMissionApp {
             return 'default';
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return 'default';
         const raw = String(params.get('iblEnv') || '').trim().toLowerCase();
         if (!raw || raw === 'default' || raw === 'auto' || raw === '1' || raw === 'on') {
             return 'default';
@@ -1502,7 +1627,8 @@ class MarsMissionApp {
             return fallbackLevel;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return fallbackLevel;
         const raw = String(params.get('aaLevel') || '').trim();
         if (!raw) {
             return fallbackLevel;
@@ -1525,7 +1651,8 @@ class MarsMissionApp {
             return 'default';
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return 'default';
         const raw = String(params.get('post') || '').trim().toLowerCase();
         if (!raw || raw === '1' || raw === 'on' || raw === 'default') {
             return 'default';
@@ -1545,7 +1672,8 @@ class MarsMissionApp {
             return fallback;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return fallback;
         const raw = String(params.get('atmo') || '').trim().toLowerCase();
         if (!raw || raw === 'auto') {
             return fallback;
@@ -1565,7 +1693,8 @@ class MarsMissionApp {
             return fallback;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return fallback;
         const raw = String(params.get('glow') || '').trim().toLowerCase();
         if (!raw || raw === 'auto') {
             return fallback;
@@ -1585,7 +1714,8 @@ class MarsMissionApp {
             return fallback;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return fallback;
         const raw = String(params.get('atmoBloom') || '').trim().toLowerCase();
         if (!raw || raw === 'auto') {
             return fallback;
@@ -1605,7 +1735,8 @@ class MarsMissionApp {
             return fallback;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return fallback;
         const raw = String(params.get('glowBloom') || '').trim().toLowerCase();
         if (!raw || raw === 'auto') {
             return fallback;
@@ -1624,7 +1755,8 @@ class MarsMissionApp {
             return null;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return null;
         const raw = String(params.get('atmoStr') || '').trim();
         if (!raw) {
             return null;
@@ -1644,7 +1776,8 @@ class MarsMissionApp {
             return null;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return null;
         const raw = String(params.get('glowStr') || '').trim();
         if (!raw) {
             return null;
@@ -1665,7 +1798,8 @@ class MarsMissionApp {
             return fallback;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return fallback;
         const raw = String(params.get('bloom') || '').trim().toLowerCase();
         if (!raw) {
             return fallback;
@@ -1684,7 +1818,8 @@ class MarsMissionApp {
             return 0;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return 0;
         const raw = String(params.get('bloomDebug') || '').trim();
         if (!raw) {
             return 0;
@@ -1706,7 +1841,8 @@ class MarsMissionApp {
             return {};
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return {};
 
         const parseNum = (raw) => {
             if (raw === null || raw === undefined) return null;
@@ -1734,7 +1870,8 @@ class MarsMissionApp {
             return fallback;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return fallback;
         const raw = String(params.get('sunGlow') || '').trim().toLowerCase();
         if (!raw || raw === 'auto') {
             return fallback;
@@ -1754,7 +1891,8 @@ class MarsMissionApp {
             return fallback;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return fallback;
         const raw = String(params.get('flare') || '').trim().toLowerCase();
         if (!raw || raw === 'auto') {
             return fallback;
@@ -1774,7 +1912,8 @@ class MarsMissionApp {
             return fallback;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return fallback;
         const raw = String(params.get(paramName) || '').trim();
         if (!raw) {
             return fallback;
@@ -1811,7 +1950,8 @@ class MarsMissionApp {
             return fallback;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return fallback;
         const raw = String(params.get('cine') || '').trim().toLowerCase();
         if (!raw || raw === 'auto') {
             return fallback;
@@ -1830,7 +1970,8 @@ class MarsMissionApp {
             return 'default';
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return 'default';
         const raw = String(params.get('bg') || '').trim().toLowerCase();
         if (!raw || raw === '1' || raw === 'on' || raw === 'default') {
             return 'default';
@@ -1852,7 +1993,8 @@ class MarsMissionApp {
              return 1.0;
          }
 
-         const params = new URLSearchParams(window.location.search || '');
+         const params = getEffectiveParams();
+         if (!params) return 1.0;
          const raw = String(params.get('city') || '').trim();
          if (!raw) {
              return 1.0;
@@ -1875,7 +2017,8 @@ class MarsMissionApp {
              return 'none';
          }
 
-         const params = new URLSearchParams(window.location.search || '');
+         const params = getEffectiveParams();
+         if (!params) return 'none';
          const raw = String(params.get('debug') || '').trim().toLowerCase();
          if (!raw || raw === '0' || raw === 'off' || raw === 'none') {
              return 'none';
@@ -1897,7 +2040,8 @@ class MarsMissionApp {
               return false;
           }
 
-          const params = new URLSearchParams(window.location.search || '');
+          const params = getEffectiveParams();
+          if (!params) return false;
           const raw = String(params.get('planetShadow') || params.get('ps') || '').trim().toLowerCase();
           if (!raw || raw === '0' || raw === 'off' || raw === 'false') {
               return false;
@@ -1913,7 +2057,8 @@ class MarsMissionApp {
              return false;
          }
 
-         const params = new URLSearchParams(window.location.search || '');
+         const params = getEffectiveParams();
+         if (!params) return false;
          const raw = String(params.get('sShadow') || '').trim().toLowerCase();
          if (!raw || raw === '0' || raw === 'off' || raw === 'false') {
              return false;
@@ -1929,7 +2074,8 @@ class MarsMissionApp {
 	             return 'off';
 	         }
 
-         const params = new URLSearchParams(window.location.search || '');
+         const params = getEffectiveParams();
+         if (!params) return 'off';
          const raw = String(params.get('ao') || '').trim().toLowerCase();
          if (!raw || raw === '0' || raw === 'off' || raw === 'none') {
              return 'off';
@@ -1951,7 +2097,8 @@ class MarsMissionApp {
 	             return 0;
 	         }
 	
-	         const params = new URLSearchParams(window.location.search || '');
+	         const params = getEffectiveParams();
+	         if (!params) return 0;
 	         const raw = String(params.get('csDebug') || '').trim();
 	         if (!raw) {
 	             return 0;
@@ -1974,7 +2121,8 @@ class MarsMissionApp {
                  return 0;
              }
 
-             const params = new URLSearchParams(window.location.search || '');
+             const params = getEffectiveParams();
+             if (!params) return 0;
              const raw = String(params.get('ssaoDebug') || '').trim();
              if (!raw) {
                  return 0;
@@ -1997,7 +2145,8 @@ class MarsMissionApp {
 	             return 'default';
 	         }
 
-	         const params = new URLSearchParams(window.location.search || '');
+	         const params = getEffectiveParams();
+	         if (!params) return 'default';
 	         const raw = String(params.get('mat') || '').trim().toLowerCase();
 	         if (!raw || raw === 'default') {
 	             return 'default';
@@ -2018,7 +2167,8 @@ class MarsMissionApp {
             return 0.9;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return 0.9;
         const raw = String(params.get('exp') || '').trim();
         if (!raw) {
             return 0.9;
@@ -2040,7 +2190,8 @@ class MarsMissionApp {
             return 3.8;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return 3.8;
         const raw = String(params.get('sun') || '').trim();
         if (!raw) {
             return 3.8;
@@ -2062,7 +2213,8 @@ class MarsMissionApp {
             return 0.0;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return 0.0;
         const raw = String(params.get('amb') || '').trim();
         if (!raw) {
             return 0.0;
@@ -2084,7 +2236,8 @@ class MarsMissionApp {
             return 0.0;
         }
 
-        const params = new URLSearchParams(window.location.search || '');
+        const params = getEffectiveParams();
+        if (!params) return 0.0;
         const raw = String(params.get('hemi') || '').trim();
         if (!raw) {
             return 0.0;
@@ -2106,7 +2259,8 @@ class MarsMissionApp {
              return 1.0;
          }
 
-         const params = new URLSearchParams(window.location.search || '');
+         const params = getEffectiveParams();
+         if (!params) return 1.0;
          const raw = String(params.get('ibl') || '').trim();
          if (!raw) {
              return 1.0;
@@ -2128,7 +2282,8 @@ class MarsMissionApp {
              return null;
          }
 
-         const params = new URLSearchParams(window.location.search || '');
+         const params = getEffectiveParams();
+         if (!params) return null;
          const raw = String(params.get('speed') || params.get('warp') || '').trim();
          if (!raw) {
              return null;
@@ -2487,7 +2642,11 @@ class MarsMissionApp {
                 return;
             }
 
-            const params = new URLSearchParams(window.location.search || '');
+            const params = getEffectiveParams();
+            if (!params) {
+                applyRoomEnvironment();
+                return;
+            }
             const envUrl = String(params.get('envUrl') || '').trim();
             const defaultHdrUrl = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/equirectangular/venice_sunset_1k.hdr';
             const targetUrl = envUrl || defaultHdrUrl;
@@ -6485,8 +6644,16 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
 let app = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-    app = new MarsMissionApp();
-    if (app) {
-        window.app = app;
-    }
+    (async () => {
+        try {
+            await loadCfgFilesFromUrl();
+        } catch (err) {
+            console.warn('[cfg] Unexpected error while loading cfg files:', err);
+        }
+
+        app = new MarsMissionApp();
+        if (app) {
+            window.app = app;
+        }
+    })();
 });

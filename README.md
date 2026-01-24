@@ -190,6 +190,11 @@ mars_mission/
 完整列表与推荐组合见：`docs/debug_url_params.md`（包含 `post=raw`、`mat=white`、`ao=contact`、`csDebug`、`ps` 等）。
 电影化后期默认关闭，如需开启可用 `?cine=1`（grain/CA/vignette）。
 
+为避免长 URL，本项目也支持通过 `cfg` 加载参数集合（可叠加，且 URL 参数仍可做临时覆盖）：
+
+- 示例：`/?cfg=preset.cfg`
+- 叠加：`/?cfg=preset.cfg&cfg=debug.cfg`
+
 Lens flare 为 HDR 域的 post pass，可用 `flare=auto|1|0` 独立控制；并支持按组微调：
 
 - `flareCore`：核心/光晕组强度（默认 `1.0`；范围 `0..1.6`）

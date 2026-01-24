@@ -17,6 +17,22 @@
 
 ---
 
+## 0. 配置文件（cfg）
+
+为了避免长 URL，本项目支持把一组参数放进一个 `.cfg` 文件，然后通过 `cfg` 参数加载。
+
+- 文件位置：`frontend/config/*.cfg`（运行时通过 `/static/config/*.cfg` 访问）
+- 文件格式：JSON（顶层对象；key 直接复用现有 URL 参数名）
+- 优先级：URL 参数优先；cfg 仅填充“URL 未显式指定”的键
+- 支持叠加：重复写多个 `cfg`（后者覆盖前者）
+
+示例：
+- `/?cfg=preset.cfg`
+- `/?cfg=preset.cfg&cfg=debug.cfg`
+- `/?cfg=preset.cfg&exp=1.1`（临时 override）
+
+---
+
 ## 1. 快速组合（推荐）
 
 ### 1.1 光照标定（尽量去掉干扰项）
