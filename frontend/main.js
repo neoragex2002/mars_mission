@@ -125,6 +125,99 @@ function getEffectiveParams() {
     return params;
 }
 
+let MM_BGM = null;
+
+function initBackgroundMusic() {
+    const params = getEffectiveParams();
+    const bgmParam = params ? String(params.get('bgm') || '').trim().toLowerCase() : '';
+    if (bgmParam && (bgmParam === '0' || bgmParam === 'false' || bgmParam === 'off' || bgmParam === 'no')) {
+        console.info('[bgm] Disabled via "bgm" param.');
+        return null;
+    }
+
+    if (MM_BGM) return MM_BGM;
+    if (typeof Audio !== 'function') {
+        console.warn('[bgm] Audio is not supported in this browser.');
+        return null;
+    }
+
+    const audio = new Audio('/static/assets/music/You_Dont_Dream_In_Cryo.mp3');
+    audio.loop = true;
+    audio.preload = 'auto';
+    audio.volume = 1;
+
+    const tryStart = () => {
+        try {
+            const p = audio.play();
+            if (!p || typeof p.then !== 'function') {
+                window.removeEventListener('pointerdown', tryStart, true);
+                window.removeEventListener('keydown', tryStart, true);
+                return;
+            }
+            p.then(() => {
+                window.removeEventListener('pointerdown', tryStart, true);
+                window.removeEventListener('keydown', tryStart, true);
+            }).catch(() => {
+                // Autoplay policies may block playback until a user gesture.
+            });
+        } catch (err) {
+            // Ignore and keep the gesture listeners in place.
+        }
+    };
+
+    // Try immediately; if blocked, retry on first user interaction.
+    tryStart();
+    window.addEventListener('pointerdown', tryStart, true);
+    window.addEventListener('keydown', tryStart, true);
+
+    MM_BGM = audio;
+    window.MM_BGM = MM_BGM;
+    return MM_BGM;
+}
+
+let MM_SFX_FOCUS = null;
+
+function playFocusSfx() {
+    const params = getEffectiveParams();
+    const sfxParam = params ? String(params.get('sfx') || '').trim().toLowerCase() : '';
+    if (sfxParam && (sfxParam === '0' || sfxParam === 'false' || sfxParam === 'off' || sfxParam === 'no')) {
+        return null;
+    }
+
+    if (typeof Audio !== 'function') return null;
+
+    if (!MM_SFX_FOCUS) {
+        const audio = new Audio('/static/assets/sfx/whoosh-cinematic-161021.mp3');
+        audio.preload = 'auto';
+        audio.volume = 0.6;
+        MM_SFX_FOCUS = audio;
+    }
+
+    try {
+        MM_SFX_FOCUS.currentTime = 0;
+    } catch (e) {
+        // Ignore: some browsers disallow seek until metadata loads.
+    }
+
+    try {
+        const p = MM_SFX_FOCUS.play();
+        if (p && typeof p.catch === 'function') {
+            p.catch(() => {
+                // Ignore autoplay/gesture errors; the focus change itself is typically a user gesture.
+            });
+        }
+    } catch (e) {
+        // Ignore.
+    }
+
+    return MM_SFX_FOCUS;
+}
+
+if (typeof window !== 'undefined') {
+    window.MM_SFX = window.MM_SFX || {};
+    window.MM_SFX.playFocus = playFocusSfx;
+}
+
 // Custom Shader for Cinematic Effects (Grain + Chromatic Aberration)
 const CinematicShader = {
     uniforms: {
@@ -5824,6 +5917,12 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
         const prevMode = this.viewMode;
         this.viewMode = mode;
 
+        if (mode !== prevMode) {
+            if (typeof window !== 'undefined' && window.MM_SFX && typeof window.MM_SFX.playFocus === 'function') {
+                window.MM_SFX.playFocus();
+            }
+        }
+
         if (!this.controls) return;
 
         if ((prevMode === 'top' && mode === 'free') || (prevMode === 'free' && mode === 'top')) {
@@ -6650,6 +6749,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             console.warn('[cfg] Unexpected error while loading cfg files:', err);
         }
+
+        initBackgroundMusic();
 
         app = new MarsMissionApp();
         if (app) {
