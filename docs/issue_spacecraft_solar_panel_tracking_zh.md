@@ -6,8 +6,8 @@
 
 ## 模型与节点层级
 
-- 模型：`frontend/assets/models/GatewayCore.glb`
-- 目标节点：`Maxar_PPE_Array`
+- 模型：`frontend/assets/models/GatewayCore_Nasa.glb`（后端启动时缺失会自动下载；下载源见 `backend/main.py:GATEWAY_CORE_NASA_URL`；前端加载后会应用坐标系矫正矩阵）
+- 目标节点：`Maxar_PPE_Array`（NASA 原始模型可能命名为 `Maxar_PPE Array`；代码会做空格/下划线归一）
 - 父级链路（子到根）：
   - `Maxar_PPE_Array`
   - `Maxar_PPE`

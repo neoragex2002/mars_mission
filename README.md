@@ -28,6 +28,20 @@ http://localhost:8712
 
 注意：前端 Three.js/字体使用 CDN（`frontend/index.html`、`frontend/styles.css`），首次加载需要能访问外网资源。
 
+### 飞船模型（Gateway Core）
+
+飞船使用 NASA 的 Gateway Core GLB 模型。后端启动时会检查本地是否存在：
+
+- `frontend/assets/models/GatewayCore_Nasa.glb`
+
+如果不存在，后端会从 NASA 在线下载并保存到该路径（文件约 60+ MiB，**启动会等待下载完成**）。如果下载失败，前端会自动回退到程序生成（procedural）的飞船模型以保证可用性。
+
+提示：NASA 原始文件名包含空格（`Gateway Core.glb`），本项目统一使用无空格命名 `GatewayCore_Nasa.glb`。
+
+注意：前端会对 `GatewayCore_Nasa.glb` 应用一次“本地坐标系矫正矩阵”以匹配项目坐标约定；因此请不要把已经矫正过的版本也命名为 `GatewayCore_Nasa.glb`，避免重复矫正导致姿态错误。
+
+下载地址（后端内置）：`https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/model/gateway/Gateway%20Core.glb?emrc=697ae83982ce6`
+
 ## 功能特性
 
 - **真实（近似）轨道参数**：使用近似轨道根数（偏心率/倾角/周期等）计算地球与火星位置

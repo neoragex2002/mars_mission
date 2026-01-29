@@ -3,13 +3,152 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager, suppress
 import asyncio
+import json
+import struct
+import time
+import urllib.request
 from pathlib import Path
 from orbit_engine import OrbitEngine
+
+GATEWAY_CORE_NASA_URL = (
+    "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/model/gateway/"
+    "Gateway%20Core.glb?emrc=697ae83982ce6"
+)
+
+
+def _validate_glb_file(path: Path) -> None:
+    file_size = path.stat().st_size
+    if file_size < 20:
+        raise ValueError(f"GLB too small: {file_size} bytes")
+
+    with path.open("rb") as f:
+        header = f.read(12)
+        if len(header) != 12:
+            raise ValueError("GLB header truncated")
+
+        magic, version, length = struct.unpack("<4sII", header)
+        if magic != b"glTF":
+            raise ValueError(f"Invalid GLB magic: {magic!r}")
+        if version != 2:
+            raise ValueError(f"Unsupported GLB version: {version}")
+        if length != file_size:
+            raise ValueError(f"GLB length mismatch (header={length}, file={file_size})")
+
+        chunk_header = f.read(8)
+        if len(chunk_header) != 8:
+            raise ValueError("GLB missing first chunk header")
+
+        chunk_len, chunk_type = struct.unpack("<I4s", chunk_header)
+        if chunk_type != b"JSON":
+            raise ValueError(f"GLB first chunk is not JSON: {chunk_type!r}")
+        if chunk_len <= 0:
+            raise ValueError("GLB JSON chunk is empty")
+
+        chunk = f.read(chunk_len)
+        if len(chunk) != chunk_len:
+            raise ValueError("GLB JSON chunk truncated")
+
+    try:
+        payload = json.loads(chunk.decode("utf-8"))
+    except Exception as e:
+        raise ValueError(f"Invalid GLB JSON chunk: {e}") from e
+
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid glTF JSON root (expected object)")
+    if "asset" not in payload:
+        raise ValueError("Invalid glTF JSON (missing asset)")
+    if not isinstance(payload.get("scenes"), list) or not payload.get("scenes"):
+        raise ValueError("Invalid glTF JSON (missing scenes)")
+    if not isinstance(payload.get("nodes"), list) or not payload.get("nodes"):
+        raise ValueError("Invalid glTF JSON (missing nodes)")
+
+
+def _ensure_gateway_core_nasa_glb(frontend_dir: Path) -> None:
+    models_dir = frontend_dir / "assets" / "models"
+    target_path = models_dir / "GatewayCore_Nasa.glb"
+    rel_target = target_path.relative_to(frontend_dir)
+    if target_path.exists():
+        try:
+            _validate_glb_file(target_path)
+        except Exception as e:
+            print(f"[startup] Found {rel_target} but validation failed; re-downloading. ({e})", flush=True)
+            with suppress(Exception):
+                target_path.unlink(missing_ok=True)
+        else:
+            print(f"[startup] Found {rel_target}; skipping download.", flush=True)
+            return
+
+    models_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = models_dir / (target_path.name + ".download")
+
+    req = urllib.request.Request(
+        GATEWAY_CORE_NASA_URL,
+        headers={
+            "User-Agent": "MarsMission3D/1.0 (+FastAPI StaticFiles bootstrap)",
+        },
+    )
+
+    print(f"[startup] Downloading {rel_target} from NASA: {GATEWAY_CORE_NASA_URL}", flush=True)
+    start = time.time()
+
+    bytes_written = 0
+    total_bytes = None
+    last_progress_at = 0
+    progress_step = 10 * 1024 * 1024
+
+    try:
+        with urllib.request.urlopen(req, timeout=60) as response, tmp_path.open("wb") as f:
+            raw_total = response.headers.get("Content-Length")
+            if raw_total:
+                try:
+                    total_bytes = int(raw_total)
+                    total_mb = total_bytes / (1024 * 1024)
+                    print(f"[startup] Expected size: {total_mb:.1f} MiB", flush=True)
+                    progress_step = max(progress_step, total_bytes // 10)
+                except Exception:
+                    total_bytes = None
+
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+                bytes_written += len(chunk)
+
+                if bytes_written - last_progress_at >= progress_step:
+                    last_progress_at = bytes_written
+                    if total_bytes:
+                        pct = (bytes_written / total_bytes) * 100.0
+                        print(f"[startup] Download progress: {pct:.0f}%", flush=True)
+                    else:
+                        mb = bytes_written / (1024 * 1024)
+                        print(f"[startup] Downloaded: {mb:.1f} MiB", flush=True)
+
+        print(f"[startup] Validating downloaded {rel_target}...", flush=True)
+        _validate_glb_file(tmp_path)
+        print(f"[startup] Validation OK: {rel_target}", flush=True)
+        tmp_path.replace(target_path)
+    except Exception:
+        with suppress(Exception):
+            tmp_path.unlink(missing_ok=True)
+        raise
+
+    elapsed = time.time() - start
+    mb = bytes_written / (1024 * 1024)
+    print(f"[startup] Saved {rel_target} ({mb:.1f} MiB) in {elapsed:.1f}s", flush=True)
+
 
 # Lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    try:
+        await asyncio.to_thread(_ensure_gateway_core_nasa_glb, frontend_dir)
+    except Exception as e:
+        # Don't block startup if the model download fails (offline, firewall, etc.).
+        # Frontend loader will fall back to procedural model if the model is missing.
+        print(f"[startup] Failed to ensure GatewayCore_Nasa.glb: {e!r}", flush=True)
+
     simulation_task = asyncio.create_task(simulation_loop())
     try:
         yield
@@ -53,7 +192,7 @@ class SimulationState:
     def __init__(self):
         self.is_running = False
         self.current_time = 0.0
-        self.time_speed = 0.5  # days per frame (slower for better visibility)
+        self.time_speed = 0.1  # days per frame (slower for better visibility)
         self.paused = False
 
 sim_state = SimulationState()
