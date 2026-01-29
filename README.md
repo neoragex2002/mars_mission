@@ -1,275 +1,260 @@
-# 火星往返任务 3D 可视化（Mars Mission 3D Visualization）
+# Mars Mission 3D Remastered
 
-Vibe Programming实现的交互式 3D 火星往返任务可视化演示：后端使用 FastAPI 提供轨道/任务数据，并通过 WebSocket 实时推送；前端使用 Three.js 渲染太阳、行星、飞船与视觉效果。
+Vibe Anything! [kcores-llm-arena火星任务](https://github.com/KCORES/kcores-llm-arena/tree/main/benchmark-mars-mission) 3D超高清重制版：
 
-<img src="images/screenshot.png" alt="火星往返任务" width="800"/>
+- 后端：FastAPI + WebSocket，提供轨道与任务阶段数据
+- 前端：Three.js（CDN importmap）渲染太阳系、轨迹与飞船，并提供控制台 UI
 
-## 快速开始
+<img src="images/screenshot.png" alt="Mars Mission 3D Visualization" width="800"/>
 
-下面以 **macOS / Linux / WSL** 为例（Windows 原生同理）。推荐使用虚拟环境，避免污染全局 Python。
+---
 
-```bash
-# 1) 创建虚拟环境（推荐）
-python3 -m venv .venv
-source .venv/bin/activate
+## 1. 功能概览
 
-# 2) 安装依赖
-python3 -m pip install -r requirements.txt
+- 行星轨道与飞船转移轨迹的实时可视化（位置单位 AU，时间单位 day）
+- 动态任务阶段：发射等待 → 地火转移 → 火星停留 → 火地转移
+- 播放/暂停/复位、拖动时间轴、调整推进速度（Warp）
+- 多视角相机：自由 / 跟随地球 / 跟随火星 / 跟随飞船 / 俯视
 
-# 3) 运行自检（推荐）
-python3 test.py
+---
 
-# 4) 启动服务（会自动寻找可用端口，默认从 8712 开始）
-./start.sh
+## 2. 项目结构与运行方式
 
-# 5) 浏览器打开（以控制台输出的端口为准）
-http://localhost:8712
-```
+### 2.1 后端（FastAPI）
 
-注意：前端 Three.js/字体使用 CDN（`frontend/index.html`、`frontend/styles.css`），首次加载需要能访问外网资源。
+- 入口：`backend/main.py`
+- 静态资源：挂载 `frontend/` 到 `/static/*`
+- WebSocket：`/ws`（`init` / `update` / `snapshot`）
+- 仿真循环：后台任务持续运行，按 20 FPS 推进并广播（运行且未暂停时）
 
-## 功能特性
+### 2.2 前端（无构建链）
 
-- **真实（近似）轨道参数**：使用近似轨道根数（偏心率/倾角/周期等）计算地球与火星位置
-- **任务阶段**：发射等待 → 地火转移 → 火星停留 → 火地转移（可连续生成多次任务时间表）
-- **实时仿真**：WebSocket 推送 `update`/`snapshot`，前端即时更新渲染与信息面板
-- **交互式 3D**：鼠标旋转/平移/缩放，多种视角跟随（地球/火星/飞船/俯视/自由），支持平滑插值过渡；`top`/`free` 切换会强制同步 OrbitControls 状态以避免镜头跳变
-- **视觉效果（Three.js）**：
-  - 高清晰度地球、晨昏线、大气辉光、大气云层、夜侧城市灯光（使用连续 night-side mask，减少屏幕空间抖动闪烁）...
-  - Neutral HDR tone mapping、HDR bloom、lens flare、dithering；电影化效果（胶片颗粒/色差/暗角）为可选项
-- **任务控制台 UI**：
-  - 底部“Cinema Bar”控制条：播放/暂停/复位、时间轴、速度
-  - 左右面板可折叠 + 右上角 HUD 沉浸模式
-  - 时间轴关键节点刻度 + 拖动预览提示
-- **信息展示**：实时坐标、地火距离、速度与进度条
+- 页面：`frontend/index.html`
+- 脚本：`frontend/main.js` / `frontend/spacecraft.js` / `frontend/ui.js` / `frontend/controls.js`
+- Three.js 与 examples：通过 CDN importmap 加载（见 `frontend/index.html`）
+- 无 Node/npm、无 bundler
 
-## 项目结构
+---
 
-```
-mars_mission/
-├── backend/
-│   ├── main.py              # FastAPI 服务 + WebSocket
-│   └── orbit_engine.py      # 轨道/任务阶段计算
-├── frontend/
-│   ├── index.html           # 页面与脚本加载
-│   ├── styles.css           # 样式
-│   ├── main.js              # Three.js 场景与渲染
-│   ├── orbit.js             # 轨道/尾迹工具（可选）
-│   ├── spacecraft.js        # 飞船模型与效果
-│   ├── controls.js          # 控件与快捷键
-│   └── ui.js                # 信息面板更新
-├── requirements.txt         # Python 依赖
-├── start.sh                 # 一键启动（自动选择端口）
-└── test.py                  # 基本自检脚本
-```
+## 3. 环境要求
 
-## 安装与运行
-
-### 环境要求
+### 3.1 必需
 - Python 3.10+（建议）
 - 浏览器：Chrome / Firefox
 
-### 安装依赖
+### 3.2 网络要求
+默认需要外网访问：
+- 前端 Three.js 与 examples 从 CDN 加载（`frontend/index.html`）
+- NASA Gateway Core 飞船模型在首次启动时可自动下载（见下文）
 
-1. 安装 Python 依赖：
-   ```bash
-   python3 -m pip install -r requirements.txt
-   ```
+---
 
-2. 启动服务（推荐）：
-   ```bash
-   ./start.sh
-   ```
+## 4. 快速开始
 
-   或手动指定端口（注意：需从 `backend/` 目录运行，才能正确 `import orbit_engine`）：
-   ```bash
-   cd backend
-   python3 main.py --port 9000
-   ```
+### 4.1 使用 venv（推荐）
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
+python3 test.py
+./start.sh
+```
 
-3. 浏览器访问控制台提示的地址，例如：
-   ```text
-   http://localhost:8712
-   ```
+### 4.2 使用 Conda（可选）
+```bash
+conda create -n mars_mission python=3.10
+conda activate mars_mission
+python -m pip install -r requirements.txt
+python test.py
+./start.sh
+```
 
-## 操作说明
+启动后按控制台提示打开浏览器，例如：
+```text
+http://localhost:8712/?cfg=preset.cfg
+```
 
-**3D 视角：**
+---
+
+## 5. 启动与测试
+
+### 5.1 一键启动（推荐）
+```bash
+./start.sh
+```
+
+说明：
+- 自动从 `8712` 开始寻找空闲端口
+- 若检测不到 FastAPI 依赖，会执行 `pip install -r requirements.txt`
+  - 建议在 venv/conda 中运行，避免安装到全局 Python
+
+### 5.2 手动启动（指定端口）
+```bash
+cd backend
+python3 main.py --port 8712
+```
+
+### 5.3 自检
+运行完整自检：
+```bash
+python3 test.py
+```
+
+只跑单个测试函数（避免 `test` 模块名冲突）：
+```bash
+python3 -c "import runpy; ns=runpy.run_path('test.py'); ns['test_dependencies']()"
+python3 -c "import runpy; ns=runpy.run_path('test.py'); ns['test_frontend_files']()"
+python3 -c "import runpy; ns=runpy.run_path('test.py'); ns['test_orbit_engine']()"
+python3 -c "import runpy; ns=runpy.run_path('test.py'); ns['test_fastapi_import']()"
+```
+
+---
+
+## 6. 操作说明（前端）
+
+### 6.1 3D 视角（鼠标）
 - 左键拖动：旋转
 - 右键拖动：平移
 - 滚轮：缩放
 
-**仿真控件（底部控制条）：**
-- `▶` Start：开始仿真
-- `⏸` Pause：暂停/继续
-- `⏹` Reset：复位到初始状态
-- Warp：调整仿真推进速度（Time Speed）
-- Timeline：拖动时间轴进行回放/快进
-  - 时间轴上会显示关键节点刻度（Launch / Mars Arrival / Mars Departure / Earth Return），可点击跳转
-  - 拖动时会出现短暂的时间预览提示（当前天数 + 所处阶段）
+### 6.2 控制台 UI
+- 底部控制条：Start / Pause / Reset、Warp（速度）、Timeline（时间轴）
+- 右侧面板：View Mode（视角切换）、Model Calibration（Yaw/Pitch/Roll）
+- 顶部：HUD 按钮可切换“沉浸模式”
 
-**视角（右侧 Camera Interface）：**
-- View Mode：切换视角（自由 / 跟随地球 / 跟随火星 / 跟随飞船 / 俯视）
-
-**HUD 与面板：**
-- 右上角 `HUD`：切换“沉浸模式”（隐藏左右面板/信息按钮，仅保留底部控制条）
-- 左/右面板标题栏的 `◂/▸`：折叠/展开对应面板
-- 上述布局偏好会保存在浏览器 `localStorage`，刷新页面后仍会保持
-
-**键盘快捷键：**
+### 6.3 键盘快捷键
 - `Space`：暂停/继续
 - `← / →`：按天回退/前进
 - `R`：复位
 - `C`：切换视角（循环）
 - `F`：全屏切换
-- `H`：切换 HUD（沉浸模式）
+- `H`：切换 HUD
 
-## 接口
+---
 
-### REST API
+## 7. 飞船模型（NASA Gateway Core）
 
+### 7.1 文件路径与命名
+运行时前端会请求：
+- `/static/assets/models/GatewayCore_Nasa.glb`
+
+对应仓库路径：
+- `frontend/assets/models/GatewayCore_Nasa.glb`
+
+NASA 原始文件名包含空格（`Gateway Core.glb`），本项目统一使用无空格命名 `GatewayCore_Nasa.glb`。
+
+### 7.2 自动下载（后端启动时）
+后端启动会确保 `frontend/assets/models/GatewayCore_Nasa.glb` 存在：
+
+- 若文件不存在：从 NASA 下载并保存（约 60+ MiB；启动会等待下载完成；控制台打印进度）
+- 若文件存在但校验失败：删除并重新下载
+- 若下载/校验失败：后端仍会启动；前端加载失败后会回退到程序生成（procedural）的飞船模型
+
+下载源（后端内置）：`https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/model/gateway/Gateway%20Core.glb?emrc=697ae83982ce6`
+
+### 7.3 下载完成后的快速校验
+后端会做轻量校验，避免保存到 HTML/错误文件：
+- GLB 头部：magic/version/length（长度需与文件大小一致）
+- 第一个 chunk：必须是 JSON 且可解析
+- glTF JSON：至少包含 `asset` / `scenes` / `nodes`
+
+### 7.4 坐标系矫正（重要）
+NASA 原始模型与项目内部坐标约定存在差异。前端加载 `GatewayCore_Nasa.glb` 后会应用一次固定的“本地坐标系矫正矩阵”（见 `frontend/spacecraft.js`）。
+
+因此：
+- 不要把“已经矫正过的 GLB”也命名为 `GatewayCore_Nasa.glb`
+- 否则会被重复矫正，导致姿态/旋转不正确
+
+---
+
+## 8. 配置（可选）
+
+前端支持通过 URL 参数加载配置文件：
+
+- 用法：`/?cfg=preset.cfg`
+- 支持多个：`/?cfg=preset.cfg&cfg=debug.cfg`
+- 配置文件目录：`frontend/config/`
+- 访问路径：`/static/config/<cfg>`
+
+---
+
+## 9. API（后端）
+
+### 9.1 REST
 - `GET /`：返回前端页面（`frontend/index.html`）
-- `GET /api/mission/info`：仿真模型元数据（动态任务时间表预览、时间轴范围等）
+- `GET /api/mission/info`：仿真模型元数据（时间轴范围、预览等）
 - `GET /api/planets`：行星轨道参数摘要
-- `GET /api/orbit/{planet}`：生成轨道采样点（`earth` / `mars`）
-- `GET /api/state`：当前仿真状态（是否运行/时间/速度/是否暂停）
-- `GET /api/snapshot`：当前时刻系统快照（行星/飞船位置等）
+- `GET /api/orbit/{planet}`：轨道采样点（`earth` / `mars`）
+- `GET /api/state`：当前仿真状态
+- `GET /api/snapshot`：当前时刻系统快照
 
-### WebSocket
+### 9.2 WebSocket
+- `WS /ws`：实时推送 `init` / `update` / `snapshot`
+- 命令（前端 → 后端）：`start`、`pause`、`stop`、`set_speed`、`set_time`、`get_snapshot`
 
-- `WS /ws`：实时推送仿真数据（`init`、`update`、`snapshot` 等）；命令通道支持 `start`/`pause`/`stop`/`set_speed`/`set_time`/`get_snapshot`，无效参数或未知命令会返回 `error`
+---
 
-## 坐标与单位说明
+## 10. 坐标与单位（后端 → 前端）
 
-- 后端 `backend/orbit_engine.py` 输出坐标为 `(x, y, z)`，位置单位为 **AU**，时间单位为 **day**，速度为 **AU/day**（数值由差分估计）。
-- Three.js 默认 **Y 轴向上**。为满足“前后端坐标对齐 + 行星/飞船主要在前端 X-Z 平面活动”的约定，前端渲染将后端坐标映射为：
-  - 后端 `+X` → 前端 `+X`
-  - 后端 `+Y` → 前端 `-Z`
-  - 后端 `+Z` → 前端 `+Y`
-  - 即：**`(x, y, z)_backend → (x, z, -y)_three`**
-- 信息面板（`frontend/ui.js`）展示的是后端原始 `(x, y, z)` 数据；渲染使用的是映射后的坐标。
+- 后端输出坐标 `(x, y, z)`，单位 **AU**
+- 时间单位 **day**，速度 **AU/day**
+- 前端渲染坐标映射：
 
-## 技术细节
+  **`(x, y, z)_backend → (x, z, -y)_three`**
 
-### 行星轨道参数（示例）
+说明：
+- 信息面板展示的是后端原始坐标
+- 3D 渲染使用映射后的坐标
 
-- **地球**：半长轴 ~1.000 AU，偏心率 ~0.0167，倾角 ~0.000°，周期 ~365.25 天
-- **火星**：半长轴 ~1.524 AU，偏心率 ~0.0934，倾角 ~1.850°，周期 ~687.0 天
+---
 
-### 任务时间线（动态窗口）
+## 11. 目录结构（速览）
 
-当前实现为“严格霍曼半椭圆外观 + 动态发射窗口/等待时长”，因此：
-
-- 单次任务的 **等待时长与总时长不再固定**
-- 后端 `GET /api/snapshot` / WebSocket `update` 会返回：
-  - `mission_duration`：该次任务总时长（天）
-  - `mission_schedule`：关键时间点（发射/到达/返航等）
-  - `timeline_horizon_end`：前端时间轴可用的当前上限（会随仿真自动扩展）
-
-## 测试
-
-本项目没有使用 pytest，而是提供了一个轻量的自检脚本：
-
-- 运行全套自检：
-  ```bash
-  python3 test.py
-  ```
-
-- 只运行单个检查函数（避免 `import test` 的模块名冲突，推荐这种写法）：
-  ```bash
-  python3 -c "import runpy; ns=runpy.run_path('test.py'); ns['test_dependencies']()"
-  python3 -c "import runpy; ns=runpy.run_path('test.py'); ns['test_frontend_files']()"
-  python3 -c "import runpy; ns=runpy.run_path('test.py'); ns['test_orbit_engine']()"
-  python3 -c "import runpy; ns=runpy.run_path('test.py'); ns['test_fastapi_import']()"
-  ```
-
-## 自定义与开发
-
-### 调试 URL 参数（渲染/HDR/光照）
-
-完整列表与推荐组合见：`docs/debug_url_params.md`（包含 `post=raw`、`mat=white`、`ao=contact`、`csDebug`、`ps` 等）。
-电影化后期默认关闭，如需开启可用 `?cine=1`（grain/CA/vignette）。
-
-为避免长 URL，本项目也支持通过 `cfg` 加载参数集合（可叠加，且 URL 参数仍可做临时覆盖）：
-
-- 示例：`/?cfg=preset.cfg`
-- 叠加：`/?cfg=preset.cfg&cfg=debug.cfg`
-
-Lens flare 为 HDR 域的 post pass，可用 `flare=auto|1|0` 独立控制；并支持按组微调：
-
-- `flareCore`：核心/光晕组强度（默认 `1.0`；范围 `0..1.6`）
-- `flareStreak`：花瓣/尖刺/拖影组强度（默认 `1.0`；范围 `0..1.4`）
-- `flareGhost`：幽灵/弧形/色散组强度（默认 `1.0`；范围 `0..1.8`）
-
-示例：
-- flare-only 标定：`/?post=raw&flare=1&flareCore=0.9&flareStreak=0.8&flareGhost=1.1`
-
-### 调整任务参数
-
-编辑 `backend/orbit_engine.py`（例如）：
-
-```python
-# 发射窗口搜索范围/粒度
-self.launch_scan_window_days = 1400.0
-self.launch_coarse_step_days = 2.0
-self.launch_refine_window_days = 80.0
-self.launch_refine_step_days = 0.5
-
-# 转移段自洽迭代精度
-self.transfer_time_tol_days = 1e-6
-self.transfer_time_max_iter = 20
+```
+mars_mission/
+├── backend/
+│   ├── main.py              # FastAPI 服务 + WebSocket + 模型下载/校验
+│   └── orbit_engine.py      # 轨道/任务阶段计算
+├── frontend/
+│   ├── index.html           # 页面与 CDN importmap
+│   ├── styles.css           # 样式
+│   ├── main.js              # Three.js 场景与渲染主循环
+│   ├── spacecraft.js        # 飞船模型加载 + 坐标系矫正
+│   ├── controls.js          # UI 控件与快捷键
+│   ├── ui.js                # 信息面板更新
+│   ├── assets/              # 模型/贴图等静态资源
+│   └── config/              # cfg 配置文件（可通过 URL 加载）
+├── requirements.txt         # Python 依赖
+├── start.sh                 # 一键启动（自动选端口）
+└── test.py                  # 自检脚本
 ```
 
-### 调整视觉效果
+---
 
-可在 `frontend/main.js` 调整 Bloom 等效果参数，例如：
+## 12. 常见问题（FAQ）
 
-```javascript
-this.bloomPass = new THREE.UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  2.0, // strength
-  0.8, // radius
-  0.5  // threshold
-);
-```
+### 12.1 页面白屏 / 资源加载失败
+Three.js 与 examples 默认从 CDN 加载；若网络/代理/防火墙阻止外网访问，会导致前端依赖无法加载。
 
-## 排障
+### 12.2 启动很慢
+首次启动可能会下载 `GatewayCore_Nasa.glb`（60+ MiB），属于预期行为；后端控制台会打印下载进度与校验结果。
 
-### WebSocket 连接失败
+### 12.3 飞船模型不显示
+可能原因：
+- NASA 模型下载失败（检查后端启动日志）
+- `/static/assets/models/GatewayCore_Nasa.glb` 无法被访问（被删除/路径不一致）
 
-- 确认后端服务正在运行
-- 确认端口未被占用（`start.sh` 会自动递增端口）
-- 检查浏览器控制台/网络面板是否有被拦截或断开
+模型加载失败时，前端会回退 procedural 飞船模型以保证应用可用。
 
-### 3D 场景无法加载
+---
 
-- 打开浏览器控制台查看报错
-- 确认浏览器允许加载脚本（Three.js 等库通过 CDN 引入）
-- `frontend/styles.css` 通过 Google Fonts 引入字体；如果网络受限，字体会回退到系统字体（不影响功能）
-- 建议使用 Chrome / Firefox
+## 13. Credits
 
-### 性能问题
-
-- 降低 Time Speed（减少每帧变化幅度）
-- 适当调低 Bloom 强度
-- 关闭其他高负载标签页
-
-## License
-
-本项目用于学习与演示目的。
-
-## Credits
-
-- 轨道参数参考：NASA JPL（近似）
-- Three.js：three.js contributors
-- 后端：FastAPI / Uvicorn
-
-## 联系方式
-
-如有问题或建议，请在项目仓库提交 issue。 
-
-## 参考网站
-* https://planetpixelemporium.com/planets.html
-* https://github.com/dawidbil/solar-system
-* https://www.solarsystemscope.com
-* http://www.celestiamotherlode.net/catalog/mars.html
+- 地火轨道参数参考：NASA JPL（近似）
+- NASA Gateway Core 3D model：由 NASA Science 3D 资源提供
+- Sound SFX：You don't dream in cryo, by James Horner
+- Planet/space Texture：
+  * https://planetpixelemporium.com/planets.html
+  * https://github.com/dawidbil/solar-system
+  * https://www.solarsystemscope.com
+  * http://www.celestiamotherlode.net/catalog/mars.html

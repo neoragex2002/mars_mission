@@ -254,7 +254,8 @@ class Spacecraft {
 
         root.traverse((child) => {
             if (!child || !child.name) return;
-            if (child.name !== 'Maxar_PPE_Array') return;
+            const normalizedName = String(child.name).replace(/\s+/g, '_');
+            if (normalizedName !== 'Maxar_PPE_Array') return;
             this.panelTrackingNodes.push(child);
             this.panelTrackingStates.set(child, {
                 baseQuat: child.quaternion.clone(),
@@ -281,58 +282,69 @@ class Spacecraft {
 
      loadGatewayModel() {
          const loader = new THREE.GLTFLoader();
-         loader.load(
-             '/static/assets/models/GatewayCore.glb',
-             (gltf) => {
-                 const root = gltf.scene || gltf.scenes[0];
-                 if (!root) {
-                     console.warn('GLB loaded without a scene; falling back to procedural model.');
-                   this.createProceduralModel();
-                   this.applyIblIntensity();
-                   if (typeof window !== 'undefined' && window.app && typeof window.app.installPlanetShadowForSpacecraft === 'function') {
-                       window.app.installPlanetShadowForSpacecraft();
-                   }
-                   return;
 
+         // The NASA Gateway Core model uses a different local coordinate frame than our corrected reference.
+         // Apply the derived correction transform so GatewayCore_Nasa.glb renders identically to the corrected model.
+         // Matrix values are computed from geometry-identical primitives (NASA -> corrected).
+         const nasaToCorrectedCorrection = new THREE.Matrix4().set(
+             -0.071905, -0.902934, -0.423722, -0.021572,
+             0.986461, -0.001602, -0.163988, -2.182764,
+             0.147391, -0.429777, 0.890824, -4.986634,
+             0, 0, 0, 1
+         );
 
+         const finishLoadedModel = (root) => {
+             if (!root) {
+                 console.warn('GLB loaded without a scene; falling back to procedural model.');
+                 this.createProceduralModel();
+                 this.applyIblIntensity();
+                 if (typeof window !== 'undefined' && window.app && typeof window.app.installPlanetShadowForSpacecraft === 'function') {
+                     window.app.installPlanetShadowForSpacecraft();
+                 }
+                 return;
              }
 
+             root.applyMatrix4(nasaToCorrectedCorrection);
 
-                 this.applySavedCalibration();
+             this.applySavedCalibration();
 
-                 const normalized = this.normalizeLoadedModel(root);
-                 this.mesh.add(normalized);
-                 this.modelRoot = normalized;
-                 this.modelLoaded = true;
-                 this.collectPanelTrackingNodes(normalized);
- 
-                 if (this.modelCalibrationRoot) {
-                     this.modelCalibrationRoot.rotation.set(0, 0, 0);
-                     this.modelCalibrationRoot.rotateX(this.modelPitchCorrection);
-                     this.modelCalibrationRoot.rotateY(this.modelYawCorrection);
-                     this.modelCalibrationRoot.rotateZ(this.modelRollCorrection);
-                 }
- 
+             const normalized = this.normalizeLoadedModel(root);
+             this.mesh.add(normalized);
+             this.modelRoot = normalized;
+             this.modelLoaded = true;
+             this.collectPanelTrackingNodes(normalized);
+
+             if (this.modelCalibrationRoot) {
+                 this.modelCalibrationRoot.rotation.set(0, 0, 0);
+                 this.modelCalibrationRoot.rotateX(this.modelPitchCorrection);
+                 this.modelCalibrationRoot.rotateY(this.modelYawCorrection);
+                 this.modelCalibrationRoot.rotateZ(this.modelRollCorrection);
+             }
+
              this.applyIblIntensity();
-                  if (typeof window !== 'undefined' && window.app && typeof window.app.installPlanetShadowForSpacecraft === 'function') {
-                      window.app.installPlanetShadowForSpacecraft();
-                  }
-                  this.applyToneMappedPolicy();
-                  this._applyPostCreateFlags();
-              },
+             if (typeof window !== 'undefined' && window.app && typeof window.app.installPlanetShadowForSpacecraft === 'function') {
+                 window.app.installPlanetShadowForSpacecraft();
+             }
+             this.applyToneMappedPolicy();
+             this._applyPostCreateFlags();
+         };
 
-
+         const nasaUrl = '/static/assets/models/GatewayCore_Nasa.glb';
+         loader.load(
+             nasaUrl,
+             (gltf) => {
+                 console.info(`Loaded spacecraft model: ${nasaUrl}`);
+                 finishLoadedModel(gltf.scene || gltf.scenes[0]);
+             },
              undefined,
              (error) => {
-                   console.warn('Failed to load GatewayCore GLB; falling back to procedural model.', error);
-                   this.createProceduralModel();
-                   this.applyIblIntensity();
-                   if (typeof window !== 'undefined' && window.app && typeof window.app.installPlanetShadowForSpacecraft === 'function') {
-                       window.app.installPlanetShadowForSpacecraft();
-                   }
-               }
-
-
+                 console.warn(`Failed to load ${nasaUrl}; falling back to procedural model.`, error);
+                 this.createProceduralModel();
+                 this.applyIblIntensity();
+                 if (typeof window !== 'undefined' && window.app && typeof window.app.installPlanetShadowForSpacecraft === 'function') {
+                     window.app.installPlanetShadowForSpacecraft();
+                 }
+             }
          );
      }
 
