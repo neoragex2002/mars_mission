@@ -1527,11 +1527,18 @@ class MarsMissionApp {
          this.lastPhase = null;
          this.lastSpacecraftPosition = null;
 
-            this.planetShadowEnabled = this.isPlanetShadowEnabled();
-             this.planetShadowUniforms = null;
+             this.planetShadowEnabled = this.isPlanetShadowEnabled();
+              this.planetShadowUniforms = null;
 
-             this.contactShadowUniforms = null;
-             this.ssaoUniforms = null;
+             this.cloudShadowEnabled = this.getRequestedCloudShadowEnabled();
+             this.cloudShadowStrength = this.getRequestedCloudShadowStrength();
+             this.cloudShadowSoftness = this.getRequestedCloudShadowSoftness();
+             this.cloudShadowLatitudeFadeEnabled = this.getRequestedCloudShadowLatitudeFadeEnabled();
+             this.cloudShadowUvOffset = 0.0;
+             this.earthCloudAlphaTexture = null;
+
+              this.contactShadowUniforms = null;
+              this.ssaoUniforms = null;
 
             this.spacecraftSelfShadowEnabled = this.isSpacecraftSelfShadowEnabled();
             this.spacecraftSelfShadowLight = null;
@@ -1591,8 +1598,8 @@ class MarsMissionApp {
         this.marsCloudSpinRate = -0.007;
 
         this.cloudIdleSpinRadPerSec = 0.045;
-        this.earthCloudRotationOffset = 0.0;
-        this.marsCloudRotationOffset = 0.0;
+        this.earthCloudWorldRotationOffset = 0.0;
+        this.marsCloudWorldRotationOffset = 0.0;
         this.lastRenderMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
         this.orientationBlendTauSec = 0.25;
         this.orientationBlendW = 0.0;
@@ -2126,9 +2133,9 @@ class MarsMissionApp {
      }
 
      isPlanetShadowEnabled() {
-          if (typeof window === 'undefined' || !window.location) {
-              return false;
-          }
+           if (typeof window === 'undefined' || !window.location) {
+               return false;
+           }
           if (typeof URLSearchParams === 'undefined') {
               return false;
           }
@@ -2138,14 +2145,88 @@ class MarsMissionApp {
           const raw = String(params.get('planetShadow') || params.get('ps') || '').trim().toLowerCase();
           if (!raw || raw === '0' || raw === 'off' || raw === 'false') {
               return false;
-          }
-          return true;
-      }
+           }
+           return true;
+       }
 
-     isSpacecraftSelfShadowEnabled() {
+     getRequestedCloudShadowEnabled() {
          if (typeof window === 'undefined' || !window.location) {
+             return true;
+         }
+         if (typeof URLSearchParams === 'undefined') {
+             return true;
+         }
+
+         const params = getEffectiveParams();
+         if (!params) return true;
+         if (!params.has('cloudShadow')) return true;
+         const raw = String(params.get('cloudShadow') || '').trim().toLowerCase();
+         if (!raw) return true;
+         if (raw === '0' || raw === 'off' || raw === 'false') {
              return false;
          }
+         return true;
+     }
+
+     getRequestedCloudShadowStrength() {
+         if (typeof window === 'undefined' || !window.location) {
+             return 0.35;
+         }
+         if (typeof URLSearchParams === 'undefined') {
+             return 0.35;
+         }
+
+         const params = getEffectiveParams();
+         if (!params) return 0.35;
+         const raw = String(params.get('cloudShadowStrength') || '').trim();
+         if (!raw) return 0.35;
+
+         const value = Number(raw);
+         if (!Number.isFinite(value)) return 0.35;
+         return THREE.MathUtils.clamp(value, 0.0, 1.0);
+     }
+
+     getRequestedCloudShadowSoftness() {
+         if (typeof window === 'undefined' || !window.location) {
+             return 1.2;
+         }
+         if (typeof URLSearchParams === 'undefined') {
+             return 1.2;
+         }
+
+         const params = getEffectiveParams();
+         if (!params) return 1.2;
+         const raw = String(params.get('cloudShadowSoftness') || '').trim();
+         if (!raw) return 1.2;
+
+         const value = Number(raw);
+         if (!Number.isFinite(value)) return 1.2;
+         return THREE.MathUtils.clamp(value, 0.0, 4.0);
+     }
+
+     getRequestedCloudShadowLatitudeFadeEnabled() {
+         if (typeof window === 'undefined' || !window.location) {
+             return true;
+         }
+         if (typeof URLSearchParams === 'undefined') {
+             return true;
+         }
+
+         const params = getEffectiveParams();
+         if (!params) return true;
+         if (!params.has('cloudShadowLatitudeFade')) return true;
+         const raw = String(params.get('cloudShadowLatitudeFade') || '').trim().toLowerCase();
+         if (!raw) return true;
+         if (raw === '0' || raw === 'off' || raw === 'false') {
+             return false;
+         }
+         return true;
+     }
+
+     isSpacecraftSelfShadowEnabled() {
+          if (typeof window === 'undefined' || !window.location) {
+              return false;
+          }
          if (typeof URLSearchParams === 'undefined') {
              return false;
          }
@@ -4677,6 +4758,13 @@ if (uMMSsaoEnabled > 0.5) {
 
             earthDayMaterial.onBeforeCompile = (shader) => {
                 shader.uniforms.sunPositionView = { value: new THREE.Vector3(0, 0, 0) };
+                shader.uniforms.cloudShadowMap = { value: cloudAlpha };
+                shader.uniforms.cloudShadowEnabled = { value: this.cloudShadowEnabled ? 1.0 : 0.0 };
+                shader.uniforms.cloudShadowStrength = { value: this.cloudShadowStrength };
+                shader.uniforms.cloudShadowSoftness = { value: this.cloudShadowSoftness };
+                shader.uniforms.cloudShadowLatitudeFadeEnabled = { value: this.cloudShadowLatitudeFadeEnabled ? 1.0 : 0.0 };
+                shader.uniforms.cloudShadowUvOffset = { value: this.cloudShadowUvOffset };
+                shader.uniforms.cloudShadowTexelSize = { value: new THREE.Vector2(1 / 2048, 1 / 1024) };
                 this.earthDayShader = shader;
 
                 shader.fragmentShader = shader.fragmentShader.replace(
@@ -4684,6 +4772,29 @@ if (uMMSsaoEnabled > 0.5) {
                     `
                     #include <common>
                     uniform vec3 sunPositionView;
+                    uniform sampler2D cloudShadowMap;
+                    uniform float cloudShadowEnabled;
+                    uniform float cloudShadowStrength;
+                    uniform float cloudShadowSoftness;
+                    uniform float cloudShadowLatitudeFadeEnabled;
+                    uniform float cloudShadowUvOffset;
+                    uniform vec2 cloudShadowTexelSize;
+
+                    float mmCloudShadowDensity(vec2 uv) {
+                        vec2 wrappedUv = vec2(fract(uv.x), clamp(uv.y, 0.0, 1.0));
+                        vec2 blurStep = cloudShadowTexelSize * max(cloudShadowSoftness, 0.0);
+                        vec2 dx = vec2(blurStep.x, 0.0);
+                        vec2 dy = vec2(0.0, blurStep.y);
+
+                        float center = texture2D(cloudShadowMap, wrappedUv).r;
+                        float east = texture2D(cloudShadowMap, vec2(fract(wrappedUv.x + dx.x), wrappedUv.y)).r;
+                        float west = texture2D(cloudShadowMap, vec2(fract(wrappedUv.x - dx.x), wrappedUv.y)).r;
+                        float north = texture2D(cloudShadowMap, vec2(wrappedUv.x, clamp(wrappedUv.y + dy.y, 0.0, 1.0))).r;
+                        float south = texture2D(cloudShadowMap, vec2(wrappedUv.x, clamp(wrappedUv.y - dy.y, 0.0, 1.0))).r;
+
+                        float smoothed = center * 0.4 + (east + west + north + south) * 0.15;
+                        return smoothstep(0.26, 0.84, smoothed);
+                    }
                     `
                 );
 
@@ -4701,15 +4812,34 @@ if (uMMSsaoEnabled > 0.5) {
                  shader.fragmentShader = shader.fragmentShader.replace(
                      '#include <dithering_fragment>',
                      `
-                     vec3 fragPosView = -vViewPosition;
-                     vec3 sunDirView = normalize(sunPositionView - fragPosView);
-                     float ndl = dot(normalize(vNormal), sunDirView);
-                     float dayFactor = smoothstep(0.03, 0.12, ndl);
-                     float noise = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453123);
-                     if (noise >= dayFactor) discard;
-                     #include <dithering_fragment>
-                     `
-                 );
+                      vec3 fragPosView = -vViewPosition;
+                      vec3 sunDirView = normalize(sunPositionView - fragPosView);
+                      float ndl = dot(normalize(vNormal), sunDirView);
+
+                      float cloudShadow = 0.0;
+                      #ifdef USE_MAP
+                      if (cloudShadowEnabled > 0.5 && cloudShadowStrength > 0.0) {
+                          vec2 cloudUv = vec2(fract(vMapUv.x + cloudShadowUvOffset), clamp(vMapUv.y, 0.0, 1.0));
+                          float cloudDensity = mmCloudShadowDensity(cloudUv);
+                          float cloudDayMask = smoothstep(-0.05, 0.22, ndl);
+                          cloudShadow = clamp(cloudDensity * cloudShadowStrength * cloudDayMask, 0.0, 0.92);
+
+                          if (cloudShadowLatitudeFadeEnabled > 0.5) {
+                              float lat01 = abs(cloudUv.y - 0.5) * 2.0;
+                              float pole = smoothstep(0.65, 1.0, lat01);
+                              float latAtten = mix(1.0, 0.25, pole);
+                              cloudShadow *= latAtten;
+                          }
+                      }
+                      #endif
+
+                      gl_FragColor.rgb *= (1.0 - cloudShadow);
+                      float dayFactor = smoothstep(0.03, 0.12, ndl);
+                      float noise = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453123);
+                      if (noise >= dayFactor) discard;
+                      #include <dithering_fragment>
+                      `
+                  );
 
             };
 
@@ -4848,12 +4978,13 @@ if (uMMSsaoEnabled > 0.5) {
             cloudAlpha.minFilter = THREE.LinearMipmapLinearFilter;
             cloudAlpha.magFilter = THREE.LinearFilter;
             this.registerDataTexture(cloudAlpha);
+            this.earthCloudAlphaTexture = cloudAlpha;
 
             const cloudMaterial = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 alphaMap: cloudAlpha,
                 transparent: true,
-                opacity: 0.6,
+                opacity: 0.45,
                 metalness: 0.0,
                 roughness: 0.9,               // 稍微降低粗糙度
                 emissive: 0x000000,
@@ -4864,8 +4995,8 @@ if (uMMSsaoEnabled > 0.5) {
             });
 
             const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
-            // clouds.castShadow = true;
-            // clouds.receiveShadow = false;
+            clouds.castShadow = false;
+            clouds.receiveShadow = false;
             this.objects.earthClouds = clouds;
             
             const earthGroup = new THREE.Group();
@@ -6512,15 +6643,65 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
         const isPaused = !!(this.simulationState && this.simulationState.paused);
         if (!isRunning || isPaused) {
             const idleDelta = this.cloudIdleSpinRadPerSec * dtSec;
-            this.earthCloudRotationOffset = (this.earthCloudRotationOffset + idleDelta) % twoPi;
-            this.marsCloudRotationOffset = (this.marsCloudRotationOffset + idleDelta) % twoPi;
+
+            const earthCloudWorldRate = this.earthSpinRate + this.earthCloudSpinRate;
+            const marsCloudWorldRate = this.marsSpinRate + this.marsCloudSpinRate;
+            const earthDir = (typeof earthCloudWorldRate === 'number' && earthCloudWorldRate < 0) ? -1 : 1;
+            const marsDir = (typeof marsCloudWorldRate === 'number' && marsCloudWorldRate < 0) ? -1 : 1;
+
+            this.earthCloudWorldRotationOffset = (this.earthCloudWorldRotationOffset + earthDir * idleDelta) % twoPi;
+            this.marsCloudWorldRotationOffset = (this.marsCloudWorldRotationOffset + marsDir * idleDelta) % twoPi;
+        }
+
+        if (this.objects.earthClouds && this.objects.earth) {
+            const earthAngle = this.objects.earth.rotation.y;
+            const earthCloudWorldRate = this.earthSpinRate + this.earthCloudSpinRate;
+            const earthCloudWorldAngle = (simDays * earthCloudWorldRate + this.earthCloudWorldRotationOffset) % twoPi;
+
+            let earthCloudLocalAngle = earthCloudWorldAngle - earthAngle;
+            earthCloudLocalAngle = ((earthCloudLocalAngle % twoPi) + twoPi) % twoPi;
+            this.objects.earthClouds.rotation.y = earthCloudLocalAngle;
+        }
+        if (this.objects.marsClouds && this.objects.mars) {
+            const marsAngle = this.objects.mars.rotation.y;
+            const marsCloudWorldRate = this.marsSpinRate + this.marsCloudSpinRate;
+            const marsCloudWorldAngle = (simDays * marsCloudWorldRate + this.marsCloudWorldRotationOffset) % twoPi;
+
+            let marsCloudLocalAngle = marsCloudWorldAngle - marsAngle;
+            marsCloudLocalAngle = ((marsCloudLocalAngle % twoPi) + twoPi) % twoPi;
+            this.objects.marsClouds.rotation.y = marsCloudLocalAngle;
         }
 
         if (this.objects.earthClouds) {
-            this.objects.earthClouds.rotation.y = (simDays * this.earthCloudSpinRate + this.earthCloudRotationOffset) % twoPi;
-        }
-        if (this.objects.marsClouds) {
-            this.objects.marsClouds.rotation.y = (simDays * this.marsCloudSpinRate + this.marsCloudRotationOffset) % twoPi;
+            const cloudLocalRotation = this.objects.earthClouds.rotation.y;
+            const normalizedOffset = ((-cloudLocalRotation / twoPi) % 1 + 1) % 1;
+            this.cloudShadowUvOffset = normalizedOffset;
+
+            if (this.earthDayShader && this.earthDayShader.uniforms) {
+                if (this.earthDayShader.uniforms.cloudShadowEnabled) {
+                    this.earthDayShader.uniforms.cloudShadowEnabled.value = this.cloudShadowEnabled ? 1.0 : 0.0;
+                }
+                if (this.earthDayShader.uniforms.cloudShadowStrength) {
+                    this.earthDayShader.uniforms.cloudShadowStrength.value = this.cloudShadowStrength;
+                }
+                if (this.earthDayShader.uniforms.cloudShadowSoftness) {
+                    this.earthDayShader.uniforms.cloudShadowSoftness.value = this.cloudShadowSoftness;
+                }
+                if (this.earthDayShader.uniforms.cloudShadowLatitudeFadeEnabled) {
+                    this.earthDayShader.uniforms.cloudShadowLatitudeFadeEnabled.value = this.cloudShadowLatitudeFadeEnabled ? 1.0 : 0.0;
+                }
+                if (this.earthDayShader.uniforms.cloudShadowUvOffset) {
+                    this.earthDayShader.uniforms.cloudShadowUvOffset.value = normalizedOffset;
+                }
+                if (this.earthDayShader.uniforms.cloudShadowTexelSize && this.earthCloudAlphaTexture && this.earthCloudAlphaTexture.image) {
+                    const img = this.earthCloudAlphaTexture.image;
+                    const w = img && img.width ? img.width : 0;
+                    const h = img && img.height ? img.height : 0;
+                    if (w > 0 && h > 0) {
+                        this.earthDayShader.uniforms.cloudShadowTexelSize.value.set(1 / w, 1 / h);
+                    }
+                }
+            }
         }
 
         if (this.objects.stars) {

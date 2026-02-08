@@ -318,6 +318,44 @@
 
 ---
 
+## 8.2 地球云影（地表暗化；不走 shadow map）
+
+用于给地球日照面增加“云层投影到地表”的暗化效果。
+
+说明：
+- 该云影是通过在地球 day-side 材质中采样云层 alpha 图（`earth_clouds.jpg`）并乘暗化因子实现。
+- **不依赖 Three.js 的 shadow map**（透明云层/半影在 shadow map 路线下很难稳定调）。
+- 云影会随云层旋转产生相对地表的漂移；暂停时地球停止自转但云层仍会慢速漂移。
+
+参数（仅支持以下 4 个键；不再提供别名）：
+
+### 8.2.1 开关
+参数：`cloudShadow`
+- **默认值**：开启
+- **开启**：`cloudShadow=1` / `true` / `on`
+- **关闭**：`cloudShadow=0` / `off` / `false`
+
+### 8.2.2 强度
+参数：`cloudShadowStrength`
+- **默认值**：`0.35`
+- **取值范围**：`0..1`（会 clamp）
+
+### 8.2.3 软化
+参数：`cloudShadowSoftness`
+- **默认值**：`1.2`
+- **取值范围**：`0..4`（会 clamp；值越大越糊）
+
+### 8.2.4 极区衰减
+参数：`cloudShadowLatitudeFade`
+- **默认值**：开启
+- **说明**：开启后会在极区减弱云影强度，避免高纬云纹理拉伸导致的“脏黑/条纹”。
+
+示例：
+- `/?cloudShadow=1&cloudShadowStrength=0.32&cloudShadowSoftness=1.3&cloudShadowLatitudeFade=1`
+- `/?cloudShadow=0`（完全关闭云影）
+
+---
+
 ## 9. Contact Shadows / SSAO（Phase 3A：Contact Shadows 已实现）
 
 参数：`ao`
@@ -430,6 +468,10 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | Warp | `speed` / `warp` | (无) | 刷新后强制 Warp（0..5） |
 | Shadow | `ps` | `off` | 行星遮挡太阳直射（飞船解析） |
 | Shadow | `sShadow` | `off` | 飞船自阴影（ship-only shadow map；仅影响太阳直射） |
+| Shadow | `cloudShadow` | `on` | 地球云影（地表暗化；采样云层 alpha；不走 shadow map） |
+| Shadow | `cloudShadowStrength` | `0.35` | 云影强度（0..1） |
+| Shadow | `cloudShadowSoftness` | `1.2` | 云影软化/模糊（0..4；值越大越糊） |
+| Shadow | `cloudShadowLatitudeFade` | `on` | 极区云影衰减（0/1；建议保持开启） |
 | Shadow | `sShadowSoft` | `0` | 自阴影软硬（PCF 半径，单位 texels；0=硬边） |
 | Shadow | `sShadowSamples` | `16` | 自阴影 PCF 采样数（1..25；越大越自然但更耗） |
 | Shadow | `sShadowFit` | `1` | 自阴影 tight fit（1=收紧 frustum） |
