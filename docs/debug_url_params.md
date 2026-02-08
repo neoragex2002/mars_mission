@@ -327,7 +327,7 @@
 - **不依赖 Three.js 的 shadow map**（透明云层/半影在 shadow map 路线下很难稳定调）。
 - 云影会随云层旋转产生相对地表的漂移；暂停时地球停止自转但云层仍会慢速漂移。
 
-参数（仅支持以下 4 个键；不再提供别名）：
+参数（仅支持以下 5 个键；不再提供别名）：
 
 ### 8.2.1 开关
 参数：`cloudShadow`
@@ -350,8 +350,14 @@
 - **默认值**：开启
 - **说明**：开启后会在极区减弱云影强度，避免高纬云纹理拉伸导致的“脏黑/条纹”。
 
+### 8.2.5 云层扰动（UV warp）
+参数：`cloudWarp`
+- **默认值**：`0.004`
+- **取值范围**：`0..0.03`（会 clamp；`0` 表示关闭扰动）
+- **说明**：对云层采样 UV 做轻微扰动（随真实时间缓慢演化），并与地表云影采样保持同步；高纬会自动衰减以避免极区 UV 拉伸导致的抖动/脏纹。
+
 示例：
-- `/?cloudShadow=1&cloudShadowStrength=0.32&cloudShadowSoftness=1.3&cloudShadowLatitudeFade=1`
+- `/?cloudShadow=1&cloudShadowStrength=0.32&cloudShadowSoftness=1.3&cloudShadowLatitudeFade=1&cloudWarp=0.004`
 - `/?cloudShadow=0`（完全关闭云影）
 
 ---
@@ -472,6 +478,7 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | Shadow | `cloudShadowStrength` | `0.35` | 云影强度（0..1） |
 | Shadow | `cloudShadowSoftness` | `1.2` | 云影软化/模糊（0..4；值越大越糊） |
 | Shadow | `cloudShadowLatitudeFade` | `on` | 极区云影衰减（0/1；建议保持开启） |
+| Shadow | `cloudWarp` | `0.004` | 云层 UV 扰动幅度（0..0.03；0=关闭；云层与云影同步） |
 | Shadow | `sShadowSoft` | `0` | 自阴影软硬（PCF 半径，单位 texels；0=硬边） |
 | Shadow | `sShadowSamples` | `16` | 自阴影 PCF 采样数（1..25；越大越自然但更耗） |
 | Shadow | `sShadowFit` | `1` | 自阴影 tight fit（1=收紧 frustum） |

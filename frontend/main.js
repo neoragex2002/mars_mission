@@ -240,14 +240,14 @@ const CinematicShader = {
         uniform float grainIntensity;
         varying vec2 vUv;
 
-            // Pseudo-random generator
-            float random(vec2 p) {
-                return fract(sin(dot(p.xy ,vec2(12.9898,78.233))) * 43758.5453);
-            }
-    
-            void main() {
+        // Pseudo-random generator
+        float random(vec2 p) {
+            return fract(sin(dot(p.xy ,vec2(12.9898,78.233))) * 43758.5453);
+        }
+
+        void main() {
             vec2 uv = vUv;
-            
+
             // 1. Chromatic Aberration (RGB Shift based on distance from center)
             float dist = distance(uv, vec2(0.5));
             vec2 offset = (uv - 0.5) * amount * dist * 2.0;
@@ -569,11 +569,11 @@ const LensFlareShader = {
 const TEXTURE_PATHS = Object.freeze({
     sunMap: '/static/assets/textures/sunmap.jpg',
 
-    earthMap: '/static/assets/textures/earth/4k/earth_day.jpg',
+    earthMap: '/static/assets/textures/earth/8k/earth_day.jpg',
     earthBump: '/static/assets/textures/earth/4k/earth_bump.jpg',
     earthLights: '/static/assets/textures/earth/4k/earth_night.jpg',
     earthSpec: '/static/assets/textures/earth/4k/earth_spec.jpg',
-    earthCloudAlpha: '/static/assets/textures/earth/4k/earth_clouds.jpg',
+    earthCloudAlpha: '/static/assets/textures/earth/8k/earth_clouds.jpg',
 
     marsMap: '/static/assets/textures/mars/2k/mars_diffuse.png',
     marsNormal: '/static/assets/textures/mars/2k/mars_norm.png',
@@ -1522,64 +1522,67 @@ class MarsMissionApp {
         this.isTransitioning = false;
         this.lastViewMode = 'free';
         
-         this.textureLoader = new THREE.TextureLoader();
- 
-         this.lastPhase = null;
-         this.lastSpacecraftPosition = null;
+        this.textureLoader = new THREE.TextureLoader();
 
-             this.planetShadowEnabled = this.isPlanetShadowEnabled();
-              this.planetShadowUniforms = null;
+        this.lastPhase = null;
+        this.lastSpacecraftPosition = null;
 
-             this.cloudShadowEnabled = this.getRequestedCloudShadowEnabled();
-             this.cloudShadowStrength = this.getRequestedCloudShadowStrength();
-             this.cloudShadowSoftness = this.getRequestedCloudShadowSoftness();
-             this.cloudShadowLatitudeFadeEnabled = this.getRequestedCloudShadowLatitudeFadeEnabled();
-             this.cloudShadowUvOffset = 0.0;
-             this.earthCloudAlphaTexture = null;
+        this.planetShadowEnabled = this.isPlanetShadowEnabled();
+        this.planetShadowUniforms = null;
 
-              this.contactShadowUniforms = null;
-              this.ssaoUniforms = null;
+        this.cloudShadowEnabled = this.getRequestedCloudShadowEnabled();
+        this.cloudShadowStrength = this.getRequestedCloudShadowStrength();
+        this.cloudShadowSoftness = this.getRequestedCloudShadowSoftness();
+        this.cloudShadowLatitudeFadeEnabled = this.getRequestedCloudShadowLatitudeFadeEnabled();
+        this.cloudShadowUvOffset = 0.0;
+        this.earthCloudAlphaTexture = null;
 
-            this.spacecraftSelfShadowEnabled = this.isSpacecraftSelfShadowEnabled();
-            this.spacecraftSelfShadowLight = null;
-            this.spacecraftSelfShadowUniforms = null;
-            this.spacecraftSelfShadowCamera = null;
-            this.spacecraftSelfShadowDepthRT = null;
-            this.spacecraftSelfShadowDepthMaterial = null;
-            this._sShadowBiasMatrix = new THREE.Matrix4();
-            this._sShadowLightPV = new THREE.Matrix4();
-            this._sShadowMatrixView = new THREE.Matrix4();
+        this.cloudWarp = this.getRequestedCloudWarp();
+        this.cloudWarpTimeSec = 0.0;
+        this.cloudWarpNoiseTexture = null;
+        this.earthCloudShader = null;
 
-             this.contactShadowSceneDepthRT = null;
-             this.contactShadowShipDepthRT = null;
-             this.contactShadowDepthMaterial = null;
-             this.contactShadowDebugScene = null;
-         this.contactShadowDebugCamera = null;
-         this.contactShadowDebugMesh = null;
-         this.contactShadowDebugMaterial = null;
-         this.contactShadowDepthUnsupported = false;
+        this.contactShadowUniforms = null;
+        this.ssaoUniforms = null;
 
-         this.ssaoNoiseTexture = null;
-         this.ssaoKernel = null;
-         this.ssaoRT = null;
-         this.ssaoBlurRT = null;
-         this.ssaoScene = null;
-         this.ssaoCamera = null;
-         this.ssaoMaterial = null;
-         this.ssaoBlurScene = null;
-         this.ssaoBlurCamera = null;
-         this.ssaoBlurMaterial = null;
-         this.ssaoDebugScene = null;
-         this.ssaoDebugCamera = null;
-         this.ssaoDebugMaterial = null;
+        this.spacecraftSelfShadowEnabled = this.isSpacecraftSelfShadowEnabled();
+        this.spacecraftSelfShadowLight = null;
+        this.spacecraftSelfShadowUniforms = null;
+        this.spacecraftSelfShadowCamera = null;
+        this.spacecraftSelfShadowDepthRT = null;
+        this.spacecraftSelfShadowDepthMaterial = null;
+        this._sShadowBiasMatrix = new THREE.Matrix4();
+        this._sShadowLightPV = new THREE.Matrix4();
+        this._sShadowMatrixView = new THREE.Matrix4();
 
+        this.contactShadowSceneDepthRT = null;
+        this.contactShadowShipDepthRT = null;
+        this.contactShadowDepthMaterial = null;
+        this.contactShadowDebugScene = null;
+        this.contactShadowDebugCamera = null;
+        this.contactShadowDebugMesh = null;
+        this.contactShadowDebugMaterial = null;
+        this.contactShadowDepthUnsupported = false;
 
-         this.simulationState = {
-             is_running: false,
-             paused: false,
-             time_speed: 0.5,
-         };
+        this.ssaoNoiseTexture = null;
+        this.ssaoKernel = null;
+        this.ssaoRT = null;
+        this.ssaoBlurRT = null;
+        this.ssaoScene = null;
+        this.ssaoCamera = null;
+        this.ssaoMaterial = null;
+        this.ssaoBlurScene = null;
+        this.ssaoBlurCamera = null;
+        this.ssaoBlurMaterial = null;
+        this.ssaoDebugScene = null;
+        this.ssaoDebugCamera = null;
+        this.ssaoDebugMaterial = null;
 
+        this.simulationState = {
+            is_running: false,
+            paused: false,
+            time_speed: 0.5,
+        };
 
         // Simulation-time tracking for smooth rendering between WS updates.
         // Backend advances time at ~20Hz (see backend sleep 0.05s), so we locally interpolate.
@@ -1614,7 +1617,7 @@ class MarsMissionApp {
 
     init() {
         console.log('Initializing Mars Mission 3D Visualization...');
-        
+
         this.setupScene();
         this.setupCamera();
         this.setupRenderer();
@@ -1629,7 +1632,7 @@ class MarsMissionApp {
         this.setupWebSocket();
         this.setupEventListeners();
         this.animate();
-        
+
         console.log('Initialization complete!');
     }
 
@@ -2085,257 +2088,275 @@ class MarsMissionApp {
         return 'default';
     }
 
-     getRequestedCityLightsIntensity() {
-         if (typeof window === 'undefined' || !window.location) {
-             return 1.0;
-         }
-         if (typeof URLSearchParams === 'undefined') {
-             return 1.0;
-         }
+    getRequestedCityLightsIntensity() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 1.0;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 1.0;
+        }
 
-         const params = getEffectiveParams();
-         if (!params) return 1.0;
-         const raw = String(params.get('city') || '').trim();
-         if (!raw) {
-             return 1.0;
-         }
+        const params = getEffectiveParams();
+        if (!params) return 1.0;
+        const raw = String(params.get('city') || '').trim();
+        if (!raw) {
+            return 1.0;
+        }
 
-         const value = Number(raw);
-         if (!Number.isFinite(value)) {
-             return 1.0;
-         }
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return 1.0;
+        }
 
-         return THREE.MathUtils.clamp(value, 0, 2);
-     }
+        return THREE.MathUtils.clamp(value, 0, 2);
+    }
 
+    getRequestedDebugMode() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 'none';
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 'none';
+        }
 
-     getRequestedDebugMode() {
-         if (typeof window === 'undefined' || !window.location) {
-             return 'none';
-         }
-         if (typeof URLSearchParams === 'undefined') {
-             return 'none';
-         }
+        const params = getEffectiveParams();
+        if (!params) return 'none';
+        const raw = String(params.get('debug') || '').trim().toLowerCase();
+        if (!raw || raw === '0' || raw === 'off' || raw === 'none') {
+            return 'none';
+        }
+        if (raw === 'exposure') {
+            return 'exposure';
+        }
+        if (raw === 'luma') {
+            return 'luma';
+        }
+        return 'none';
+    }
 
-         const params = getEffectiveParams();
-         if (!params) return 'none';
-         const raw = String(params.get('debug') || '').trim().toLowerCase();
-         if (!raw || raw === '0' || raw === 'off' || raw === 'none') {
-             return 'none';
-         }
-         if (raw === 'exposure') {
-             return 'exposure';
-         }
-         if (raw === 'luma') {
-             return 'luma';
-         }
-         return 'none';
-     }
+    isPlanetShadowEnabled() {
+        if (typeof window === 'undefined' || !window.location) {
+            return false;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return false;
+        }
 
-     isPlanetShadowEnabled() {
-           if (typeof window === 'undefined' || !window.location) {
-               return false;
-           }
-          if (typeof URLSearchParams === 'undefined') {
-              return false;
-          }
+        const params = getEffectiveParams();
+        if (!params) return false;
+        const raw = String(params.get('planetShadow') || params.get('ps') || '').trim().toLowerCase();
+        if (!raw || raw === '0' || raw === 'off' || raw === 'false') {
+            return false;
+        }
+        return true;
+    }
 
-          const params = getEffectiveParams();
-          if (!params) return false;
-          const raw = String(params.get('planetShadow') || params.get('ps') || '').trim().toLowerCase();
-          if (!raw || raw === '0' || raw === 'off' || raw === 'false') {
-              return false;
-           }
-           return true;
-       }
+    getRequestedCloudShadowEnabled() {
+        if (typeof window === 'undefined' || !window.location) {
+            return true;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return true;
+        }
 
-     getRequestedCloudShadowEnabled() {
-         if (typeof window === 'undefined' || !window.location) {
-             return true;
-         }
-         if (typeof URLSearchParams === 'undefined') {
-             return true;
-         }
+        const params = getEffectiveParams();
+        if (!params) return true;
+        if (!params.has('cloudShadow')) return true;
+        const raw = String(params.get('cloudShadow') || '').trim().toLowerCase();
+        if (!raw) return true;
+        if (raw === '0' || raw === 'off' || raw === 'false') {
+            return false;
+        }
+        return true;
+    }
 
-         const params = getEffectiveParams();
-         if (!params) return true;
-         if (!params.has('cloudShadow')) return true;
-         const raw = String(params.get('cloudShadow') || '').trim().toLowerCase();
-         if (!raw) return true;
-         if (raw === '0' || raw === 'off' || raw === 'false') {
-             return false;
-         }
-         return true;
-     }
+    getRequestedCloudShadowStrength() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 0.35;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 0.35;
+        }
 
-     getRequestedCloudShadowStrength() {
-         if (typeof window === 'undefined' || !window.location) {
-             return 0.35;
-         }
-         if (typeof URLSearchParams === 'undefined') {
-             return 0.35;
-         }
+        const params = getEffectiveParams();
+        if (!params) return 0.35;
+        const raw = String(params.get('cloudShadowStrength') || '').trim();
+        if (!raw) return 0.35;
 
-         const params = getEffectiveParams();
-         if (!params) return 0.35;
-         const raw = String(params.get('cloudShadowStrength') || '').trim();
-         if (!raw) return 0.35;
+        const value = Number(raw);
+        if (!Number.isFinite(value)) return 0.35;
+        return THREE.MathUtils.clamp(value, 0.0, 1.0);
+    }
 
-         const value = Number(raw);
-         if (!Number.isFinite(value)) return 0.35;
-         return THREE.MathUtils.clamp(value, 0.0, 1.0);
-     }
+    getRequestedCloudShadowSoftness() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 1.2;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 1.2;
+        }
 
-     getRequestedCloudShadowSoftness() {
-         if (typeof window === 'undefined' || !window.location) {
-             return 1.2;
-         }
-         if (typeof URLSearchParams === 'undefined') {
-             return 1.2;
-         }
+        const params = getEffectiveParams();
+        if (!params) return 1.2;
+        const raw = String(params.get('cloudShadowSoftness') || '').trim();
+        if (!raw) return 1.2;
 
-         const params = getEffectiveParams();
-         if (!params) return 1.2;
-         const raw = String(params.get('cloudShadowSoftness') || '').trim();
-         if (!raw) return 1.2;
+        const value = Number(raw);
+        if (!Number.isFinite(value)) return 1.2;
+        return THREE.MathUtils.clamp(value, 0.0, 4.0);
+    }
 
-         const value = Number(raw);
-         if (!Number.isFinite(value)) return 1.2;
-         return THREE.MathUtils.clamp(value, 0.0, 4.0);
-     }
+    getRequestedCloudShadowLatitudeFadeEnabled() {
+        if (typeof window === 'undefined' || !window.location) {
+            return true;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return true;
+        }
 
-     getRequestedCloudShadowLatitudeFadeEnabled() {
-         if (typeof window === 'undefined' || !window.location) {
-             return true;
-         }
-         if (typeof URLSearchParams === 'undefined') {
-             return true;
-         }
+        const params = getEffectiveParams();
+        if (!params) return true;
+        if (!params.has('cloudShadowLatitudeFade')) return true;
+        const raw = String(params.get('cloudShadowLatitudeFade') || '').trim().toLowerCase();
+        if (!raw) return true;
+        if (raw === '0' || raw === 'off' || raw === 'false') {
+            return false;
+        }
+        return true;
+    }
 
-         const params = getEffectiveParams();
-         if (!params) return true;
-         if (!params.has('cloudShadowLatitudeFade')) return true;
-         const raw = String(params.get('cloudShadowLatitudeFade') || '').trim().toLowerCase();
-         if (!raw) return true;
-         if (raw === '0' || raw === 'off' || raw === 'false') {
-             return false;
-         }
-         return true;
-     }
+    getRequestedCloudWarp() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 0.004;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 0.004;
+        }
 
-     isSpacecraftSelfShadowEnabled() {
-          if (typeof window === 'undefined' || !window.location) {
-              return false;
-          }
-         if (typeof URLSearchParams === 'undefined') {
-             return false;
-         }
+        const params = getEffectiveParams();
+        if (!params) return 0.004;
+        const raw = String(params.get('cloudWarp') || '').trim().toLowerCase();
+        if (!raw) return 0.004;
+        if (raw === '0' || raw === 'off' || raw === 'false') {
+            return 0.0;
+        }
 
-         const params = getEffectiveParams();
-         if (!params) return false;
-         const raw = String(params.get('sShadow') || '').trim().toLowerCase();
-         if (!raw || raw === '0' || raw === 'off' || raw === 'false') {
-             return false;
-         }
-         return true;
-     }
+        const value = Number(raw);
+        if (!Number.isFinite(value)) return 0.004;
+        return THREE.MathUtils.clamp(value, 0.0, 0.03);
+    }
 
-         getRequestedAoMode() {
-             if (typeof window === 'undefined' || !window.location) {
-                 return 'off';
-             }
-             if (typeof URLSearchParams === 'undefined') {
-                 return 'off';
-             }
+    isSpacecraftSelfShadowEnabled() {
+        if (typeof window === 'undefined' || !window.location) {
+            return false;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return false;
+        }
 
-         const params = getEffectiveParams();
-         if (!params) return 'off';
-         const raw = String(params.get('ao') || '').trim().toLowerCase();
-         if (!raw || raw === '0' || raw === 'off' || raw === 'none') {
-             return 'off';
-         }
-         if (raw === 'contact') {
-             return 'contact';
-         }
-             if (raw === 'ssao' || raw === 'sao') {
-                 return 'ssao';
-             }
-                 return 'off';
-             }
+        const params = getEffectiveParams();
+        if (!params) return false;
+        const raw = String(params.get('sShadow') || '').trim().toLowerCase();
+        if (!raw || raw === '0' || raw === 'off' || raw === 'false') {
+            return false;
+        }
+        return true;
+    }
 
-             getRequestedContactShadowDebugMode() {
-             if (typeof window === 'undefined' || !window.location) {
-                 return 0;
-             }
-             if (typeof URLSearchParams === 'undefined') {
-                 return 0;
-             }
-    
-             const params = getEffectiveParams();
-             if (!params) return 0;
-             const raw = String(params.get('csDebug') || '').trim();
-             if (!raw) {
-                 return 0;
-             }
-    
-             const value = Number(raw);
-             if (!Number.isFinite(value)) {
-                 return 0;
-             }
-    
-             const mode = Math.max(0, Math.min(2, Math.floor(value)));
-             return mode;
-             }
+    getRequestedAoMode() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 'off';
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 'off';
+        }
 
-         getRequestedSsaoDebugMode() {
-             if (typeof window === 'undefined' || !window.location) {
-                 return 0;
-             }
-             if (typeof URLSearchParams === 'undefined') {
-                 return 0;
-             }
+        const params = getEffectiveParams();
+        if (!params) return 'off';
+        const raw = String(params.get('ao') || '').trim().toLowerCase();
+        if (!raw || raw === '0' || raw === 'off' || raw === 'none') {
+            return 'off';
+        }
+        if (raw === 'contact') {
+            return 'contact';
+        }
+        if (raw === 'ssao' || raw === 'sao') {
+            return 'ssao';
+        }
+        return 'off';
+    }
 
-             const params = getEffectiveParams();
-             if (!params) return 0;
-             const raw = String(params.get('ssaoDebug') || '').trim();
-             if (!raw) {
-                 return 0;
-             }
+    getRequestedContactShadowDebugMode() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 0;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 0;
+        }
 
-             const value = Number(raw);
-             if (!Number.isFinite(value)) {
-                 return 0;
-             }
+        const params = getEffectiveParams();
+        if (!params) return 0;
+        const raw = String(params.get('csDebug') || '').trim();
+        if (!raw) {
+            return 0;
+        }
 
-             const mode = Math.max(0, Math.min(1, Math.floor(value)));
-             return mode;
-         }
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return 0;
+        }
 
-             getRequestedMaterialMode() {
-             if (typeof window === 'undefined' || !window.location) {
-                 return 'default';
-             }
-             if (typeof URLSearchParams === 'undefined') {
-                 return 'default';
-             }
+        const mode = Math.max(0, Math.min(2, Math.floor(value)));
+        return mode;
+    }
 
-             const params = getEffectiveParams();
-             if (!params) return 'default';
-             const raw = String(params.get('mat') || '').trim().toLowerCase();
-             if (!raw || raw === 'default') {
-                 return 'default';
-             }
-             if (raw === 'white') {
-                 return 'white';
-             }
-             return 'default';
-         }
+    getRequestedSsaoDebugMode() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 0;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 0;
+        }
 
+        const params = getEffectiveParams();
+        if (!params) return 0;
+        const raw = String(params.get('ssaoDebug') || '').trim();
+        if (!raw) {
+            return 0;
+        }
 
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return 0;
+        }
 
-        getRequestedExposure() {
-            if (typeof window === 'undefined' || !window.location) {
-                return 0.9;
+        const mode = Math.max(0, Math.min(1, Math.floor(value)));
+        return mode;
+    }
+
+    getRequestedMaterialMode() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 'default';
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 'default';
+        }
+
+        const params = getEffectiveParams();
+        if (!params) return 'default';
+        const raw = String(params.get('mat') || '').trim().toLowerCase();
+        if (!raw || raw === 'default') {
+            return 'default';
+        }
+        if (raw === 'white') {
+            return 'white';
+        }
+        return 'default';
+    }
+
+    getRequestedExposure() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 0.9;
         }
         if (typeof URLSearchParams === 'undefined') {
             return 0.9;
@@ -2425,52 +2446,51 @@ class MarsMissionApp {
         return Math.max(0, value);
     }
 
-     getRequestedIblIntensity() {
-         if (typeof window === 'undefined' || !window.location) {
-             return 1.0;
-         }
-         if (typeof URLSearchParams === 'undefined') {
-             return 1.0;
-         }
+    getRequestedIblIntensity() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 1.0;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 1.0;
+        }
 
-         const params = getEffectiveParams();
-         if (!params) return 1.0;
-         const raw = String(params.get('ibl') || '').trim();
-         if (!raw) {
-             return 1.0;
-         }
+        const params = getEffectiveParams();
+        if (!params) return 1.0;
+        const raw = String(params.get('ibl') || '').trim();
+        if (!raw) {
+            return 1.0;
+        }
 
-         const value = Number(raw);
-         if (!Number.isFinite(value)) {
-             return 1.0;
-         }
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return 1.0;
+        }
 
-         return Math.max(0, value);
-     }
+        return Math.max(0, value);
+    }
 
-     getRequestedTimeSpeed() {
-         if (typeof window === 'undefined' || !window.location) {
-             return null;
-         }
-         if (typeof URLSearchParams === 'undefined') {
-             return null;
-         }
+    getRequestedTimeSpeed() {
+        if (typeof window === 'undefined' || !window.location) {
+            return null;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return null;
+        }
 
-         const params = getEffectiveParams();
-         if (!params) return null;
-         const raw = String(params.get('speed') || params.get('warp') || '').trim();
-         if (!raw) {
-             return null;
-         }
+        const params = getEffectiveParams();
+        if (!params) return null;
+        const raw = String(params.get('speed') || params.get('warp') || '').trim();
+        if (!raw) {
+            return null;
+        }
 
-         const value = Number(raw);
-         if (!Number.isFinite(value)) {
-             return null;
-         }
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+            return null;
+        }
 
-         return THREE.MathUtils.clamp(value, 0, 5);
-     }
-
+        return THREE.MathUtils.clamp(value, 0, 5);
+    }
 
     applyIblIntensity() {
         if (!this.scene) return;
@@ -2572,23 +2592,23 @@ class MarsMissionApp {
         }
     }
 
-     handleInitialData(data) {
-         this.missionData = data.mission_info;
+    handleInitialData(data) {
+        this.missionData = data.mission_info;
 
-         if (data.simulation_state) {
-             this.simulationState = { ...this.simulationState, ...data.simulation_state };
-         }
+        if (data.simulation_state) {
+            this.simulationState = { ...this.simulationState, ...data.simulation_state };
+        }
 
-         const requestedSpeed = this.getRequestedTimeSpeed();
-         if (requestedSpeed !== null) {
-             this.simulationState = { ...this.simulationState, time_speed: requestedSpeed };
-         }
+        const requestedSpeed = this.getRequestedTimeSpeed();
+        if (requestedSpeed !== null) {
+            this.simulationState = { ...this.simulationState, time_speed: requestedSpeed };
+        }
 
-         this.syncUiFromSimulationState();
+        this.syncUiFromSimulationState();
 
-         if (requestedSpeed !== null && this.connected) {
-             this.setTimeSpeed(requestedSpeed);
-         }
+        if (requestedSpeed !== null && this.connected) {
+            this.setTimeSpeed(requestedSpeed);
+        }
 
         this.createSun();
         this.createPlanet('earth', data.earth_orbit);
@@ -2871,9 +2891,9 @@ class MarsMissionApp {
         });
     }
 
-         setupPostProcessing() {
-            const width = window.innerWidth;
-            const height = window.innerHeight;
+    setupPostProcessing() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
 
         let renderTargetType = (typeof THREE.UnsignedByteType !== 'undefined')
             ? THREE.UnsignedByteType
@@ -2889,33 +2909,33 @@ class MarsMissionApp {
         }
 
 
-            const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
-                ? this.renderer.getPixelRatio()
-                : (window.devicePixelRatio || 1);
+        const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
+            ? this.renderer.getPixelRatio()
+            : (window.devicePixelRatio || 1);
 
-                const wantsContactShadowDepth =
-                    this.aoMode === 'contact' ||
-                    this.aoMode === 'ssao' ||
-                    this.csDebugMode !== 0 ||
-                    this.ssaoDebugMode !== 0;
-                    if (wantsContactShadowDepth) {
-                        this.ensureContactShadowDepthTargets(width, height, pixelRatio);
-                        this.setupContactShadowDebugView();
-                    }
+        const wantsContactShadowDepth =
+            this.aoMode === 'contact' ||
+            this.aoMode === 'ssao' ||
+            this.csDebugMode !== 0 ||
+            this.ssaoDebugMode !== 0;
+        if (wantsContactShadowDepth) {
+            this.ensureContactShadowDepthTargets(width, height, pixelRatio);
+            this.setupContactShadowDebugView();
+        }
 
-                    if (this.spacecraftSelfShadowEnabled) {
-                        this.ensureSpacecraftSelfShadowTargets();
-                    }
+        if (this.spacecraftSelfShadowEnabled) {
+            this.ensureSpacecraftSelfShadowTargets();
+        }
 
-                const wantsSsao = this.aoMode === 'ssao' || this.ssaoDebugMode !== 0;
-                if (wantsSsao) {
-                    this.ensureSsaoTargets(width, height, pixelRatio);
-                    this.setupSsaoViews();
-                }
+        const wantsSsao = this.aoMode === 'ssao' || this.ssaoDebugMode !== 0;
+        if (wantsSsao) {
+            this.ensureSsaoTargets(width, height, pixelRatio);
+            this.setupSsaoViews();
+        }
 
-            const createRenderTargetForComposer = () => {
-                // Let EffectComposer.setPixelRatio() + setSize() manage internal scaling.
-                // Do NOT attach DepthTexture here: EffectComposer clones/ping-pongs targets and
+        const createRenderTargetForComposer = () => {
+            // Let EffectComposer.setPixelRatio() + setSize() manage internal scaling.
+            // Do NOT attach DepthTexture here: EffectComposer clones/ping-pongs targets and
             // sharing a single DepthTexture can create an illegal feedback loop.
             return new THREE.WebGLRenderTarget(width, height, {
                 minFilter: THREE.LinearFilter,
@@ -2927,51 +2947,51 @@ class MarsMissionApp {
             });
         };
 
-            const postMode = this.getRequestedPostMode();
-            const isRawPost = postMode === 'raw';
-            const bloomEnabled = this.getRequestedBloomEnabled(!isRawPost);
-            const bloomDebugMode = this.getRequestedBloomDebugMode();
-            const wantsBloom = bloomEnabled || bloomDebugMode !== 0;
+        const postMode = this.getRequestedPostMode();
+        const isRawPost = postMode === 'raw';
+        const bloomEnabled = this.getRequestedBloomEnabled(!isRawPost);
+        const bloomDebugMode = this.getRequestedBloomDebugMode();
+        const wantsBloom = bloomEnabled || bloomDebugMode !== 0;
 
-            if (wantsBloom) {
-                this.bloomComposer = new THREE.EffectComposer(this.renderer, createRenderTargetForComposer());
-                if (typeof this.bloomComposer.setPixelRatio === 'function') {
-                    this.bloomComposer.setPixelRatio(pixelRatio);
-                }
-                this.bloomComposer.setSize(width, height);
-                this.bloomComposer.renderToScreen = false;
-
-                const bloomRenderPass = new THREE.RenderPass(this.scene, this.camera);
-                this.bloomComposer.addPass(bloomRenderPass);
-
-                const bloomDefaults = { strength: 0.2, radius: 0.42, threshold: 0.82 };
-                const bloomParams = this.getRequestedBloomParams();
-                const bloomStrength =
-                    (typeof bloomParams.strength === 'number') ? bloomParams.strength : bloomDefaults.strength;
-                const bloomRadius =
-                    (typeof bloomParams.radius === 'number') ? bloomParams.radius : bloomDefaults.radius;
-                const bloomThreshold =
-                    (typeof bloomParams.threshold === 'number') ? bloomParams.threshold : bloomDefaults.threshold;
-
-                this.bloomPass = new THREE.UnrealBloomPass(
-                    new THREE.Vector2(width * pixelRatio, height * pixelRatio),
-                    bloomStrength,
-                    bloomRadius,
-                    bloomThreshold
-                );
-                this.bloomComposer.addPass(this.bloomPass);
-
-                if (bloomDebugMode !== 0) {
-                    this.setupBloomDebugView();
-                }
-            } else {
-                this.bloomComposer = null;
-                this.bloomPass = null;
+        if (wantsBloom) {
+            this.bloomComposer = new THREE.EffectComposer(this.renderer, createRenderTargetForComposer());
+            if (typeof this.bloomComposer.setPixelRatio === 'function') {
+                this.bloomComposer.setPixelRatio(pixelRatio);
             }
+            this.bloomComposer.setSize(width, height);
+            this.bloomComposer.renderToScreen = false;
 
-            this.finalComposer = new THREE.EffectComposer(
-                this.renderer,
-                createRenderTargetForComposer()
+            const bloomRenderPass = new THREE.RenderPass(this.scene, this.camera);
+            this.bloomComposer.addPass(bloomRenderPass);
+
+            const bloomDefaults = { strength: 0.2, radius: 0.42, threshold: 0.82 };
+            const bloomParams = this.getRequestedBloomParams();
+            const bloomStrength =
+                (typeof bloomParams.strength === 'number') ? bloomParams.strength : bloomDefaults.strength;
+            const bloomRadius =
+                (typeof bloomParams.radius === 'number') ? bloomParams.radius : bloomDefaults.radius;
+            const bloomThreshold =
+                (typeof bloomParams.threshold === 'number') ? bloomParams.threshold : bloomDefaults.threshold;
+
+            this.bloomPass = new THREE.UnrealBloomPass(
+                new THREE.Vector2(width * pixelRatio, height * pixelRatio),
+                bloomStrength,
+                bloomRadius,
+                bloomThreshold
+            );
+            this.bloomComposer.addPass(this.bloomPass);
+
+            if (bloomDebugMode !== 0) {
+                this.setupBloomDebugView();
+            }
+        } else {
+            this.bloomComposer = null;
+            this.bloomPass = null;
+        }
+
+        this.finalComposer = new THREE.EffectComposer(
+            this.renderer,
+            createRenderTargetForComposer()
         );
         if (typeof this.finalComposer.setPixelRatio === 'function') {
             this.finalComposer.setPixelRatio(pixelRatio);
@@ -3002,8 +3022,8 @@ class MarsMissionApp {
             this.finalComposer.addPass(new THREE.RenderPass(this.scene, this.camera));
         }
 
-            // NOTE: `ao=contact` is implemented as a spacecraft material patch (sun-direct only),
-            // not as a post-process pass. We keep csDebug as a full-screen debug view.
+        // NOTE: `ao=contact` is implemented as a spacecraft material patch (sun-direct only),
+        // not as a post-process pass. We keep csDebug as a full-screen debug view.
 
         this.additivePass = new THREE.ShaderPass(AdditiveBlendShader);
         if (this.additivePass.material) {
@@ -3086,623 +3106,622 @@ class MarsMissionApp {
             }
             this.finalComposer.addPass(this.ditherPass);
         }
+    }
 
+    ensureContactShadowDepthTargets(width, height, pixelRatio) {
+        if (!this.renderer || !this.scene || !this.camera) return;
+        if (typeof THREE.WebGLRenderTarget !== 'function') return;
+
+        if (this.contactShadowDepthUnsupported) {
+            return;
         }
 
-            ensureContactShadowDepthTargets(width, height, pixelRatio) {
-            if (!this.renderer || !this.scene || !this.camera) return;
-            if (typeof THREE.WebGLRenderTarget !== 'function') return;
-
-            if (this.contactShadowDepthUnsupported) {
-                return;
+        if (typeof THREE.DepthTexture !== 'function') {
+            console.warn('DepthTexture unavailable; disabling ao=contact.');
+            this.contactShadowShipDepthRT = null;
+            this.contactShadowDepthUnsupported = true;
+            if (this.aoMode === 'contact') {
+                this.aoMode = 'off';
             }
+            return;
+        }
 
-            if (typeof THREE.DepthTexture !== 'function') {
-                console.warn('DepthTexture unavailable; disabling ao=contact.');
-                this.contactShadowShipDepthRT = null;
-                this.contactShadowDepthUnsupported = true;
-                if (this.aoMode === 'contact') {
-                    this.aoMode = 'off';
-                }
-                return;
+        const w = Math.max(1, Math.floor(width * pixelRatio));
+        const h = Math.max(1, Math.floor(height * pixelRatio));
+
+        const createDepthTarget = (name) => {
+            const rt = new THREE.WebGLRenderTarget(w, h, {
+                minFilter: THREE.NearestFilter,
+                magFilter: THREE.NearestFilter,
+                format: THREE.RGBAFormat,
+                type: THREE.UnsignedByteType,
+                depthBuffer: true,
+                stencilBuffer: false
+            });
+            rt.texture.name = name;
+            const depthTexture = new THREE.DepthTexture(w, h);
+            depthTexture.type = THREE.UnsignedShortType;
+            depthTexture.format = THREE.DepthFormat;
+            depthTexture.minFilter = THREE.NearestFilter;
+            depthTexture.magFilter = THREE.NearestFilter;
+            depthTexture.generateMipmaps = false;
+            rt.depthTexture = depthTexture;
+            return rt;
+        };
+
+        const ensureSize = (rt, name) => {
+            if (!rt) return createDepthTarget(name);
+            const dt = rt.depthTexture;
+            const ok =
+                dt &&
+                dt.isDepthTexture &&
+                dt.image &&
+                dt.image.width === w &&
+                dt.image.height === h;
+            if (ok) return rt;
+            try {
+                rt.dispose();
+            } catch (e) {
+                // ignore
             }
+            return createDepthTarget(name);
+        };
 
-            const w = Math.max(1, Math.floor(width * pixelRatio));
-            const h = Math.max(1, Math.floor(height * pixelRatio));
+        this.contactShadowShipDepthRT = ensureSize(this.contactShadowShipDepthRT, 'mm_shipDepth');
 
-            const createDepthTarget = (name) => {
-                const rt = new THREE.WebGLRenderTarget(w, h, {
-                    minFilter: THREE.NearestFilter,
-                    magFilter: THREE.NearestFilter,
-                    format: THREE.RGBAFormat,
-                    type: THREE.UnsignedByteType,
-                    depthBuffer: true,
-                    stencilBuffer: false
-                });
-                rt.texture.name = name;
-                const depthTexture = new THREE.DepthTexture(w, h);
-                depthTexture.type = THREE.UnsignedShortType;
-                depthTexture.format = THREE.DepthFormat;
-                depthTexture.minFilter = THREE.NearestFilter;
-                depthTexture.magFilter = THREE.NearestFilter;
-                depthTexture.generateMipmaps = false;
-                rt.depthTexture = depthTexture;
-                return rt;
-            };
+        if (!this.contactShadowDepthMaterial) {
+            this.contactShadowDepthMaterial = new THREE.MeshDepthMaterial();
+            this.contactShadowDepthMaterial.blending = THREE.NoBlending;
+        }
+    }
 
-            const ensureSize = (rt, name) => {
-                if (!rt) return createDepthTarget(name);
-                const dt = rt.depthTexture;
-                const ok =
-                    dt &&
-                    dt.isDepthTexture &&
-                    dt.image &&
-                    dt.image.width === w &&
-                    dt.image.height === h;
-                if (ok) return rt;
+    ensureSpacecraftSelfShadowTargets() {
+        if (!this.spacecraftSelfShadowEnabled) return false;
+        if (!this.renderer || !this.scene) return false;
+        if (typeof THREE.WebGLRenderTarget !== 'function') return false;
+        if (typeof THREE.DepthTexture !== 'function') {
+            console.warn('DepthTexture unavailable; disabling sShadow.');
+            this.spacecraftSelfShadowDepthRT = null;
+            this.spacecraftSelfShadowCamera = null;
+            return false;
+        }
+
+        const size = 4096;
+
+        const needsNewTarget = () => {
+            const rt = this.spacecraftSelfShadowDepthRT;
+            if (!rt || !rt.depthTexture || !rt.depthTexture.isDepthTexture) return true;
+            const img = rt.depthTexture.image;
+            return !img || img.width !== size || img.height !== size;
+        };
+
+        if (needsNewTarget()) {
+            if (this.spacecraftSelfShadowDepthRT) {
                 try {
-                    rt.dispose();
+                    this.spacecraftSelfShadowDepthRT.dispose();
                 } catch (e) {
                     // ignore
                 }
-                return createDepthTarget(name);
-            };
-
-            this.contactShadowShipDepthRT = ensureSize(this.contactShadowShipDepthRT, 'mm_shipDepth');
-
-                if (!this.contactShadowDepthMaterial) {
-                    this.contactShadowDepthMaterial = new THREE.MeshDepthMaterial();
-                    this.contactShadowDepthMaterial.blending = THREE.NoBlending;
-                }
-                }
-
-            ensureSpacecraftSelfShadowTargets() {
-                if (!this.spacecraftSelfShadowEnabled) return false;
-                if (!this.renderer || !this.scene) return false;
-                if (typeof THREE.WebGLRenderTarget !== 'function') return false;
-                if (typeof THREE.DepthTexture !== 'function') {
-                    console.warn('DepthTexture unavailable; disabling sShadow.');
-                    this.spacecraftSelfShadowDepthRT = null;
-                    this.spacecraftSelfShadowCamera = null;
-                    return false;
-                }
-
-                const size = 4096;
-
-                const needsNewTarget = () => {
-                    const rt = this.spacecraftSelfShadowDepthRT;
-                    if (!rt || !rt.depthTexture || !rt.depthTexture.isDepthTexture) return true;
-                    const img = rt.depthTexture.image;
-                    return !img || img.width !== size || img.height !== size;
-                };
-
-                if (needsNewTarget()) {
-                    if (this.spacecraftSelfShadowDepthRT) {
-                        try {
-                            this.spacecraftSelfShadowDepthRT.dispose();
-                        } catch (e) {
-                            // ignore
-                        }
-                    }
-                    const rt = new THREE.WebGLRenderTarget(size, size, {
-                        minFilter: THREE.NearestFilter,
-                        magFilter: THREE.NearestFilter,
-                        format: THREE.RGBAFormat,
-                        type: THREE.UnsignedByteType,
-                        depthBuffer: true,
-                        stencilBuffer: false
-                    });
-                    rt.texture.name = 'mm_sShadowDepthColor';
-                    const depthTexture = new THREE.DepthTexture(size, size);
-                    depthTexture.type = THREE.UnsignedShortType;
-                    depthTexture.format = THREE.DepthFormat;
-                    depthTexture.minFilter = THREE.NearestFilter;
-                    depthTexture.magFilter = THREE.NearestFilter;
-                    depthTexture.generateMipmaps = false;
-                    rt.depthTexture = depthTexture;
-                    this.spacecraftSelfShadowDepthRT = rt;
-                }
-
-                if (!this.spacecraftSelfShadowDepthMaterial) {
-                    this.spacecraftSelfShadowDepthMaterial = new THREE.MeshDepthMaterial();
-                    this.spacecraftSelfShadowDepthMaterial.blending = THREE.NoBlending;
-                }
-
-                if (!this.spacecraftSelfShadowCamera) {
-                    this.spacecraftSelfShadowCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 50);
-                    // Render ship-only via layer.
-                    this.spacecraftSelfShadowCamera.layers.set(CONTACT_SHADOW_LAYER);
-                }
-
-                if (this._sShadowBiasMatrix) {
-                    this._sShadowBiasMatrix.set(
-                        0.5, 0.0, 0.0, 0.5,
-                        0.0, 0.5, 0.0, 0.5,
-                        0.0, 0.0, 0.5, 0.5,
-                        0.0, 0.0, 0.0, 1.0
-                    );
-                }
-
-                return true;
             }
+            const rt = new THREE.WebGLRenderTarget(size, size, {
+                minFilter: THREE.NearestFilter,
+                magFilter: THREE.NearestFilter,
+                format: THREE.RGBAFormat,
+                type: THREE.UnsignedByteType,
+                depthBuffer: true,
+                stencilBuffer: false
+            });
+            rt.texture.name = 'mm_sShadowDepthColor';
+            const depthTexture = new THREE.DepthTexture(size, size);
+            depthTexture.type = THREE.UnsignedShortType;
+            depthTexture.format = THREE.DepthFormat;
+            depthTexture.minFilter = THREE.NearestFilter;
+            depthTexture.magFilter = THREE.NearestFilter;
+            depthTexture.generateMipmaps = false;
+            rt.depthTexture = depthTexture;
+            this.spacecraftSelfShadowDepthRT = rt;
+        }
 
-            ensureSsaoTargets(width, height, pixelRatio) {
-                if (!this.renderer) return;
+        if (!this.spacecraftSelfShadowDepthMaterial) {
+            this.spacecraftSelfShadowDepthMaterial = new THREE.MeshDepthMaterial();
+            this.spacecraftSelfShadowDepthMaterial.blending = THREE.NoBlending;
+        }
 
-                const overrides = getRequestedSsaoParams() || {};
-                const scale = (typeof overrides.scale === 'number') ? overrides.scale : 0.5;
+        if (!this.spacecraftSelfShadowCamera) {
+            this.spacecraftSelfShadowCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 50);
+            // Render ship-only via layer.
+            this.spacecraftSelfShadowCamera.layers.set(CONTACT_SHADOW_LAYER);
+        }
 
-                const w = Math.max(1, Math.floor(width * pixelRatio * scale));
-                const h = Math.max(1, Math.floor(height * pixelRatio * scale));
+        if (this._sShadowBiasMatrix) {
+            this._sShadowBiasMatrix.set(
+                0.5, 0.0, 0.0, 0.5,
+                0.0, 0.5, 0.0, 0.5,
+                0.0, 0.0, 0.5, 0.5,
+                0.0, 0.0, 0.0, 1.0
+            );
+        }
 
-                let targetType = THREE.UnsignedByteType;
-                const supportsHalfFloat =
-                    !!(this.renderer && this.renderer.capabilities && this.renderer.capabilities.isWebGL2) &&
-                    !!(this.renderer && this.renderer.extensions && typeof this.renderer.extensions.has === 'function') &&
-                    (this.renderer.extensions.has('EXT_color_buffer_float') || this.renderer.extensions.has('EXT_color_buffer_half_float'));
-                if (supportsHalfFloat && typeof THREE.HalfFloatType !== 'undefined') {
-                    targetType = THREE.HalfFloatType;
-                }
+        return true;
+    }
 
-                const ensureSize = (rt, name) => {
-                    if (!rt) {
-                        const next = new THREE.WebGLRenderTarget(w, h, {
-                            minFilter: THREE.LinearFilter,
-                            magFilter: THREE.LinearFilter,
-                            format: THREE.RGBAFormat,
-                            type: targetType,
-                            depthBuffer: false,
-                            stencilBuffer: false
-                        });
-                        next.texture.name = name;
-                        return next;
-                    }
-                    const img = rt.texture && rt.texture.image ? rt.texture.image : null;
-                    const rw = (typeof rt.width === 'number') ? rt.width : (img && img.width ? img.width : 0);
-                    const rh = (typeof rt.height === 'number') ? rt.height : (img && img.height ? img.height : 0);
-                    const ok = rw === w && rh === h;
-                    if (ok) return rt;
-                    try {
-                        rt.dispose();
-                    } catch (e) {
-                        // ignore
-                    }
-                    const next = new THREE.WebGLRenderTarget(w, h, {
-                        minFilter: THREE.LinearFilter,
-                        magFilter: THREE.LinearFilter,
-                        format: THREE.RGBAFormat,
-                        type: targetType,
-                        depthBuffer: false,
-                        stencilBuffer: false
-                    });
-                    next.texture.name = name;
-                    return next;
-                };
+    ensureSsaoTargets(width, height, pixelRatio) {
+        if (!this.renderer) return;
 
-                this.ssaoRT = ensureSize(this.ssaoRT, 'mm_ssao');
-                this.ssaoBlurRT = ensureSize(this.ssaoBlurRT, 'mm_ssaoBlur');
-            }
+        const overrides = getRequestedSsaoParams() || {};
+        const scale = (typeof overrides.scale === 'number') ? overrides.scale : 0.5;
 
-            setupSsaoViews() {
-                if (!this.renderer) return;
+        const w = Math.max(1, Math.floor(width * pixelRatio * scale));
+        const h = Math.max(1, Math.floor(height * pixelRatio * scale));
 
-                if (!this.ssaoNoiseTexture) {
-                    const size = 4;
-                    const data = new Uint8Array(size * size * 4);
-                    for (let i = 0; i < size * size; i++) {
-                        const rx = Math.random() * 2 - 1;
-                        const ry = Math.random() * 2 - 1;
-                        data[i * 4] = Math.floor((rx * 0.5 + 0.5) * 255);
-                        data[i * 4 + 1] = Math.floor((ry * 0.5 + 0.5) * 255);
-                        data[i * 4 + 2] = 128;
-                        data[i * 4 + 3] = 255;
-                    }
-                    const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-                    tex.type = THREE.UnsignedByteType;
-                    tex.minFilter = THREE.NearestFilter;
-                    tex.magFilter = THREE.NearestFilter;
-                    tex.wrapS = THREE.RepeatWrapping;
-                    tex.wrapT = THREE.RepeatWrapping;
-                    tex.needsUpdate = true;
-                    this.ssaoNoiseTexture = tex;
-                    this.registerDataTexture(tex);
-                }
+        let targetType = THREE.UnsignedByteType;
+        const supportsHalfFloat =
+            !!(this.renderer && this.renderer.capabilities && this.renderer.capabilities.isWebGL2) &&
+            !!(this.renderer && this.renderer.extensions && typeof this.renderer.extensions.has === 'function') &&
+            (this.renderer.extensions.has('EXT_color_buffer_float') || this.renderer.extensions.has('EXT_color_buffer_half_float'));
+        if (supportsHalfFloat && typeof THREE.HalfFloatType !== 'undefined') {
+            targetType = THREE.HalfFloatType;
+        }
 
-                if (!this.ssaoKernel) {
-                    const kernel = [];
-                    const kernelSize = 32;
-                    for (let i = 0; i < kernelSize; i++) {
-                        const v = new THREE.Vector3(
-                            Math.random() * 2 - 1,
-                            Math.random() * 2 - 1,
-                            Math.random()
-                        );
-                        v.normalize();
-                        const t = i / kernelSize;
-                        const s = THREE.MathUtils.lerp(0.1, 1.0, t * t);
-                        v.multiplyScalar(s);
-                        kernel.push(v);
-                    }
-                    this.ssaoKernel = kernel;
-                }
-
-                if (!this.ssaoScene) {
-                    this.ssaoScene = new THREE.Scene();
-                    this.ssaoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-                    this.ssaoMaterial = new THREE.ShaderMaterial({
-                        uniforms: THREE.UniformsUtils.clone(SpacecraftSsaoShader.uniforms),
-                        vertexShader: SpacecraftSsaoShader.vertexShader,
-                        fragmentShader: SpacecraftSsaoShader.fragmentShader,
-                        depthTest: false,
-                        depthWrite: false
-                    });
-                    this.ssaoMaterial.toneMapped = false;
-                    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.ssaoMaterial);
-                    quad.frustumCulled = false;
-                    this.ssaoScene.add(quad);
-                }
-
-                if (!this.ssaoBlurScene) {
-                    this.ssaoBlurScene = new THREE.Scene();
-                    this.ssaoBlurCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-                    this.ssaoBlurMaterial = new THREE.ShaderMaterial({
-                        uniforms: THREE.UniformsUtils.clone(SpacecraftSsaoBlurShader.uniforms),
-                        vertexShader: SpacecraftSsaoBlurShader.vertexShader,
-                        fragmentShader: SpacecraftSsaoBlurShader.fragmentShader,
-                        depthTest: false,
-                        depthWrite: false
-                    });
-                    this.ssaoBlurMaterial.toneMapped = false;
-                    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.ssaoBlurMaterial);
-                    quad.frustumCulled = false;
-                    this.ssaoBlurScene.add(quad);
-                }
-
-                if (!this.ssaoDebugScene) {
-                    this.ssaoDebugScene = new THREE.Scene();
-                    this.ssaoDebugCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-                    this.ssaoDebugMaterial = new THREE.ShaderMaterial({
-                        uniforms: THREE.UniformsUtils.clone(SpacecraftSsaoDebugShader.uniforms),
-                        vertexShader: SpacecraftSsaoDebugShader.vertexShader,
-                        fragmentShader: SpacecraftSsaoDebugShader.fragmentShader,
-                        depthTest: false,
-                        depthWrite: false
-                    });
-                    this.ssaoDebugMaterial.toneMapped = false;
-                    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.ssaoDebugMaterial);
-                    quad.frustumCulled = false;
-                    this.ssaoDebugScene.add(quad);
-                }
-            }
-
-            setupBloomDebugView() {
-                if (this.bloomDebugScene) return;
-                if (!this.renderer) return;
-
-                this.bloomDebugScene = new THREE.Scene();
-                this.bloomDebugCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-                this.bloomDebugMaterial = new THREE.ShaderMaterial({
-                    uniforms: THREE.UniformsUtils.clone(BloomDebugShader.uniforms),
-                    vertexShader: BloomDebugShader.vertexShader,
-                    fragmentShader: BloomDebugShader.fragmentShader,
-                    depthTest: false,
-                    depthWrite: false
+        const ensureSize = (rt, name) => {
+            if (!rt) {
+                const next = new THREE.WebGLRenderTarget(w, h, {
+                    minFilter: THREE.LinearFilter,
+                    magFilter: THREE.LinearFilter,
+                    format: THREE.RGBAFormat,
+                    type: targetType,
+                    depthBuffer: false,
+                    stencilBuffer: false
                 });
-                this.bloomDebugMaterial.toneMapped = false;
-
-                const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.bloomDebugMaterial);
-                quad.frustumCulled = false;
-                this.bloomDebugScene.add(quad);
+                next.texture.name = name;
+                return next;
             }
-
-            renderBloomDebug(bloomTexture) {
-                if (!this.renderer) return false;
-                if (!this.bloomDebugMaterial || !this.bloomDebugScene || !this.bloomDebugCamera) return false;
-
-                const tex = bloomTexture || this.ensureBlackTexture();
-                if (!tex) return false;
-
-                const uniforms = this.bloomDebugMaterial.uniforms;
-                uniforms.tBloom.value = tex;
-
-                const renderer = this.renderer;
-                const prevToneMapping = renderer.toneMapping;
-                const prevExposure = renderer.toneMappingExposure;
-                const prevTarget = renderer.getRenderTarget();
-
-                renderer.toneMapping = THREE.NoToneMapping;
-                renderer.toneMappingExposure = 1.0;
-                renderer.setRenderTarget(null);
-                renderer.render(this.bloomDebugScene, this.bloomDebugCamera);
-
-                renderer.setRenderTarget(prevTarget);
-                renderer.toneMapping = prevToneMapping;
-                renderer.toneMappingExposure = prevExposure;
-
-                return true;
+            const img = rt.texture && rt.texture.image ? rt.texture.image : null;
+            const rw = (typeof rt.width === 'number') ? rt.width : (img && img.width ? img.width : 0);
+            const rh = (typeof rt.height === 'number') ? rt.height : (img && img.height ? img.height : 0);
+            const ok = rw === w && rh === h;
+            if (ok) return rt;
+            try {
+                rt.dispose();
+            } catch (e) {
+                // ignore
             }
+            const next = new THREE.WebGLRenderTarget(w, h, {
+                minFilter: THREE.LinearFilter,
+                magFilter: THREE.LinearFilter,
+                format: THREE.RGBAFormat,
+                type: targetType,
+                depthBuffer: false,
+                stencilBuffer: false
+            });
+            next.texture.name = name;
+            return next;
+        };
 
-            setupContactShadowDebugView() {
-                if (this.contactShadowDebugScene) return;
-                if (!this.renderer) return;
+        this.ssaoRT = ensureSize(this.ssaoRT, 'mm_ssao');
+        this.ssaoBlurRT = ensureSize(this.ssaoBlurRT, 'mm_ssaoBlur');
+    }
 
-            this.contactShadowDebugScene = new THREE.Scene();
-            this.contactShadowDebugCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    setupSsaoViews() {
+        if (!this.renderer) return;
 
-            this.contactShadowDebugMaterial = new THREE.ShaderMaterial({
-                uniforms: THREE.UniformsUtils.clone(ContactShadowDebugShader.uniforms),
-                vertexShader: ContactShadowDebugShader.vertexShader,
-                fragmentShader: ContactShadowDebugShader.fragmentShader,
+        if (!this.ssaoNoiseTexture) {
+            const size = 4;
+            const data = new Uint8Array(size * size * 4);
+            for (let i = 0; i < size * size; i++) {
+                const rx = Math.random() * 2 - 1;
+                const ry = Math.random() * 2 - 1;
+                data[i * 4] = Math.floor((rx * 0.5 + 0.5) * 255);
+                data[i * 4 + 1] = Math.floor((ry * 0.5 + 0.5) * 255);
+                data[i * 4 + 2] = 128;
+                data[i * 4 + 3] = 255;
+            }
+            const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+            tex.type = THREE.UnsignedByteType;
+            tex.minFilter = THREE.NearestFilter;
+            tex.magFilter = THREE.NearestFilter;
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.needsUpdate = true;
+            this.ssaoNoiseTexture = tex;
+            this.registerDataTexture(tex);
+        }
+
+        if (!this.ssaoKernel) {
+            const kernel = [];
+            const kernelSize = 32;
+            for (let i = 0; i < kernelSize; i++) {
+                const v = new THREE.Vector3(
+                    Math.random() * 2 - 1,
+                    Math.random() * 2 - 1,
+                    Math.random()
+                );
+                v.normalize();
+                const t = i / kernelSize;
+                const s = THREE.MathUtils.lerp(0.1, 1.0, t * t);
+                v.multiplyScalar(s);
+                kernel.push(v);
+            }
+            this.ssaoKernel = kernel;
+        }
+
+        if (!this.ssaoScene) {
+            this.ssaoScene = new THREE.Scene();
+            this.ssaoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            this.ssaoMaterial = new THREE.ShaderMaterial({
+                uniforms: THREE.UniformsUtils.clone(SpacecraftSsaoShader.uniforms),
+                vertexShader: SpacecraftSsaoShader.vertexShader,
+                fragmentShader: SpacecraftSsaoShader.fragmentShader,
                 depthTest: false,
                 depthWrite: false
             });
-            this.contactShadowDebugMaterial.toneMapped = false;
-
-            const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.contactShadowDebugMaterial);
+            this.ssaoMaterial.toneMapped = false;
+            const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.ssaoMaterial);
             quad.frustumCulled = false;
-            this.contactShadowDebugMesh = quad;
-            this.contactShadowDebugScene.add(quad);
+            this.ssaoScene.add(quad);
         }
 
-            renderContactShadowDepthTargets() {
-                if (!this.renderer || !this.scene || !this.camera) return false;
-                if (!this.contactShadowShipDepthRT) return false;
-                if (!this.contactShadowDepthMaterial) return false;
+        if (!this.ssaoBlurScene) {
+            this.ssaoBlurScene = new THREE.Scene();
+            this.ssaoBlurCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            this.ssaoBlurMaterial = new THREE.ShaderMaterial({
+                uniforms: THREE.UniformsUtils.clone(SpacecraftSsaoBlurShader.uniforms),
+                vertexShader: SpacecraftSsaoBlurShader.vertexShader,
+                fragmentShader: SpacecraftSsaoBlurShader.fragmentShader,
+                depthTest: false,
+                depthWrite: false
+            });
+            this.ssaoBlurMaterial.toneMapped = false;
+            const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.ssaoBlurMaterial);
+            quad.frustumCulled = false;
+            this.ssaoBlurScene.add(quad);
+        }
 
-            const renderer = this.renderer;
-            const scene = this.scene;
-            const camera = this.camera;
+        if (!this.ssaoDebugScene) {
+            this.ssaoDebugScene = new THREE.Scene();
+            this.ssaoDebugCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            this.ssaoDebugMaterial = new THREE.ShaderMaterial({
+                uniforms: THREE.UniformsUtils.clone(SpacecraftSsaoDebugShader.uniforms),
+                vertexShader: SpacecraftSsaoDebugShader.vertexShader,
+                fragmentShader: SpacecraftSsaoDebugShader.fragmentShader,
+                depthTest: false,
+                depthWrite: false
+            });
+            this.ssaoDebugMaterial.toneMapped = false;
+            const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.ssaoDebugMaterial);
+            quad.frustumCulled = false;
+            this.ssaoDebugScene.add(quad);
+        }
+    }
 
-            const prevTarget = renderer.getRenderTarget();
-            const prevOverride = scene.overrideMaterial;
-            const prevMask = camera.layers.mask;
-            const prevShadowAutoUpdate = renderer.shadowMap ? renderer.shadowMap.autoUpdate : null;
-            const prevShadowNeedsUpdate = renderer.shadowMap ? renderer.shadowMap.needsUpdate : null;
+    setupBloomDebugView() {
+        if (this.bloomDebugScene) return;
+        if (!this.renderer) return;
 
-            if (renderer.shadowMap && typeof renderer.shadowMap.autoUpdate === 'boolean') {
-                renderer.shadowMap.autoUpdate = false;
-                renderer.shadowMap.needsUpdate = false;
-            }
+        this.bloomDebugScene = new THREE.Scene();
+        this.bloomDebugCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        this.bloomDebugMaterial = new THREE.ShaderMaterial({
+            uniforms: THREE.UniformsUtils.clone(BloomDebugShader.uniforms),
+            vertexShader: BloomDebugShader.vertexShader,
+            fragmentShader: BloomDebugShader.fragmentShader,
+            depthTest: false,
+            depthWrite: false
+        });
+        this.bloomDebugMaterial.toneMapped = false;
 
-            // Ship-only depth via layer.
-            camera.layers.set(CONTACT_SHADOW_LAYER);
-            renderer.setRenderTarget(this.contactShadowShipDepthRT);
-            renderer.clear(true, true, true);
-            scene.overrideMaterial = this.contactShadowDepthMaterial;
-            renderer.render(scene, camera);
+        const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.bloomDebugMaterial);
+        quad.frustumCulled = false;
+        this.bloomDebugScene.add(quad);
+    }
 
-            camera.layers.mask = prevMask;
-            scene.overrideMaterial = prevOverride;
-            renderer.setRenderTarget(prevTarget);
-            if (renderer.shadowMap && typeof renderer.shadowMap.autoUpdate === 'boolean') {
-                renderer.shadowMap.autoUpdate = prevShadowAutoUpdate;
-                renderer.shadowMap.needsUpdate = prevShadowNeedsUpdate;
-            }
+    renderBloomDebug(bloomTexture) {
+        if (!this.renderer) return false;
+        if (!this.bloomDebugMaterial || !this.bloomDebugScene || !this.bloomDebugCamera) return false;
 
-                return true;
-            }
+        const tex = bloomTexture || this.ensureBlackTexture();
+        if (!tex) return false;
 
-                updateSpacecraftSelfShadowCamera() {
-                    if (!this.spacecraftSelfShadowEnabled) return false;
-                    if (!this.spacecraftSelfShadowCamera) return false;
-                    if (!this.objects || !this.objects.spacecraft || typeof this.objects.spacecraft.getMesh !== 'function') return false;
+        const uniforms = this.bloomDebugMaterial.uniforms;
+        uniforms.tBloom.value = tex;
 
-                    const shipMesh = this.objects.spacecraft.getMesh();
-                    if (!shipMesh) return false;
+        const renderer = this.renderer;
+        const prevToneMapping = renderer.toneMapping;
+        const prevExposure = renderer.toneMappingExposure;
+        const prevTarget = renderer.getRenderTarget();
 
-                    if (!this._sShadowBox) this._sShadowBox = new THREE.Box3();
-                    if (!this._sShadowBoxCenter) this._sShadowBoxCenter = new THREE.Vector3();
-                    if (!this._sShadowBoxSize) this._sShadowBoxSize = new THREE.Vector3();
-                    if (!this._sShadowSphere) this._sShadowSphere = new THREE.Sphere();
-                    if (!this._sShadowSunDir) this._sShadowSunDir = new THREE.Vector3();
-                    if (!this._sShadowSunPos) this._sShadowSunPos = new THREE.Vector3();
-                    if (!this._sShadowTmpUp) this._sShadowTmpUp = new THREE.Vector3();
-                    if (!this._sShadowTmpVec) this._sShadowTmpVec = new THREE.Vector3();
-                    if (!this._sShadowCorners) {
-                        this._sShadowCorners = Array.from({ length: 8 }, () => new THREE.Vector3());
-                    }
-                    if (!this._sShadowCornerView) this._sShadowCornerView = new THREE.Vector3();
+        renderer.toneMapping = THREE.NoToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        renderer.setRenderTarget(null);
+        renderer.render(this.bloomDebugScene, this.bloomDebugCamera);
 
-                    const box = this._sShadowBox;
-                    const center = this._sShadowBoxCenter;
-                    const size = this._sShadowBoxSize;
+        renderer.setRenderTarget(prevTarget);
+        renderer.toneMapping = prevToneMapping;
+        renderer.toneMappingExposure = prevExposure;
 
-                    const overrides = getRequestedSpacecraftSelfShadowParams() || {};
-                    const fit = (typeof overrides.fit === 'boolean') ? overrides.fit : true;
-                    const snap = (typeof overrides.snap === 'boolean') ? overrides.snap : true;
+        return true;
+    }
 
-                    box.setFromObject(shipMesh);
-                    if (!Number.isFinite(box.min.x) || !Number.isFinite(box.max.x)) {
-                        return false;
-                    }
+    setupContactShadowDebugView() {
+        if (this.contactShadowDebugScene) return;
+        if (!this.renderer) return;
 
-                    box.getCenter(center);
-                    box.getSize(size);
-                    box.getBoundingSphere(this._sShadowSphere);
-                    const shipRadius = Math.max(0.01, this._sShadowSphere.radius);
+        this.contactShadowDebugScene = new THREE.Scene();
+        this.contactShadowDebugCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-                if (this.sunWorldPosition) {
-                    this._sShadowSunPos.copy(this.sunWorldPosition);
-                } else {
-                    this._sShadowSunPos.set(0, 0, 0);
-                }
+        this.contactShadowDebugMaterial = new THREE.ShaderMaterial({
+            uniforms: THREE.UniformsUtils.clone(ContactShadowDebugShader.uniforms),
+            vertexShader: ContactShadowDebugShader.vertexShader,
+            fragmentShader: ContactShadowDebugShader.fragmentShader,
+            depthTest: false,
+            depthWrite: false
+        });
+        this.contactShadowDebugMaterial.toneMapped = false;
 
-                this._sShadowSunDir.copy(center).sub(this._sShadowSunPos);
-                if (this._sShadowSunDir.lengthSq() <= 1e-12) {
-                    this._sShadowSunDir.set(1, 0, 0);
-                } else {
-                    this._sShadowSunDir.normalize();
-                }
+        const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.contactShadowDebugMaterial);
+        quad.frustumCulled = false;
+        this.contactShadowDebugMesh = quad;
+        this.contactShadowDebugScene.add(quad);
+    }
 
-                const cam = this.spacecraftSelfShadowCamera;
-                const maxExtent = Math.max(size.x, size.y, size.z);
-                const lightDistance = Math.max(2.0, shipRadius * 10.0, maxExtent * 6.0);
+    renderContactShadowDepthTargets() {
+        if (!this.renderer || !this.scene || !this.camera) return false;
+        if (!this.contactShadowShipDepthRT) return false;
+        if (!this.contactShadowDepthMaterial) return false;
 
-                // Choose a stable up vector to avoid gimbal issues when sunDir aligns with world up.
-                this._sShadowTmpUp.set(0, 1, 0);
-                if (Math.abs(this._sShadowSunDir.dot(this._sShadowTmpUp)) > 0.95) {
-                    this._sShadowTmpUp.set(1, 0, 0);
-                    }
+        const renderer = this.renderer;
+        const scene = this.scene;
+        const camera = this.camera;
 
-                    cam.up.copy(this._sShadowTmpUp);
-                    this._sShadowTmpVec.copy(this._sShadowSunDir).multiplyScalar(lightDistance);
-                    cam.position.copy(center).sub(this._sShadowTmpVec);
-                    cam.lookAt(center);
-                    cam.updateMatrixWorld();
+        const prevTarget = renderer.getRenderTarget();
+        const prevOverride = scene.overrideMaterial;
+        const prevMask = camera.layers.mask;
+        const prevShadowAutoUpdate = renderer.shadowMap ? renderer.shadowMap.autoUpdate : null;
+        const prevShadowNeedsUpdate = renderer.shadowMap ? renderer.shadowMap.needsUpdate : null;
 
-                    const defaultMarginXY = Math.max(0.02, shipRadius * 0.25);
-                    const defaultMarginZ = Math.max(0.2, shipRadius * 2.0);
-                    const marginXY = (typeof overrides.marginXY === 'number') ? overrides.marginXY : defaultMarginXY;
-                    const marginZ = (typeof overrides.marginZ === 'number') ? overrides.marginZ : defaultMarginZ;
+        if (renderer.shadowMap && typeof renderer.shadowMap.autoUpdate === 'boolean') {
+            renderer.shadowMap.autoUpdate = false;
+            renderer.shadowMap.needsUpdate = false;
+        }
 
-                    if (!fit) {
-                        const r = shipRadius + marginXY;
-                        cam.left = -r;
-                        cam.right = r;
-                        cam.bottom = -r;
-                        cam.top = r;
-                        cam.near = Math.max(0.01, lightDistance - shipRadius - marginZ);
-                        cam.far = lightDistance + shipRadius + marginZ;
-                        cam.updateProjectionMatrix();
-                        cam.updateMatrixWorld();
-                        return true;
-                    }
+        // Ship-only depth via layer.
+        camera.layers.set(CONTACT_SHADOW_LAYER);
+        renderer.setRenderTarget(this.contactShadowShipDepthRT);
+        renderer.clear(true, true, true);
+        scene.overrideMaterial = this.contactShadowDepthMaterial;
+        renderer.render(scene, camera);
 
-                    // Tight fit: compute ship bounds in light-view space, then optionally snap the ortho frustum to texels.
-                    const corners = this._sShadowCorners;
-                    const min = box.min;
-                    const max = box.max;
-                    corners[0].set(min.x, min.y, min.z);
-                    corners[1].set(max.x, min.y, min.z);
-                    corners[2].set(min.x, max.y, min.z);
-                    corners[3].set(max.x, max.y, min.z);
-                    corners[4].set(min.x, min.y, max.z);
-                    corners[5].set(max.x, min.y, max.z);
-                    corners[6].set(min.x, max.y, max.z);
-                    corners[7].set(max.x, max.y, max.z);
+        camera.layers.mask = prevMask;
+        scene.overrideMaterial = prevOverride;
+        renderer.setRenderTarget(prevTarget);
+        if (renderer.shadowMap && typeof renderer.shadowMap.autoUpdate === 'boolean') {
+            renderer.shadowMap.autoUpdate = prevShadowAutoUpdate;
+            renderer.shadowMap.needsUpdate = prevShadowNeedsUpdate;
+        }
 
-                    let minX = Infinity;
-                    let maxX = -Infinity;
-                    let minY = Infinity;
-                    let maxY = -Infinity;
-                    let minDepth = Infinity;
-                    let maxDepth = -Infinity;
+        return true;
+    }
 
-                    for (let i = 0; i < 8; i++) {
-                        this._sShadowCornerView.copy(corners[i]).applyMatrix4(cam.matrixWorldInverse);
-                        const vx = this._sShadowCornerView.x;
-                        const vy = this._sShadowCornerView.y;
-                        const vz = this._sShadowCornerView.z;
-                        if (!Number.isFinite(vx) || !Number.isFinite(vy) || !Number.isFinite(vz)) continue;
+    updateSpacecraftSelfShadowCamera() {
+        if (!this.spacecraftSelfShadowEnabled) return false;
+        if (!this.spacecraftSelfShadowCamera) return false;
+        if (!this.objects || !this.objects.spacecraft || typeof this.objects.spacecraft.getMesh !== 'function') return false;
 
-                        minX = Math.min(minX, vx);
-                        maxX = Math.max(maxX, vx);
-                        minY = Math.min(minY, vy);
-                        maxY = Math.max(maxY, vy);
+        const shipMesh = this.objects.spacecraft.getMesh();
+        if (!shipMesh) return false;
 
-                        const depth = -vz;
-                        minDepth = Math.min(minDepth, depth);
-                        maxDepth = Math.max(maxDepth, depth);
-                    }
+        if (!this._sShadowBox) this._sShadowBox = new THREE.Box3();
+        if (!this._sShadowBoxCenter) this._sShadowBoxCenter = new THREE.Vector3();
+        if (!this._sShadowBoxSize) this._sShadowBoxSize = new THREE.Vector3();
+        if (!this._sShadowSphere) this._sShadowSphere = new THREE.Sphere();
+        if (!this._sShadowSunDir) this._sShadowSunDir = new THREE.Vector3();
+        if (!this._sShadowSunPos) this._sShadowSunPos = new THREE.Vector3();
+        if (!this._sShadowTmpUp) this._sShadowTmpUp = new THREE.Vector3();
+        if (!this._sShadowTmpVec) this._sShadowTmpVec = new THREE.Vector3();
+        if (!this._sShadowCorners) {
+            this._sShadowCorners = Array.from({ length: 8 }, () => new THREE.Vector3());
+        }
+        if (!this._sShadowCornerView) this._sShadowCornerView = new THREE.Vector3();
 
-                    if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
-                        return false;
-                    }
+        const box = this._sShadowBox;
+        const center = this._sShadowBoxCenter;
+        const size = this._sShadowBoxSize;
 
-                    minX -= marginXY;
-                    maxX += marginXY;
-                    minY -= marginXY;
-                    maxY += marginXY;
+        const overrides = getRequestedSpacecraftSelfShadowParams() || {};
+        const fit = (typeof overrides.fit === 'boolean') ? overrides.fit : true;
+        const snap = (typeof overrides.snap === 'boolean') ? overrides.snap : true;
 
-                    minDepth = Math.max(0.01, minDepth - marginZ);
-                    maxDepth = Math.max(minDepth + 0.01, maxDepth + marginZ);
+        box.setFromObject(shipMesh);
+        if (!Number.isFinite(box.min.x) || !Number.isFinite(box.max.x)) {
+            return false;
+        }
 
-                    if (snap) {
-                        const depthTex = this.spacecraftSelfShadowDepthRT ? this.spacecraftSelfShadowDepthRT.depthTexture : null;
-                        const img = depthTex && depthTex.image ? depthTex.image : null;
-                        const mapSize = (img && img.width) ? img.width : 2048;
+        box.getCenter(center);
+        box.getSize(size);
+        box.getBoundingSphere(this._sShadowSphere);
+        const shipRadius = Math.max(0.01, this._sShadowSphere.radius);
 
-                        const w = Math.max(1e-6, maxX - minX);
-                        const h = Math.max(1e-6, maxY - minY);
-                        const texelX = w / Math.max(1, mapSize);
-                        const texelY = h / Math.max(1, mapSize);
+        if (this.sunWorldPosition) {
+            this._sShadowSunPos.copy(this.sunWorldPosition);
+        } else {
+            this._sShadowSunPos.set(0, 0, 0);
+        }
 
-                        const cx = (minX + maxX) * 0.5;
-                        const cy = (minY + maxY) * 0.5;
+        this._sShadowSunDir.copy(center).sub(this._sShadowSunPos);
+        if (this._sShadowSunDir.lengthSq() <= 1e-12) {
+            this._sShadowSunDir.set(1, 0, 0);
+        } else {
+            this._sShadowSunDir.normalize();
+        }
 
-                        const snappedCx = Math.round(cx / texelX) * texelX;
-                        const snappedCy = Math.round(cy / texelY) * texelY;
+        const cam = this.spacecraftSelfShadowCamera;
+        const maxExtent = Math.max(size.x, size.y, size.z);
+        const lightDistance = Math.max(2.0, shipRadius * 10.0, maxExtent * 6.0);
 
-                        const dx = snappedCx - cx;
-                        const dy = snappedCy - cy;
-                        minX += dx;
-                        maxX += dx;
-                        minY += dy;
-                        maxY += dy;
-                    }
+        // Choose a stable up vector to avoid gimbal issues when sunDir aligns with world up.
+        this._sShadowTmpUp.set(0, 1, 0);
+        if (Math.abs(this._sShadowSunDir.dot(this._sShadowTmpUp)) > 0.95) {
+            this._sShadowTmpUp.set(1, 0, 0);
+        }
 
-                    cam.left = minX;
-                    cam.right = maxX;
-                    cam.bottom = minY;
-                    cam.top = maxY;
-                    cam.near = minDepth;
-                    cam.far = maxDepth;
-                    cam.updateProjectionMatrix();
-                    cam.updateMatrixWorld();
+        cam.up.copy(this._sShadowTmpUp);
+        this._sShadowTmpVec.copy(this._sShadowSunDir).multiplyScalar(lightDistance);
+        cam.position.copy(center).sub(this._sShadowTmpVec);
+        cam.lookAt(center);
+        cam.updateMatrixWorld();
 
-                    return true;
-                }
+        const defaultMarginXY = Math.max(0.02, shipRadius * 0.25);
+        const defaultMarginZ = Math.max(0.2, shipRadius * 2.0);
+        const marginXY = (typeof overrides.marginXY === 'number') ? overrides.marginXY : defaultMarginXY;
+        const marginZ = (typeof overrides.marginZ === 'number') ? overrides.marginZ : defaultMarginZ;
 
-            renderSpacecraftSelfShadowDepthTarget() {
-                if (!this.spacecraftSelfShadowEnabled) return false;
-                if (!this.renderer || !this.scene) return false;
-                if (!this.spacecraftSelfShadowDepthRT) return false;
-                if (!this.spacecraftSelfShadowDepthMaterial) return false;
-                if (!this.spacecraftSelfShadowCamera) return false;
+        if (!fit) {
+            const r = shipRadius + marginXY;
+            cam.left = -r;
+            cam.right = r;
+            cam.bottom = -r;
+            cam.top = r;
+            cam.near = Math.max(0.01, lightDistance - shipRadius - marginZ);
+            cam.far = lightDistance + shipRadius + marginZ;
+            cam.updateProjectionMatrix();
+            cam.updateMatrixWorld();
+            return true;
+        }
 
-                const renderer = this.renderer;
-                const scene = this.scene;
-                const camera = this.spacecraftSelfShadowCamera;
+        // Tight fit: compute ship bounds in light-view space, then optionally snap the ortho frustum to texels.
+        const corners = this._sShadowCorners;
+        const min = box.min;
+        const max = box.max;
+        corners[0].set(min.x, min.y, min.z);
+        corners[1].set(max.x, min.y, min.z);
+        corners[2].set(min.x, max.y, min.z);
+        corners[3].set(max.x, max.y, min.z);
+        corners[4].set(min.x, min.y, max.z);
+        corners[5].set(max.x, min.y, max.z);
+        corners[6].set(min.x, max.y, max.z);
+        corners[7].set(max.x, max.y, max.z);
 
-                const prevTarget = renderer.getRenderTarget();
-                const prevOverride = scene.overrideMaterial;
-                const prevShadowAutoUpdate = renderer.shadowMap ? renderer.shadowMap.autoUpdate : null;
-                const prevShadowNeedsUpdate = renderer.shadowMap ? renderer.shadowMap.needsUpdate : null;
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+        let minDepth = Infinity;
+        let maxDepth = -Infinity;
 
-                if (renderer.shadowMap && typeof renderer.shadowMap.autoUpdate === 'boolean') {
-                    renderer.shadowMap.autoUpdate = false;
-                    renderer.shadowMap.needsUpdate = false;
-                }
+        for (let i = 0; i < 8; i++) {
+            this._sShadowCornerView.copy(corners[i]).applyMatrix4(cam.matrixWorldInverse);
+            const vx = this._sShadowCornerView.x;
+            const vy = this._sShadowCornerView.y;
+            const vz = this._sShadowCornerView.z;
+            if (!Number.isFinite(vx) || !Number.isFinite(vy) || !Number.isFinite(vz)) continue;
 
-                renderer.setRenderTarget(this.spacecraftSelfShadowDepthRT);
-                renderer.clear(true, true, true);
-                scene.overrideMaterial = this.spacecraftSelfShadowDepthMaterial;
-                renderer.render(scene, camera);
+            minX = Math.min(minX, vx);
+            maxX = Math.max(maxX, vx);
+            minY = Math.min(minY, vy);
+            maxY = Math.max(maxY, vy);
 
-                scene.overrideMaterial = prevOverride;
-                renderer.setRenderTarget(prevTarget);
-                if (renderer.shadowMap && typeof renderer.shadowMap.autoUpdate === 'boolean') {
-                    renderer.shadowMap.autoUpdate = prevShadowAutoUpdate;
-                    renderer.shadowMap.needsUpdate = prevShadowNeedsUpdate;
-                }
+            const depth = -vz;
+            minDepth = Math.min(minDepth, depth);
+            maxDepth = Math.max(maxDepth, depth);
+        }
 
-                return true;
-            }
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+            return false;
+        }
 
-            renderContactShadowDebug() {
-            if (!this.contactShadowDebugMaterial || !this.contactShadowDebugScene || !this.contactShadowDebugCamera) {
-                return false;
-            }
+        minX -= marginXY;
+        maxX += marginXY;
+        minY -= marginXY;
+        maxY += marginXY;
 
-            const uniforms = this.contactShadowDebugMaterial.uniforms;
-            const shipDepth = this.contactShadowShipDepthRT ? this.contactShadowShipDepthRT.depthTexture : null;
+        minDepth = Math.max(0.01, minDepth - marginZ);
+        maxDepth = Math.max(minDepth + 0.01, maxDepth + marginZ);
 
-            uniforms.tShipDepth.value = shipDepth;
-            uniforms.uDepthAvailable.value = shipDepth ? 1.0 : 0.0;
+        if (snap) {
+            const depthTex = this.spacecraftSelfShadowDepthRT ? this.spacecraftSelfShadowDepthRT.depthTexture : null;
+            const img = depthTex && depthTex.image ? depthTex.image : null;
+            const mapSize = (img && img.width) ? img.width : 2048;
 
-            uniforms.uDebugMode.value = this.csDebugMode;
-            uniforms.uNear.value = this.camera ? this.camera.near : 0.01;
-            uniforms.uFar.value = this.camera ? this.camera.far : 3000.0;
+            const w = Math.max(1e-6, maxX - minX);
+            const h = Math.max(1e-6, maxY - minY);
+            const texelX = w / Math.max(1, mapSize);
+            const texelY = h / Math.max(1, mapSize);
+
+            const cx = (minX + maxX) * 0.5;
+            const cy = (minY + maxY) * 0.5;
+
+            const snappedCx = Math.round(cx / texelX) * texelX;
+            const snappedCy = Math.round(cy / texelY) * texelY;
+
+            const dx = snappedCx - cx;
+            const dy = snappedCy - cy;
+            minX += dx;
+            maxX += dx;
+            minY += dy;
+            maxY += dy;
+        }
+
+        cam.left = minX;
+        cam.right = maxX;
+        cam.bottom = minY;
+        cam.top = maxY;
+        cam.near = minDepth;
+        cam.far = maxDepth;
+        cam.updateProjectionMatrix();
+        cam.updateMatrixWorld();
+
+        return true;
+    }
+
+    renderSpacecraftSelfShadowDepthTarget() {
+        if (!this.spacecraftSelfShadowEnabled) return false;
+        if (!this.renderer || !this.scene) return false;
+        if (!this.spacecraftSelfShadowDepthRT) return false;
+        if (!this.spacecraftSelfShadowDepthMaterial) return false;
+        if (!this.spacecraftSelfShadowCamera) return false;
+
+        const renderer = this.renderer;
+        const scene = this.scene;
+        const camera = this.spacecraftSelfShadowCamera;
+
+        const prevTarget = renderer.getRenderTarget();
+        const prevOverride = scene.overrideMaterial;
+        const prevShadowAutoUpdate = renderer.shadowMap ? renderer.shadowMap.autoUpdate : null;
+        const prevShadowNeedsUpdate = renderer.shadowMap ? renderer.shadowMap.needsUpdate : null;
+
+        if (renderer.shadowMap && typeof renderer.shadowMap.autoUpdate === 'boolean') {
+            renderer.shadowMap.autoUpdate = false;
+            renderer.shadowMap.needsUpdate = false;
+        }
+
+        renderer.setRenderTarget(this.spacecraftSelfShadowDepthRT);
+        renderer.clear(true, true, true);
+        scene.overrideMaterial = this.spacecraftSelfShadowDepthMaterial;
+        renderer.render(scene, camera);
+
+        scene.overrideMaterial = prevOverride;
+        renderer.setRenderTarget(prevTarget);
+        if (renderer.shadowMap && typeof renderer.shadowMap.autoUpdate === 'boolean') {
+            renderer.shadowMap.autoUpdate = prevShadowAutoUpdate;
+            renderer.shadowMap.needsUpdate = prevShadowNeedsUpdate;
+        }
+
+        return true;
+    }
+
+    renderContactShadowDebug() {
+        if (!this.contactShadowDebugMaterial || !this.contactShadowDebugScene || !this.contactShadowDebugCamera) {
+            return false;
+        }
+
+        const uniforms = this.contactShadowDebugMaterial.uniforms;
+        const shipDepth = this.contactShadowShipDepthRT ? this.contactShadowShipDepthRT.depthTexture : null;
+
+        uniforms.tShipDepth.value = shipDepth;
+        uniforms.uDepthAvailable.value = shipDepth ? 1.0 : 0.0;
+
+        uniforms.uDebugMode.value = this.csDebugMode;
+        uniforms.uNear.value = this.camera ? this.camera.near : 0.01;
+        uniforms.uFar.value = this.camera ? this.camera.far : 3000.0;
         if (this.camera) {
             if (!this._contactShadowDebugRefPos) {
                 this._contactShadowDebugRefPos = new THREE.Vector3();
@@ -3726,282 +3745,281 @@ class MarsMissionApp {
         if (typeof overrides.thickness === 'number') uniforms.uThickness.value = overrides.thickness;
         if (typeof overrides.steps === 'number') uniforms.uSteps.value = overrides.steps;
 
-            uniforms.uVisibilityEps.value = 0.002;
+        uniforms.uVisibilityEps.value = 0.002;
 
-            if (this.camera) {
-                uniforms.uProjectionMatrix.value.copy(this.camera.projectionMatrix);
-                uniforms.uInvProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
-                uniforms.uViewMatrix.value.copy(this.camera.matrixWorldInverse);
-                uniforms.uInvViewMatrix.value.copy(this.camera.matrixWorld);
+        if (this.camera) {
+            uniforms.uProjectionMatrix.value.copy(this.camera.projectionMatrix);
+            uniforms.uInvProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
+            uniforms.uViewMatrix.value.copy(this.camera.matrixWorldInverse);
+            uniforms.uInvViewMatrix.value.copy(this.camera.matrixWorld);
+        }
+
+        const renderer = this.renderer;
+        const prevToneMapping = renderer.toneMapping;
+        const prevExposure = renderer.toneMappingExposure;
+        const prevTarget = renderer.getRenderTarget();
+
+        renderer.toneMapping = THREE.NoToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        renderer.setRenderTarget(null);
+        renderer.render(this.contactShadowDebugScene, this.contactShadowDebugCamera);
+
+        renderer.setRenderTarget(prevTarget);
+        renderer.toneMapping = prevToneMapping;
+        renderer.toneMappingExposure = prevExposure;
+
+        return true;
+    }
+
+    renderSsao() {
+        if (!this.renderer || !this.camera) return false;
+        if (!this.ssaoRT || !this.ssaoMaterial || !this.ssaoScene || !this.ssaoCamera) return false;
+
+        const ssaoUniforms = this.ensureSsaoUniforms();
+        ssaoUniforms.uMMSsaoEnabled.value = 0.0;
+        ssaoUniforms.uMMSsaoTex.value = null;
+
+        const shipDepth = this.contactShadowShipDepthRT ? this.contactShadowShipDepthRT.depthTexture : null;
+        if (!shipDepth) return false;
+
+        const renderer = this.renderer;
+        const prevTarget = renderer.getRenderTarget();
+
+        const overrides = getRequestedSsaoParams() || {};
+        const params = {
+            radius: (typeof overrides.radius === 'number') ? overrides.radius : 0.06,
+            bias: (typeof overrides.bias === 'number') ? overrides.bias : 0.0015,
+            strength: (typeof overrides.strength === 'number') ? overrides.strength : 1.0,
+            power: (typeof overrides.power === 'number') ? overrides.power : 1.2,
+            steps: (typeof overrides.steps === 'number') ? overrides.steps : 24,
+            blur: (typeof overrides.blur === 'boolean') ? overrides.blur : true
+        };
+
+        const uniforms = this.ssaoMaterial.uniforms;
+        uniforms.tShipDepth.value = shipDepth;
+        uniforms.tNoise.value = this.ssaoNoiseTexture;
+
+        uniforms.uRadius.value = params.radius;
+        uniforms.uBias.value = params.bias;
+        uniforms.uStrength.value = params.strength;
+        uniforms.uPower.value = params.power;
+        uniforms.uKernelSize.value = params.steps;
+
+        if (this.camera) {
+            uniforms.uProjectionMatrix.value.copy(this.camera.projectionMatrix);
+            uniforms.uInvProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
+        }
+
+        const texelX = 1.0 / Math.max(1, this.ssaoRT.width);
+        const texelY = 1.0 / Math.max(1, this.ssaoRT.height);
+        uniforms.uTexelSize.value.set(texelX, texelY);
+        uniforms.uNoiseScale.value.set(this.ssaoRT.width / 4.0, this.ssaoRT.height / 4.0);
+
+        for (let i = 0; i < 32; i++) {
+            const src = (this.ssaoKernel && this.ssaoKernel[i]) ? this.ssaoKernel[i] : null;
+            if (src) {
+                uniforms.uKernel.value[i].copy(src);
+            } else {
+                uniforms.uKernel.value[i].set(0, 0, 0);
             }
+        }
 
-            const renderer = this.renderer;
-            const prevToneMapping = renderer.toneMapping;
-            const prevExposure = renderer.toneMappingExposure;
-            const prevTarget = renderer.getRenderTarget();
+        renderer.setRenderTarget(this.ssaoRT);
+        renderer.clear(true, true, true);
+        renderer.render(this.ssaoScene, this.ssaoCamera);
 
-            renderer.toneMapping = THREE.NoToneMapping;
-            renderer.toneMappingExposure = 1.0;
-            renderer.setRenderTarget(null);
-            renderer.render(this.contactShadowDebugScene, this.contactShadowDebugCamera);
+        let outTexture = this.ssaoRT.texture;
 
-            renderer.setRenderTarget(prevTarget);
-            renderer.toneMapping = prevToneMapping;
-            renderer.toneMappingExposure = prevExposure;
+        if (params.blur && this.ssaoBlurMaterial && this.ssaoBlurScene && this.ssaoBlurCamera && this.ssaoBlurRT) {
+            const blurUniforms = this.ssaoBlurMaterial.uniforms;
+            blurUniforms.tSsao.value = this.ssaoRT.texture;
+            blurUniforms.tShipDepth.value = shipDepth;
+            blurUniforms.uTexelSize.value.set(texelX, texelY);
+            blurUniforms.uDepthThreshold.value = 0.002;
 
-            return true;
+            blurUniforms.uDirection.value.set(1, 0);
+            renderer.setRenderTarget(this.ssaoBlurRT);
+            renderer.clear(true, true, true);
+            renderer.render(this.ssaoBlurScene, this.ssaoBlurCamera);
+
+            blurUniforms.tSsao.value = this.ssaoBlurRT.texture;
+            blurUniforms.uDirection.value.set(0, 1);
+            renderer.setRenderTarget(this.ssaoRT);
+            renderer.clear(true, true, true);
+            renderer.render(this.ssaoBlurScene, this.ssaoBlurCamera);
+
+            outTexture = this.ssaoRT.texture;
+        }
+
+        renderer.setRenderTarget(prevTarget);
+
+        ssaoUniforms.uMMSsaoTex.value = outTexture;
+        ssaoUniforms.uMMSsaoEnabled.value = (this.aoMode === 'ssao' && outTexture) ? 1.0 : 0.0;
+        if (renderer && typeof renderer.getDrawingBufferSize === 'function') {
+            if (!this._ssaoViewport) {
+                this._ssaoViewport = new THREE.Vector2();
             }
+            renderer.getDrawingBufferSize(this._ssaoViewport);
+            ssaoUniforms.uMMViewport.value.copy(this._ssaoViewport);
+        }
 
-            renderSsao() {
-                if (!this.renderer || !this.camera) return false;
-                if (!this.ssaoRT || !this.ssaoMaterial || !this.ssaoScene || !this.ssaoCamera) return false;
+        return true;
+    }
 
-                const ssaoUniforms = this.ensureSsaoUniforms();
-                ssaoUniforms.uMMSsaoEnabled.value = 0.0;
-                ssaoUniforms.uMMSsaoTex.value = null;
+    renderSsaoDebug() {
+        if (!this.renderer) return false;
+        if (!this.ssaoDebugMaterial || !this.ssaoDebugScene || !this.ssaoDebugCamera) return false;
+        if (!this.ssaoRT) return false;
 
-                const shipDepth = this.contactShadowShipDepthRT ? this.contactShadowShipDepthRT.depthTexture : null;
-                if (!shipDepth) return false;
+        const shipDepth = this.contactShadowShipDepthRT ? this.contactShadowShipDepthRT.depthTexture : null;
+        if (!shipDepth) return false;
 
-                const renderer = this.renderer;
-                const prevTarget = renderer.getRenderTarget();
+        const uniforms = this.ssaoDebugMaterial.uniforms;
+        uniforms.tSsao.value = this.ssaoRT.texture;
+        uniforms.tShipDepth.value = shipDepth;
 
-                const overrides = getRequestedSsaoParams() || {};
-                const params = {
-                    radius: (typeof overrides.radius === 'number') ? overrides.radius : 0.06,
-                    bias: (typeof overrides.bias === 'number') ? overrides.bias : 0.0015,
-                    strength: (typeof overrides.strength === 'number') ? overrides.strength : 1.0,
-                    power: (typeof overrides.power === 'number') ? overrides.power : 1.2,
-                    steps: (typeof overrides.steps === 'number') ? overrides.steps : 24,
-                    blur: (typeof overrides.blur === 'boolean') ? overrides.blur : true
-                };
+        const renderer = this.renderer;
+        const prevToneMapping = renderer.toneMapping;
+        const prevExposure = renderer.toneMappingExposure;
+        const prevTarget = renderer.getRenderTarget();
 
-                const uniforms = this.ssaoMaterial.uniforms;
-                uniforms.tShipDepth.value = shipDepth;
-                uniforms.tNoise.value = this.ssaoNoiseTexture;
+        renderer.toneMapping = THREE.NoToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        renderer.setRenderTarget(null);
+        renderer.render(this.ssaoDebugScene, this.ssaoDebugCamera);
 
-                uniforms.uRadius.value = params.radius;
-                uniforms.uBias.value = params.bias;
-                uniforms.uStrength.value = params.strength;
-                uniforms.uPower.value = params.power;
-                uniforms.uKernelSize.value = params.steps;
+        renderer.setRenderTarget(prevTarget);
+        renderer.toneMapping = prevToneMapping;
+        renderer.toneMappingExposure = prevExposure;
 
-                if (this.camera) {
-                    uniforms.uProjectionMatrix.value.copy(this.camera.projectionMatrix);
-                    uniforms.uInvProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
+        return true;
+    }
+
+    ensureSsaoUniforms() {
+        if (this.ssaoUniforms) return this.ssaoUniforms;
+        this.ssaoUniforms = {
+            uMMSsaoEnabled: { value: 0.0 },
+            uMMSsaoTex: { value: null },
+            uMMViewport: { value: new THREE.Vector2(1, 1) }
+        };
+        return this.ssaoUniforms;
+    }
+
+    installSsaoForSpacecraft() {
+        if (this.aoMode !== 'ssao') return;
+        if (!this.objects || !this.objects.spacecraft) return;
+
+        const shipMesh = this.objects.spacecraft.getMesh();
+        if (!shipMesh) return;
+
+        const uniforms = this.ensureSsaoUniforms();
+
+        const applyToMaterial = (material) => {
+            if (!material) return;
+            if (!(material.isMeshStandardMaterial || material.isMeshPhysicalMaterial)) return;
+            if (material.userData && material.userData.mmSsaoInstalled) return;
+
+            const prevCompile = material.onBeforeCompile;
+            material.onBeforeCompile = (shader) => {
+                if (typeof prevCompile === 'function') {
+                    prevCompile(shader);
                 }
 
-                const texelX = 1.0 / Math.max(1, this.ssaoRT.width);
-                const texelY = 1.0 / Math.max(1, this.ssaoRT.height);
-                uniforms.uTexelSize.value.set(texelX, texelY);
-                uniforms.uNoiseScale.value.set(this.ssaoRT.width / 4.0, this.ssaoRT.height / 4.0);
+                shader.uniforms.uMMSsaoEnabled = uniforms.uMMSsaoEnabled;
+                shader.uniforms.uMMSsaoTex = uniforms.uMMSsaoTex;
+                shader.uniforms.uMMViewport = uniforms.uMMViewport;
 
-                for (let i = 0; i < 32; i++) {
-                    const src = (this.ssaoKernel && this.ssaoKernel[i]) ? this.ssaoKernel[i] : null;
-                    if (src) {
-                        uniforms.uKernel.value[i].copy(src);
-                    } else {
-                        uniforms.uKernel.value[i].set(0, 0, 0);
+                if (!shader.fragmentShader.includes('mmSsaoGetUv')) {
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        '#include <common>',
+                        `#include <common>
+
+                        uniform float uMMSsaoEnabled;
+                        uniform sampler2D uMMSsaoTex;
+                        uniform vec2 uMMViewport;
+
+                        vec2 mmSsaoGetUv() {
+                            return gl_FragCoord.xy / max(uMMViewport, vec2(1.0));
+                        }`
+                    );
+                }
+
+                if (!shader.fragmentShader.includes('mmSsaoApplied')) {
+                    const before = shader.fragmentShader;
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        '#include <lights_fragment_end>',
+                        `#include <lights_fragment_end>
+
+                        // mmSsaoApplied
+                        if (uMMSsaoEnabled > 0.5) {
+                            float mmAo = texture2D(uMMSsaoTex, mmSsaoGetUv()).r;
+                            mmAo = clamp(mmAo, 0.0, 1.0);
+                            reflectedLight.indirectDiffuse *= mmAo;
+                            reflectedLight.indirectSpecular *= mmAo;
+                        }`
+                    );
+                    if (shader.fragmentShader === before) {
+                        console.warn('Failed to inject SSAO; ao=ssao may have no effect.');
                     }
                 }
 
-                renderer.setRenderTarget(this.ssaoRT);
-                renderer.clear(true, true, true);
-                renderer.render(this.ssaoScene, this.ssaoCamera);
-
-                let outTexture = this.ssaoRT.texture;
-
-                if (params.blur && this.ssaoBlurMaterial && this.ssaoBlurScene && this.ssaoBlurCamera && this.ssaoBlurRT) {
-                    const blurUniforms = this.ssaoBlurMaterial.uniforms;
-                    blurUniforms.tSsao.value = this.ssaoRT.texture;
-                    blurUniforms.tShipDepth.value = shipDepth;
-                    blurUniforms.uTexelSize.value.set(texelX, texelY);
-                    blurUniforms.uDepthThreshold.value = 0.002;
-
-                    blurUniforms.uDirection.value.set(1, 0);
-                    renderer.setRenderTarget(this.ssaoBlurRT);
-                    renderer.clear(true, true, true);
-                    renderer.render(this.ssaoBlurScene, this.ssaoBlurCamera);
-
-                    blurUniforms.tSsao.value = this.ssaoBlurRT.texture;
-                    blurUniforms.uDirection.value.set(0, 1);
-                    renderer.setRenderTarget(this.ssaoRT);
-                    renderer.clear(true, true, true);
-                    renderer.render(this.ssaoBlurScene, this.ssaoBlurCamera);
-
-                    outTexture = this.ssaoRT.texture;
+                if (!material.userData) {
+                    material.userData = {};
                 }
+                material.userData.mmSsaoShader = shader;
+            };
 
-                renderer.setRenderTarget(prevTarget);
-
-                ssaoUniforms.uMMSsaoTex.value = outTexture;
-                ssaoUniforms.uMMSsaoEnabled.value = (this.aoMode === 'ssao' && outTexture) ? 1.0 : 0.0;
-                if (renderer && typeof renderer.getDrawingBufferSize === 'function') {
-                    if (!this._ssaoViewport) {
-                        this._ssaoViewport = new THREE.Vector2();
-                    }
-                    renderer.getDrawingBufferSize(this._ssaoViewport);
-                    ssaoUniforms.uMMViewport.value.copy(this._ssaoViewport);
-                }
-
-                return true;
+            if (!material.userData) {
+                material.userData = {};
             }
+            material.userData.mmSsaoInstalled = true;
+            material.needsUpdate = true;
+        };
 
-            renderSsaoDebug() {
-                if (!this.renderer) return false;
-                if (!this.ssaoDebugMaterial || !this.ssaoDebugScene || !this.ssaoDebugCamera) return false;
-                if (!this.ssaoRT) return false;
+        shipMesh.traverse((node) => {
+            if (!node || node.isMesh !== true) return;
+            if (node.isPoints || node.isLine || node.isSprite) return;
+            if (!node.material) return;
 
-                const shipDepth = this.contactShadowShipDepthRT ? this.contactShadowShipDepthRT.depthTexture : null;
-                if (!shipDepth) return false;
-
-                const uniforms = this.ssaoDebugMaterial.uniforms;
-                uniforms.tSsao.value = this.ssaoRT.texture;
-                uniforms.tShipDepth.value = shipDepth;
-
-                const renderer = this.renderer;
-                const prevToneMapping = renderer.toneMapping;
-                const prevExposure = renderer.toneMappingExposure;
-                const prevTarget = renderer.getRenderTarget();
-
-                renderer.toneMapping = THREE.NoToneMapping;
-                renderer.toneMappingExposure = 1.0;
-                renderer.setRenderTarget(null);
-                renderer.render(this.ssaoDebugScene, this.ssaoDebugCamera);
-
-                renderer.setRenderTarget(prevTarget);
-                renderer.toneMapping = prevToneMapping;
-                renderer.toneMappingExposure = prevExposure;
-
-                return true;
+            if (Array.isArray(node.material)) {
+                node.material.forEach((m) => applyToMaterial(m));
+            } else {
+                applyToMaterial(node.material);
             }
+        });
+    }
 
-            ensureSsaoUniforms() {
-                if (this.ssaoUniforms) return this.ssaoUniforms;
-                this.ssaoUniforms = {
-                    uMMSsaoEnabled: { value: 0.0 },
-                    uMMSsaoTex: { value: null },
-                    uMMViewport: { value: new THREE.Vector2(1, 1) }
-                };
-                return this.ssaoUniforms;
-            }
+    setupLighting() {
+        // Ambient light
+        const ambientLight = new THREE.AmbientLight(0x101820, this.getRequestedAmbientIntensity());
+        // Keep layer 0 (default) and also allow lighting the spacecraft-only layer when needed.
+        ambientLight.layers.enable(CONTACT_SHADOW_LAYER);
+        this.scene.add(ambientLight);
+        this.ambientLight = ambientLight;
 
-            installSsaoForSpacecraft() {
-                if (this.aoMode !== 'ssao') return;
-                if (!this.objects || !this.objects.spacecraft) return;
+        const hemiLight = new THREE.HemisphereLight(0xfff2e3, 0x05080c, this.getRequestedHemisphereIntensity());
+        hemiLight.layers.enable(CONTACT_SHADOW_LAYER);
+        this.scene.add(hemiLight);
+        this.hemiLight = hemiLight;
 
-                const shipMesh = this.objects.spacecraft.getMesh();
-                if (!shipMesh) return;
-
-                const uniforms = this.ensureSsaoUniforms();
-
-                const applyToMaterial = (material) => {
-                    if (!material) return;
-                    if (!(material.isMeshStandardMaterial || material.isMeshPhysicalMaterial)) return;
-                    if (material.userData && material.userData.mmSsaoInstalled) return;
-
-                    const prevCompile = material.onBeforeCompile;
-                    material.onBeforeCompile = (shader) => {
-                        if (typeof prevCompile === 'function') {
-                            prevCompile(shader);
-                        }
-
-                        shader.uniforms.uMMSsaoEnabled = uniforms.uMMSsaoEnabled;
-                        shader.uniforms.uMMSsaoTex = uniforms.uMMSsaoTex;
-                        shader.uniforms.uMMViewport = uniforms.uMMViewport;
-
-                        if (!shader.fragmentShader.includes('mmSsaoGetUv')) {
-                            shader.fragmentShader = shader.fragmentShader.replace(
-                                '#include <common>',
-                                `#include <common>
-
-uniform float uMMSsaoEnabled;
-uniform sampler2D uMMSsaoTex;
-uniform vec2 uMMViewport;
-
-vec2 mmSsaoGetUv() {
-    return gl_FragCoord.xy / max(uMMViewport, vec2(1.0));
-}`
-                            );
-                        }
-
-                        if (!shader.fragmentShader.includes('mmSsaoApplied')) {
-                            const before = shader.fragmentShader;
-                            shader.fragmentShader = shader.fragmentShader.replace(
-                                '#include <lights_fragment_end>',
-                                `#include <lights_fragment_end>
-
-// mmSsaoApplied
-if (uMMSsaoEnabled > 0.5) {
-    float mmAo = texture2D(uMMSsaoTex, mmSsaoGetUv()).r;
-    mmAo = clamp(mmAo, 0.0, 1.0);
-    reflectedLight.indirectDiffuse *= mmAo;
-    reflectedLight.indirectSpecular *= mmAo;
-}`
-                            );
-                            if (shader.fragmentShader === before) {
-                                console.warn('Failed to inject SSAO; ao=ssao may have no effect.');
-                            }
-                        }
-
-                        if (!material.userData) {
-                            material.userData = {};
-                        }
-                        material.userData.mmSsaoShader = shader;
-                    };
-
-                    if (!material.userData) {
-                        material.userData = {};
-                    }
-                    material.userData.mmSsaoInstalled = true;
-                    material.needsUpdate = true;
-                };
-
-                shipMesh.traverse((node) => {
-                    if (!node || node.isMesh !== true) return;
-                    if (node.isPoints || node.isLine || node.isSprite) return;
-                    if (!node.material) return;
-
-                    if (Array.isArray(node.material)) {
-                        node.material.forEach((m) => applyToMaterial(m));
-                    } else {
-                        applyToMaterial(node.material);
-                    }
-                });
-            }
-
-         setupLighting() {
-             // Ambient light
-             const ambientLight = new THREE.AmbientLight(0x101820, this.getRequestedAmbientIntensity());
-             // Keep layer 0 (default) and also allow lighting the spacecraft-only layer when needed.
-             ambientLight.layers.enable(CONTACT_SHADOW_LAYER);
-             this.scene.add(ambientLight);
-             this.ambientLight = ambientLight;
-     
-         const hemiLight = new THREE.HemisphereLight(0xfff2e3, 0x05080c, this.getRequestedHemisphereIntensity());
-         hemiLight.layers.enable(CONTACT_SHADOW_LAYER);
-         this.scene.add(hemiLight);
-         this.hemiLight = hemiLight;
-     
-             // Point light from sun
-             const sunLight = new THREE.PointLight(0xfff2e3, this.getRequestedSunIntensity(), 0, 2);
-             sunLight.position.set(0, 0, 0);
-             // Keep the sun PointLight on the default layer; `sShadow=1` is a ship-only shadow-map shader patch.
-             sunLight.layers.set(0);
-             // NOTE: When `sShadow=1` we keep sun cube shadows disabled to avoid expensive updates
-             // (spacecraft self-shadow is handled by a dedicated ship-only depth pass).
-             sunLight.castShadow = !this.spacecraftSelfShadowEnabled;
-             if (sunLight.castShadow) {
-                 sunLight.shadow.mapSize.width = 2048;
-                 sunLight.shadow.mapSize.height = 2048;
-             sunLight.shadow.camera.near = 0.5;
-             sunLight.shadow.camera.far = 500;
-             sunLight.shadow.bias = -0.0008;
-             }
-             this.scene.add(sunLight);
-             this.sunLight = sunLight;
-         }
-
+        // Point light from sun
+        const sunLight = new THREE.PointLight(0xfff2e3, this.getRequestedSunIntensity(), 0, 2);
+        sunLight.position.set(0, 0, 0);
+        // Keep the sun PointLight on the default layer; `sShadow=1` is a ship-only shadow-map shader patch.
+        sunLight.layers.set(0);
+        // NOTE: When `sShadow=1` we keep sun cube shadows disabled to avoid expensive updates
+        // (spacecraft self-shadow is handled by a dedicated ship-only depth pass).
+        sunLight.castShadow = !this.spacecraftSelfShadowEnabled;
+        if (sunLight.castShadow) {
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 500;
+            sunLight.shadow.bias = -0.0008;
+        }
+        this.scene.add(sunLight);
+        this.sunLight = sunLight;
+    }
 
     createNebulaTexture() {
         const canvas = document.createElement('canvas');
@@ -4319,6 +4337,75 @@ if (uMMSsaoEnabled > 0.5) {
          return tex;
      }
 
+     ensureCloudWarpNoiseTexture() {
+         if (this.cloudWarpNoiseTexture) return this.cloudWarpNoiseTexture;
+         if (typeof THREE.DataTexture !== 'function') return null;
+
+         const size = 128;
+         const data = new Uint8Array(size * size * 4);
+         const twoPi = Math.PI * 2;
+
+         const hash01 = (n) => {
+             const x = Math.sin(n) * 43758.5453123;
+             return x - Math.floor(x);
+         };
+
+         const waves = [];
+         const waveCount = 7;
+         let weightSum = 0.0;
+         for (let i = 0; i < waveCount; i++) {
+             const fx = 1 + Math.floor(hash01(i * 11.3 + 1.7) * 5);
+             const fy = 1 + Math.floor(hash01(i * 19.1 + 2.9) * 5);
+             const angle = hash01(i * 23.7 + 0.1) * twoPi;
+             const phase = hash01(i * 29.5 + 8.4) * twoPi;
+             const w = Math.pow(0.65, i);
+             waves.push({ fx, fy, angle, phase, w });
+             weightSum += w;
+         }
+         weightSum = Math.max(1e-6, weightSum);
+
+         for (let y = 0; y < size; y++) {
+             const v = y / size;
+             for (let x = 0; x < size; x++) {
+                 const u = x / size;
+
+                 let dx = 0.0;
+                 let dy = 0.0;
+                 for (let i = 0; i < waves.length; i++) {
+                     const wave = waves[i];
+                     const t = twoPi * (wave.fx * u + wave.fy * v) + wave.phase;
+                     const s = Math.sin(t) * wave.w;
+                     dx += s * Math.cos(wave.angle);
+                     dy += s * Math.sin(wave.angle);
+                 }
+
+                 dx = dx / weightSum;
+                 dy = dy / weightSum;
+
+                 const idx = (y * size + x) * 4;
+                 const r = Math.max(0, Math.min(255, Math.round((dx * 0.5 + 0.5) * 255)));
+                 const g = Math.max(0, Math.min(255, Math.round((dy * 0.5 + 0.5) * 255)));
+                 data[idx] = r;
+                 data[idx + 1] = g;
+                 data[idx + 2] = 128;
+                 data[idx + 3] = 255;
+             }
+         }
+
+         const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+         tex.name = 'mm_cloudWarpNoise128';
+         tex.type = THREE.UnsignedByteType;
+         tex.minFilter = THREE.LinearFilter;
+         tex.magFilter = THREE.LinearFilter;
+         tex.wrapS = THREE.RepeatWrapping;
+         tex.wrapT = THREE.RepeatWrapping;
+         tex.generateMipmaps = false;
+         tex.needsUpdate = true;
+
+         this.registerDataTexture(tex);
+         this.cloudWarpNoiseTexture = tex;
+         return tex;
+     }
 
      applyPlanetTextureColorMode() {
          for (const texture of this.textureRegistry.color) {
@@ -4765,6 +4852,11 @@ if (uMMSsaoEnabled > 0.5) {
                 shader.uniforms.cloudShadowLatitudeFadeEnabled = { value: this.cloudShadowLatitudeFadeEnabled ? 1.0 : 0.0 };
                 shader.uniforms.cloudShadowUvOffset = { value: this.cloudShadowUvOffset };
                 shader.uniforms.cloudShadowTexelSize = { value: new THREE.Vector2(1 / 2048, 1 / 1024) };
+
+                const warpNoise = this.ensureCloudWarpNoiseTexture();
+                shader.uniforms.cloudWarpNoiseMap = { value: warpNoise || this.ensureBlackTexture() };
+                shader.uniforms.cloudWarpAmp = { value: warpNoise ? this.cloudWarp : 0.0 };
+                shader.uniforms.cloudWarpTime = { value: this.cloudWarpTimeSec };
                 this.earthDayShader = shader;
 
                 shader.fragmentShader = shader.fragmentShader.replace(
@@ -4780,17 +4872,40 @@ if (uMMSsaoEnabled > 0.5) {
                     uniform float cloudShadowUvOffset;
                     uniform vec2 cloudShadowTexelSize;
 
+                    uniform sampler2D cloudWarpNoiseMap;
+                    uniform float cloudWarpAmp;
+                    uniform float cloudWarpTime;
+
+                    vec2 mmWarpCloudUv(vec2 uv) {
+                        if (cloudWarpAmp <= 0.0) {
+                            return uv;
+                        }
+
+                        float baseV = clamp(uv.y, 0.0, 1.0);
+                        vec2 baseUv = vec2(uv.x, baseV);
+                        float lat01 = abs(baseV - 0.5) * 2.0;
+                        float latAtten = 1.0 - smoothstep(0.60, 0.98, lat01);
+
+                        vec2 flowUv = baseUv * vec2(3.0, 2.0) + vec2(cloudWarpTime * 0.018, cloudWarpTime * -0.013);
+                        vec2 n = texture2D(cloudWarpNoiseMap, flowUv).rg * 2.0 - 1.0;
+                        n.y *= 0.35;
+
+                        vec2 warped = baseUv + n * (cloudWarpAmp * latAtten);
+                        warped.y = clamp(warped.y, 0.0, 1.0);
+                        return warped;
+                    }
+
                     float mmCloudShadowDensity(vec2 uv) {
-                        vec2 wrappedUv = vec2(fract(uv.x), clamp(uv.y, 0.0, 1.0));
+                        vec2 wrappedUv = vec2(uv.x, clamp(uv.y, 0.0, 1.0));
                         vec2 blurStep = cloudShadowTexelSize * max(cloudShadowSoftness, 0.0);
                         vec2 dx = vec2(blurStep.x, 0.0);
                         vec2 dy = vec2(0.0, blurStep.y);
 
-                        float center = texture2D(cloudShadowMap, wrappedUv).r;
-                        float east = texture2D(cloudShadowMap, vec2(fract(wrappedUv.x + dx.x), wrappedUv.y)).r;
-                        float west = texture2D(cloudShadowMap, vec2(fract(wrappedUv.x - dx.x), wrappedUv.y)).r;
-                        float north = texture2D(cloudShadowMap, vec2(wrappedUv.x, clamp(wrappedUv.y + dy.y, 0.0, 1.0))).r;
-                        float south = texture2D(cloudShadowMap, vec2(wrappedUv.x, clamp(wrappedUv.y - dy.y, 0.0, 1.0))).r;
+                        float center = texture2D(cloudShadowMap, wrappedUv).g;
+                        float east = texture2D(cloudShadowMap, vec2(wrappedUv.x + dx.x, wrappedUv.y)).g;
+                        float west = texture2D(cloudShadowMap, vec2(wrappedUv.x - dx.x, wrappedUv.y)).g;
+                        float north = texture2D(cloudShadowMap, vec2(wrappedUv.x, wrappedUv.y + dy.y)).g;
+                        float south = texture2D(cloudShadowMap, vec2(wrappedUv.x, wrappedUv.y - dy.y)).g;
 
                         float smoothed = center * 0.4 + (east + west + north + south) * 0.15;
                         return smoothstep(0.26, 0.84, smoothed);
@@ -4819,7 +4934,8 @@ if (uMMSsaoEnabled > 0.5) {
                       float cloudShadow = 0.0;
                       #ifdef USE_MAP
                       if (cloudShadowEnabled > 0.5 && cloudShadowStrength > 0.0) {
-                          vec2 cloudUv = vec2(fract(vMapUv.x + cloudShadowUvOffset), clamp(vMapUv.y, 0.0, 1.0));
+                          vec2 cloudUv = vec2(vMapUv.x + cloudShadowUvOffset, clamp(vMapUv.y, 0.0, 1.0));
+                          cloudUv = mmWarpCloudUv(cloudUv);
                           float cloudDensity = mmCloudShadowDensity(cloudUv);
                           float cloudDayMask = smoothstep(-0.05, 0.22, ndl);
                           cloudShadow = clamp(cloudDensity * cloudShadowStrength * cloudDayMask, 0.0, 0.92);
@@ -4922,8 +5038,6 @@ if (uMMSsaoEnabled > 0.5) {
                     `
                 );
 
-
-
                 shader.fragmentShader = shader.fragmentShader.replace(
                     '#include <emissivemap_fragment>',
                     `
@@ -4944,9 +5058,8 @@ if (uMMSsaoEnabled > 0.5) {
                         
                         // 基础颜色
                         vec3 baseColor = vec3(0.95, 0.90, 0.83) * baseGlow;
-                        
-                        vec3 cityColor = vec3(1.0, 0.78, 0.55) * cityMask;
 
+                        vec3 cityColor = vec3(1.0, 0.78, 0.55) * cityMask;
                         vec3 totalRadiance = baseColor + cityColor;
                         totalEmissiveRadiance = totalRadiance / (1.0 + totalRadiance);
                     #endif
@@ -4977,6 +5090,9 @@ if (uMMSsaoEnabled > 0.5) {
             cloudAlpha.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
             cloudAlpha.minFilter = THREE.LinearMipmapLinearFilter;
             cloudAlpha.magFilter = THREE.LinearFilter;
+            cloudAlpha.wrapS = THREE.RepeatWrapping;
+            cloudAlpha.wrapT = THREE.ClampToEdgeWrapping;
+            cloudAlpha.needsUpdate = true;
             this.registerDataTexture(cloudAlpha);
             this.earthCloudAlphaTexture = cloudAlpha;
 
@@ -4991,8 +5107,55 @@ if (uMMSsaoEnabled > 0.5) {
                 emissiveIntensity: 0.0,
                 envMapIntensity: 1,           // 反射环境光
                 depthWrite: false,
-                //side: THREE.DoubleSide        // 双面渲染
+                //side: THREE.DoubleSide      // 双面渲染
             });
+
+            cloudMaterial.onBeforeCompile = (shader) => {
+                const warpNoise = this.ensureCloudWarpNoiseTexture();
+                shader.uniforms.cloudWarpNoiseMap = { value: warpNoise || this.ensureBlackTexture() };
+                shader.uniforms.cloudWarpAmp = { value: warpNoise ? this.cloudWarp : 0.0 };
+                shader.uniforms.cloudWarpTime = { value: this.cloudWarpTimeSec };
+                this.earthCloudShader = shader;
+
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <common>',
+                    `
+                    #include <common>
+                    uniform sampler2D cloudWarpNoiseMap;
+                    uniform float cloudWarpAmp;
+                    uniform float cloudWarpTime;
+
+                    vec2 mmWarpCloudUv(vec2 uv) {
+                        if (cloudWarpAmp <= 0.0) {
+                            return uv;
+                        }
+
+                        float baseV = clamp(uv.y, 0.0, 1.0);
+                        vec2 baseUv = vec2(uv.x, baseV);
+                        float lat01 = abs(baseV - 0.5) * 2.0;
+                        float latAtten = 1.0 - smoothstep(0.60, 0.98, lat01);
+
+                        vec2 flowUv = baseUv * vec2(3.0, 2.0) + vec2(cloudWarpTime * 0.018, cloudWarpTime * -0.013);
+                        vec2 n = texture2D(cloudWarpNoiseMap, flowUv).rg * 2.0 - 1.0;
+                        n.y *= 0.35;
+
+                        vec2 warped = baseUv + n * (cloudWarpAmp * latAtten);
+                        warped.y = clamp(warped.y, 0.0, 1.0);
+                        return warped;
+                    }
+                    `
+                );
+
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <alphamap_fragment>',
+                    `
+                    #ifdef USE_ALPHAMAP
+                        vec2 mmAlphaUv = mmWarpCloudUv(vAlphaMapUv);
+                        diffuseColor.a *= texture2D( alphaMap, mmAlphaUv ).g;
+                    #endif
+                    `
+                );
+            };
 
             const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
             clouds.castShadow = false;
@@ -5278,148 +5441,147 @@ if (uMMSsaoEnabled > 0.5) {
         this.applyHdrMaterialPolicy(orbitLine);
     }
 
-             createSpacecraft() {
-             const SpacecraftClass =
-                 (typeof globalThis !== 'undefined' && globalThis.Spacecraft) ? globalThis.Spacecraft : undefined;
-         if (typeof SpacecraftClass !== 'function') {
-             console.error('Spacecraft is not defined. Check that /static/spacecraft.js loaded before main.js.');
-             if (typeof showToast === 'function') {
-                 showToast('Failed to load spacecraft model (spacecraft.js). Check console/network tab.', 6000);
-             }
-             return;
-         }
+    createSpacecraft() {
+        const SpacecraftClass =
+            (typeof globalThis !== 'undefined' && globalThis.Spacecraft) ? globalThis.Spacecraft : undefined;
+        if (typeof SpacecraftClass !== 'function') {
+            console.error('Spacecraft is not defined. Check that /static/spacecraft.js loaded before main.js.');
+            if (typeof showToast === 'function') {
+                showToast('Failed to load spacecraft model (spacecraft.js). Check console/network tab.', 6000);
+            }
+            return;
+        }
 
-             this.objects.spacecraft = new SpacecraftClass(this.scene);
-             window.__spacecraft = this.objects.spacecraft;
+        this.objects.spacecraft = new SpacecraftClass(this.scene);
+        window.__spacecraft = this.objects.spacecraft;
 
-             if (this.objects.spacecraft) {
-                 if (typeof this.objects.spacecraft.setMaterialMode === 'function') {
-                     this.objects.spacecraft.setMaterialMode(this.materialMode);
-                 }
-                 if (typeof this.objects.spacecraft.setContactShadowLayer === 'function') {
-                     this.objects.spacecraft.setContactShadowLayer(CONTACT_SHADOW_LAYER);
-                 }
-             }
+        if (this.objects.spacecraft) {
+            if (typeof this.objects.spacecraft.setMaterialMode === 'function') {
+                this.objects.spacecraft.setMaterialMode(this.materialMode);
+            }
+            if (typeof this.objects.spacecraft.setContactShadowLayer === 'function') {
+                this.objects.spacecraft.setContactShadowLayer(CONTACT_SHADOW_LAYER);
+            }
+        }
 
-                 if (this.planetShadowEnabled) {
-                     this.installPlanetShadowForSpacecraft();
-                     this.updatePlanetShadowUniforms();
-                 }
+        if (this.planetShadowEnabled) {
+            this.installPlanetShadowForSpacecraft();
+            this.updatePlanetShadowUniforms();
+        }
 
-                 if (this.aoMode === 'contact') {
-                     this.installContactShadowForSpacecraft();
-                 }
-                 if (this.aoMode === 'ssao') {
-                     this.installSsaoForSpacecraft();
-                 }
+        if (this.aoMode === 'contact') {
+            this.installContactShadowForSpacecraft();
+        }
+        if (this.aoMode === 'ssao') {
+            this.installSsaoForSpacecraft();
+        }
+    }
 
-             }
+    ensureSpacecraftSelfShadowUniforms() {
+        if (this.spacecraftSelfShadowUniforms) {
+            return this.spacecraftSelfShadowUniforms;
+        }
 
-                ensureSpacecraftSelfShadowUniforms() {
-                    if (this.spacecraftSelfShadowUniforms) {
-                        return this.spacecraftSelfShadowUniforms;
-                    }
+        const overrides = getRequestedSpacecraftSelfShadowParams() || {};
 
-                    const overrides = getRequestedSpacecraftSelfShadowParams() || {};
+        // Bias is in normalized shadow-map depth (0..1).
+        // Softness is a PCF radius in *texels* (0 = hard edge).
+        const defaults = {
+            bias: 0.0012,
+            normalBias: 0.0,
+            slopeBias: 0.0,
+            softness: 0.0,
+            samples: 16
+        };
 
-                    // Bias is in normalized shadow-map depth (0..1).
-                    // Softness is a PCF radius in *texels* (0 = hard edge).
-                    const defaults = {
-                        bias: 0.0012,
-                        normalBias: 0.0,
-                        slopeBias: 0.0,
-                        softness: 0.0,
-                        samples: 16
-                    };
+        const bias = (typeof overrides.bias === 'number') ? overrides.bias : defaults.bias;
+        const normalBias = (typeof overrides.normalBias === 'number') ? overrides.normalBias : defaults.normalBias;
+        const slopeBias = (typeof overrides.slopeBias === 'number') ? overrides.slopeBias : defaults.slopeBias;
+        const softness = (typeof overrides.softness === 'number') ? overrides.softness : defaults.softness;
+        const samples = (typeof overrides.samples === 'number') ? overrides.samples : defaults.samples;
 
-                    const bias = (typeof overrides.bias === 'number') ? overrides.bias : defaults.bias;
-                    const normalBias = (typeof overrides.normalBias === 'number') ? overrides.normalBias : defaults.normalBias;
-                    const slopeBias = (typeof overrides.slopeBias === 'number') ? overrides.slopeBias : defaults.slopeBias;
-                    const softness = (typeof overrides.softness === 'number') ? overrides.softness : defaults.softness;
-                    const samples = (typeof overrides.samples === 'number') ? overrides.samples : defaults.samples;
+        this.spacecraftSelfShadowUniforms = {
+            uMMSShadowEnabled: { value: 1.0 },
+            uMMSShadowDepthAvailable: { value: 0.0 },
+            uMMSShadowDepth: { value: null },
+            uMMSShadowMatrixView: { value: new THREE.Matrix4() },
+            uMMSShadowBias: { value: bias },
+            uMMSShadowNormalBias: { value: normalBias },
+            uMMSShadowSlopeBias: { value: slopeBias },
+            uMMSShadowLightDirView: { value: new THREE.Vector3(0, 0, -1) },
+            uMMSShadowTexelSize: { value: new THREE.Vector2(1 / 2048, 1 / 2048) },
+            uMMSShadowSoftness: { value: softness },
+            uMMSShadowSamples: { value: samples }
+        };
 
-                    this.spacecraftSelfShadowUniforms = {
-                        uMMSShadowEnabled: { value: 1.0 },
-                        uMMSShadowDepthAvailable: { value: 0.0 },
-                        uMMSShadowDepth: { value: null },
-                        uMMSShadowMatrixView: { value: new THREE.Matrix4() },
-                        uMMSShadowBias: { value: bias },
-                        uMMSShadowNormalBias: { value: normalBias },
-                        uMMSShadowSlopeBias: { value: slopeBias },
-                        uMMSShadowLightDirView: { value: new THREE.Vector3(0, 0, -1) },
-                        uMMSShadowTexelSize: { value: new THREE.Vector2(1 / 2048, 1 / 2048) },
-                        uMMSShadowSoftness: { value: softness },
-                        uMMSShadowSamples: { value: samples }
-                    };
+        return this.spacecraftSelfShadowUniforms;
+    }
 
-                    return this.spacecraftSelfShadowUniforms;
+    updateSpacecraftSelfShadowUniforms() {
+        if (!this.spacecraftSelfShadowEnabled) return;
+        const uniforms = this.ensureSpacecraftSelfShadowUniforms();
+
+        const depthTex = this.spacecraftSelfShadowDepthRT ? this.spacecraftSelfShadowDepthRT.depthTexture : null;
+        uniforms.uMMSShadowDepth.value = depthTex;
+        uniforms.uMMSShadowDepthAvailable.value = depthTex ? 1.0 : 0.0;
+
+        if (!depthTex) return;
+        if (!this.spacecraftSelfShadowCamera || !this.camera) return;
+
+        if (uniforms.uMMSShadowTexelSize && uniforms.uMMSShadowTexelSize.value) {
+            const img = depthTex.image;
+            const w = img && img.width ? img.width : 0;
+            const h = img && img.height ? img.height : 0;
+            if (w > 0 && h > 0) {
+                uniforms.uMMSShadowTexelSize.value.set(1 / w, 1 / h);
+            }
+        }
+
+        if (uniforms.uMMSShadowLightDirView && uniforms.uMMSShadowLightDirView.value) {
+            if (!this._sShadowLightDirWorld) {
+                this._sShadowLightDirWorld = new THREE.Vector3();
+            }
+            if (!this._sShadowLightDirView) {
+                this._sShadowLightDirView = new THREE.Vector3();
+            }
+
+            // Approximate constant light direction for bias: from ship center toward the sun.
+            const sunPos = this.sunWorldPosition ? this.sunWorldPosition : null;
+            const centerWorld = this._sShadowBoxCenter ? this._sShadowBoxCenter : null;
+            if (sunPos && centerWorld) {
+                this._sShadowLightDirWorld.copy(sunPos).sub(centerWorld);
+                if (this._sShadowLightDirWorld.lengthSq() > 1e-12) {
+                    this._sShadowLightDirWorld.normalize();
+                    this._sShadowLightDirView.copy(this._sShadowLightDirWorld).transformDirection(this.camera.matrixWorldInverse);
+                    uniforms.uMMSShadowLightDirView.value.copy(this._sShadowLightDirView);
                 }
-
-                updateSpacecraftSelfShadowUniforms() {
-                    if (!this.spacecraftSelfShadowEnabled) return;
-                    const uniforms = this.ensureSpacecraftSelfShadowUniforms();
-
-                    const depthTex = this.spacecraftSelfShadowDepthRT ? this.spacecraftSelfShadowDepthRT.depthTexture : null;
-                    uniforms.uMMSShadowDepth.value = depthTex;
-                    uniforms.uMMSShadowDepthAvailable.value = depthTex ? 1.0 : 0.0;
-
-                    if (!depthTex) return;
-                    if (!this.spacecraftSelfShadowCamera || !this.camera) return;
-
-                    if (uniforms.uMMSShadowTexelSize && uniforms.uMMSShadowTexelSize.value) {
-                        const img = depthTex.image;
-                        const w = img && img.width ? img.width : 0;
-                        const h = img && img.height ? img.height : 0;
-                        if (w > 0 && h > 0) {
-                            uniforms.uMMSShadowTexelSize.value.set(1 / w, 1 / h);
-                        }
-                    }
-
-                    if (uniforms.uMMSShadowLightDirView && uniforms.uMMSShadowLightDirView.value) {
-                        if (!this._sShadowLightDirWorld) {
-                            this._sShadowLightDirWorld = new THREE.Vector3();
-                        }
-                        if (!this._sShadowLightDirView) {
-                            this._sShadowLightDirView = new THREE.Vector3();
-                        }
-
-                        // Approximate constant light direction for bias: from ship center toward the sun.
-                        const sunPos = this.sunWorldPosition ? this.sunWorldPosition : null;
-                        const centerWorld = this._sShadowBoxCenter ? this._sShadowBoxCenter : null;
-                        if (sunPos && centerWorld) {
-                            this._sShadowLightDirWorld.copy(sunPos).sub(centerWorld);
-                            if (this._sShadowLightDirWorld.lengthSq() > 1e-12) {
-                                this._sShadowLightDirWorld.normalize();
-                                this._sShadowLightDirView.copy(this._sShadowLightDirWorld).transformDirection(this.camera.matrixWorldInverse);
-                                uniforms.uMMSShadowLightDirView.value.copy(this._sShadowLightDirView);
-                            }
-                        }
-                    }
-
-                    // shadowMatrixView = bias * lightProjView * cameraInvView
-                    this._sShadowLightPV.multiplyMatrices(
-                        this.spacecraftSelfShadowCamera.projectionMatrix,
-                        this.spacecraftSelfShadowCamera.matrixWorldInverse
-                );
-                this._sShadowMatrixView.copy(this._sShadowLightPV);
-                this._sShadowMatrixView.premultiply(this._sShadowBiasMatrix);
-                this._sShadowMatrixView.multiply(this.camera.matrixWorld);
-
-                uniforms.uMMSShadowMatrixView.value.copy(this._sShadowMatrixView);
             }
+        }
 
-        ensureContactShadowUniforms() {
-            if (this.contactShadowUniforms) {
-                return this.contactShadowUniforms;
-            }
+        // shadowMatrixView = bias * lightProjView * cameraInvView
+        this._sShadowLightPV.multiplyMatrices(
+            this.spacecraftSelfShadowCamera.projectionMatrix,
+            this.spacecraftSelfShadowCamera.matrixWorldInverse
+        );
+        this._sShadowMatrixView.copy(this._sShadowLightPV);
+        this._sShadowMatrixView.premultiply(this._sShadowBiasMatrix);
+        this._sShadowMatrixView.multiply(this.camera.matrixWorld);
+
+        uniforms.uMMSShadowMatrixView.value.copy(this._sShadowMatrixView);
+    }
+
+    ensureContactShadowUniforms() {
+        if (this.contactShadowUniforms) {
+            return this.contactShadowUniforms;
+        }
 
         const overrides = getRequestedContactShadowParams() || {};
-            const defaults = {
-                maxDistance: 0.18,
-                thickness: 0.003,
-                strength: 1.1,
-                steps: 22
-            };
+        const defaults = {
+            maxDistance: 0.18,
+            thickness: 0.003,
+            strength: 1.1,
+            steps: 22
+        };
 
         const maxDistance = (typeof overrides.maxDistance === 'number') ? overrides.maxDistance : defaults.maxDistance;
         const thickness = (typeof overrides.thickness === 'number') ? overrides.thickness : defaults.thickness;
@@ -5502,75 +5664,75 @@ if (uMMSsaoEnabled > 0.5) {
                         '#include <common>',
                         `#include <common>
 
-uniform float uMMContactEnabled;
-uniform float uMMDepthAvailable;
-uniform sampler2D uMMShipDepth;
-uniform mat4 uMMProjectionMatrix;
-uniform mat4 uMMInvProjectionMatrix;
-uniform vec3 uMMSunPosView;
-uniform float uMMCsMaxDistance;
-uniform float uMMCsThickness;
-uniform float uMMCsStrength;
-uniform float uMMCsSteps;
+                        uniform float uMMContactEnabled;
+                        uniform float uMMDepthAvailable;
+                        uniform sampler2D uMMShipDepth;
+                        uniform mat4 uMMProjectionMatrix;
+                        uniform mat4 uMMInvProjectionMatrix;
+                        uniform vec3 uMMSunPosView;
+                        uniform float uMMCsMaxDistance;
+                        uniform float uMMCsThickness;
+                        uniform float uMMCsStrength;
+                        uniform float uMMCsSteps;
 
-#define MM_CS_MAX_STEPS 24
+                        #define MM_CS_MAX_STEPS 24
 
-vec3 mmReconstructViewPosition(vec2 uv, float depth) {
-    float z = depth * 2.0 - 1.0;
-    vec4 clip = vec4(uv * 2.0 - 1.0, z, 1.0);
-    vec4 view = uMMInvProjectionMatrix * clip;
-    return view.xyz / max(view.w, 1e-6);
-}
+                        vec3 mmReconstructViewPosition(vec2 uv, float depth) {
+                            float z = depth * 2.0 - 1.0;
+                            vec4 clip = vec4(uv * 2.0 - 1.0, z, 1.0);
+                            vec4 view = uMMInvProjectionMatrix * clip;
+                            return view.xyz / max(view.w, 1e-6);
+                        }
 
-vec2 mmProjectToUv(vec3 viewPos) {
-    vec4 clip = uMMProjectionMatrix * vec4(viewPos, 1.0);
-    vec3 ndc = clip.xyz / max(clip.w, 1e-6);
-    return ndc.xy * 0.5 + 0.5;
-}
+                        vec2 mmProjectToUv(vec3 viewPos) {
+                            vec4 clip = uMMProjectionMatrix * vec4(viewPos, 1.0);
+                            vec3 ndc = clip.xyz / max(clip.w, 1e-6);
+                            return ndc.xy * 0.5 + 0.5;
+                        }
 
-float mmContactShadowFactor(vec3 fragViewPos) {
-    if (uMMContactEnabled < 0.5) return 1.0;
-    if (uMMDepthAvailable < 0.5) return 1.0;
+                        float mmContactShadowFactor(vec3 fragViewPos) {
+                            if (uMMContactEnabled < 0.5) return 1.0;
+                            if (uMMDepthAvailable < 0.5) return 1.0;
 
-    vec3 toSunView = uMMSunPosView - fragViewPos;
-    float toSunLen = length(toSunView);
-    if (toSunLen <= 1e-6) return 1.0;
+                            vec3 toSunView = uMMSunPosView - fragViewPos;
+                            float toSunLen = length(toSunView);
+                            if (toSunLen <= 1e-6) return 1.0;
 
-    vec3 rayDirView = toSunView / toSunLen;
-    float maxDist = min(uMMCsMaxDistance, toSunLen);
+                            vec3 rayDirView = toSunView / toSunLen;
+                            float maxDist = min(uMMCsMaxDistance, toSunLen);
 
-    float stepsF = clamp(floor(uMMCsSteps + 0.5), 1.0, float(MM_CS_MAX_STEPS));
-    float occlusion = 0.0;
-    float startDist = max(uMMCsThickness * 2.0, 1e-5);
+                            float stepsF = clamp(floor(uMMCsSteps + 0.5), 1.0, float(MM_CS_MAX_STEPS));
+                            float occlusion = 0.0;
+                            float startDist = max(uMMCsThickness * 2.0, 1e-5);
 
-    for (int i = 0; i < MM_CS_MAX_STEPS; i++) {
-        if (float(i) >= stepsF) break;
+                            for (int i = 0; i < MM_CS_MAX_STEPS; i++) {
+                                if (float(i) >= stepsF) break;
 
-        float t = float(i) / max(stepsF - 1.0, 1.0);
-        float dist = startDist + t * maxDist;
+                                float t = float(i) / max(stepsF - 1.0, 1.0);
+                                float dist = startDist + t * maxDist;
 
-        vec3 sampleView = fragViewPos + rayDirView * dist;
-        vec2 suv = mmProjectToUv(sampleView);
-        if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) {
-            break;
-        }
+                                vec3 sampleView = fragViewPos + rayDirView * dist;
+                                vec2 suv = mmProjectToUv(sampleView);
+                                if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) {
+                                    break;
+                                }
 
-        float sDepth = texture2D(uMMShipDepth, suv).x;
-        if (sDepth >= 1.0) {
-            continue;
-        }
+                                float sDepth = texture2D(uMMShipDepth, suv).x;
+                                if (sDepth >= 1.0) {
+                                    continue;
+                                }
 
-        vec3 occView = mmReconstructViewPosition(suv, sDepth);
-        if (occView.z > sampleView.z + uMMCsThickness) {
-            float w = 1.0 - smoothstep(0.0, maxDist, dist);
-            occlusion = max(occlusion, w);
-            break;
-        }
-    }
+                                vec3 occView = mmReconstructViewPosition(suv, sDepth);
+                                if (occView.z > sampleView.z + uMMCsThickness) {
+                                    float w = 1.0 - smoothstep(0.0, maxDist, dist);
+                                    occlusion = max(occlusion, w);
+                                    break;
+                                }
+                            }
 
-    float shadow = clamp(1.0 - uMMCsStrength * occlusion, 0.0, 1.0);
-    return shadow;
-}`
+                            float shadow = clamp(1.0 - uMMCsStrength * occlusion, 0.0, 1.0);
+                            return shadow;
+                        }`
                     );
                 }
 
@@ -5580,12 +5742,12 @@ float mmContactShadowFactor(vec3 fragViewPos) {
                         '#include <lights_fragment_end>',
                         `#include <lights_fragment_end>
 
-// mmContactShadowApplied
-if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
-    float mmContact = mmContactShadowFactor(geometryPosition);
-    reflectedLight.directDiffuse *= mmContact;
-    reflectedLight.directSpecular *= mmContact;
-}`
+                        // mmContactShadowApplied
+                        if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
+                            float mmContact = mmContactShadowFactor(geometryPosition);
+                            reflectedLight.directDiffuse *= mmContact;
+                            reflectedLight.directSpecular *= mmContact;
+                        }`
                     );
 
                     if (shader.fragmentShader === before) {
@@ -5616,340 +5778,333 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
         });
     }
 
-            installSpacecraftSelfShadowForSpacecraft() {
-                if (!this.spacecraftSelfShadowEnabled) return;
-                if (!this.objects || !this.objects.spacecraft) return;
-                if (!this.renderer || !this.scene || !this.camera) return;
-    
-                const shipMesh = this.objects.spacecraft.getMesh();
-                if (!shipMesh) return;
-    
-                this.ensureSpacecraftSelfShadowTargets();
-                const uniforms = this.ensureSpacecraftSelfShadowUniforms();
-    
-                    const applyToMaterial = (material) => {
-                        if (!material) return;
-                        if (!(material.isMeshStandardMaterial || material.isMeshPhysicalMaterial)) return;
-                        if (material.userData && material.userData.mmSpacecraftSelfShadowInstalled) return;
+    installSpacecraftSelfShadowForSpacecraft() {
+        if (!this.spacecraftSelfShadowEnabled) return;
+        if (!this.objects || !this.objects.spacecraft) return;
+        if (!this.renderer || !this.scene || !this.camera) return;
 
-                        // We use `fwidth()` in the shader (for optional slope bias). Ensure derivatives are enabled on WebGL1.
-                        if (!material.extensions) {
-                            material.extensions = {};
+        const shipMesh = this.objects.spacecraft.getMesh();
+        if (!shipMesh) return;
+
+        this.ensureSpacecraftSelfShadowTargets();
+        const uniforms = this.ensureSpacecraftSelfShadowUniforms();
+
+        const applyToMaterial = (material) => {
+            if (!material) return;
+            if (!(material.isMeshStandardMaterial || material.isMeshPhysicalMaterial)) return;
+            if (material.userData && material.userData.mmSpacecraftSelfShadowInstalled) return;
+
+            // We use `fwidth()` in the shader (for optional slope bias). Ensure derivatives are enabled on WebGL1.
+            if (!material.extensions) {
+                material.extensions = {};
+            }
+            material.extensions.derivatives = true;
+
+            const prevCompile = material.onBeforeCompile;
+            material.onBeforeCompile = (shader) => {
+                if (typeof prevCompile === 'function') {
+                prevCompile(shader);
+            }
+
+            shader.uniforms.uMMSShadowEnabled = uniforms.uMMSShadowEnabled;
+                shader.uniforms.uMMSShadowDepthAvailable = uniforms.uMMSShadowDepthAvailable;
+                shader.uniforms.uMMSShadowDepth = uniforms.uMMSShadowDepth;
+                shader.uniforms.uMMSShadowMatrixView = uniforms.uMMSShadowMatrixView;
+                shader.uniforms.uMMSShadowBias = uniforms.uMMSShadowBias;
+                shader.uniforms.uMMSShadowNormalBias = uniforms.uMMSShadowNormalBias;
+                shader.uniforms.uMMSShadowSlopeBias = uniforms.uMMSShadowSlopeBias;
+                shader.uniforms.uMMSShadowLightDirView = uniforms.uMMSShadowLightDirView;
+                shader.uniforms.uMMSShadowTexelSize = uniforms.uMMSShadowTexelSize;
+                shader.uniforms.uMMSShadowSoftness = uniforms.uMMSShadowSoftness;
+                shader.uniforms.uMMSShadowSamples = uniforms.uMMSShadowSamples;
+
+                if (!shader.fragmentShader.includes('mmSpacecraftSelfShadowFactor')) {
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        '#include <common>',
+                        `#include <common>
+
+                        uniform float uMMSShadowEnabled;
+                        uniform float uMMSShadowDepthAvailable;
+                        uniform sampler2D uMMSShadowDepth;
+                        uniform mat4 uMMSShadowMatrixView;
+                        uniform float uMMSShadowBias;
+                        uniform float uMMSShadowNormalBias;
+                        uniform float uMMSShadowSlopeBias;
+                        uniform vec3 uMMSShadowLightDirView;
+                        uniform vec2 uMMSShadowTexelSize;
+                        uniform float uMMSShadowSoftness;
+                        uniform float uMMSShadowSamples;
+
+                        float mmSpacecraftShadowCompare(vec2 uv, float depth, float bias) {
+                            if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1.0;
+                            float z = texture2D(uMMSShadowDepth, uv).x;
+                            if (z >= 1.0) return 1.0;
+                            return (depth > z + bias) ? 0.0 : 1.0;
                         }
-                        material.extensions.derivatives = true;
-        
-                        const prevCompile = material.onBeforeCompile;
-                        material.onBeforeCompile = (shader) => {
-                            if (typeof prevCompile === 'function') {
-                            prevCompile(shader);
+
+                        float mmHash12(vec2 p) {
+                            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
                         }
-    
-                            shader.uniforms.uMMSShadowEnabled = uniforms.uMMSShadowEnabled;
-                                shader.uniforms.uMMSShadowDepthAvailable = uniforms.uMMSShadowDepthAvailable;
-                                shader.uniforms.uMMSShadowDepth = uniforms.uMMSShadowDepth;
-                                shader.uniforms.uMMSShadowMatrixView = uniforms.uMMSShadowMatrixView;
-                                shader.uniforms.uMMSShadowBias = uniforms.uMMSShadowBias;
-                                shader.uniforms.uMMSShadowNormalBias = uniforms.uMMSShadowNormalBias;
-                                shader.uniforms.uMMSShadowSlopeBias = uniforms.uMMSShadowSlopeBias;
-                                shader.uniforms.uMMSShadowLightDirView = uniforms.uMMSShadowLightDirView;
-                                shader.uniforms.uMMSShadowTexelSize = uniforms.uMMSShadowTexelSize;
-                                shader.uniforms.uMMSShadowSoftness = uniforms.uMMSShadowSoftness;
-                                shader.uniforms.uMMSShadowSamples = uniforms.uMMSShadowSamples;
-            
-                                if (!shader.fragmentShader.includes('mmSpacecraftSelfShadowFactor')) {
-                                    shader.fragmentShader = shader.fragmentShader.replace(
-                                        '#include <common>',
-                                        `#include <common>
-            
-        uniform float uMMSShadowEnabled;
-        uniform float uMMSShadowDepthAvailable;
-        uniform sampler2D uMMSShadowDepth;
-        uniform mat4 uMMSShadowMatrixView;
-        uniform float uMMSShadowBias;
-        uniform float uMMSShadowNormalBias;
-        uniform float uMMSShadowSlopeBias;
-        uniform vec3 uMMSShadowLightDirView;
-        uniform vec2 uMMSShadowTexelSize;
-        uniform float uMMSShadowSoftness;
-        uniform float uMMSShadowSamples;
 
-        float mmSpacecraftShadowCompare(vec2 uv, float depth, float bias) {
-            if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1.0;
-            float z = texture2D(uMMSShadowDepth, uv).x;
-            if (z >= 1.0) return 1.0;
-            return (depth > z + bias) ? 0.0 : 1.0;
-        }
+                        vec2 mmRotate2D(vec2 v, float a) {
+                            float s = sin(a);
+                            float c = cos(a);
+                            return vec2(c * v.x - s * v.y, s * v.x + c * v.y);
+                        }
+                            
+                        float mmSpacecraftSelfShadowFactor(vec3 fragViewPos, vec3 fragNormalView) {
+                            if (uMMSShadowEnabled < 0.5) return 1.0;
+                            if (uMMSShadowDepthAvailable < 0.5) return 1.0;
+                            
+                            vec4 sc = uMMSShadowMatrixView * vec4(fragViewPos, 1.0);
+                            float invW = 1.0 / max(sc.w, 1e-6);
+                            vec3 coord = sc.xyz * invW;
+                            
+                            vec2 uv = coord.xy;
+                            if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1.0;
+                            
+                            float depth = coord.z;
+                            if (depth <= 0.0 || depth >= 1.0) return 1.0;
 
-        float mmHash12(vec2 p) {
-            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-        }
-
-        vec2 mmRotate2D(vec2 v, float a) {
-            float s = sin(a);
-            float c = cos(a);
-            return vec2(c * v.x - s * v.y, s * v.x + c * v.y);
-        }
-            
-        float mmSpacecraftSelfShadowFactor(vec3 fragViewPos, vec3 fragNormalView) {
-            if (uMMSShadowEnabled < 0.5) return 1.0;
-            if (uMMSShadowDepthAvailable < 0.5) return 1.0;
-            
-            vec4 sc = uMMSShadowMatrixView * vec4(fragViewPos, 1.0);
-            float invW = 1.0 / max(sc.w, 1e-6);
-            vec3 coord = sc.xyz * invW;
-            
-            vec2 uv = coord.xy;
-            if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1.0;
-            
-            float depth = coord.z;
-            if (depth <= 0.0 || depth >= 1.0) return 1.0;
-
-            float bias = uMMSShadowBias;
-            if (uMMSShadowNormalBias > 0.0) {
-                float ndl = saturate(dot(normalize(fragNormalView), normalize(uMMSShadowLightDirView)));
-                bias += uMMSShadowNormalBias * (1.0 - ndl);
-            }
-            if (uMMSShadowSlopeBias > 0.0) {
-                bias += uMMSShadowSlopeBias * fwidth(depth);
-            }
-
-            // Poisson rotated PCF for ship-only shadow map (softness in texels).
-            float samplesF = clamp(floor(uMMSShadowSamples + 0.5), 1.0, 25.0);
-            if (uMMSShadowSoftness <= 0.001 || samplesF <= 1.0) {
-                return mmSpacecraftShadowCompare(uv, depth, bias);
-            }
-
-            // Stable per-fragment rotation (no temporal noise): hash of pixel coordinates.
-            float theta = mmHash12(floor(gl_FragCoord.xy)) * 6.28318530718;
-            vec2 texelRadius = uMMSShadowTexelSize * uMMSShadowSoftness;
-
-            const int MM_SHADOW_MAX_SAMPLES = 25;
-            const vec2 poisson[25] = vec2[25](
-                vec2(-0.94201624, -0.39906216),
-                vec2( 0.94558609, -0.76890725),
-                vec2(-0.09418410, -0.92938870),
-                vec2( 0.34495938,  0.29387760),
-                vec2(-0.91588581,  0.45771432),
-                vec2(-0.81544232, -0.87912464),
-                vec2(-0.38277543,  0.27676845),
-                vec2( 0.97484398,  0.75648379),
-                vec2( 0.44323325, -0.97511554),
-                vec2( 0.53742981, -0.47373420),
-                vec2(-0.26496911, -0.41893023),
-                vec2( 0.79197514,  0.19090188),
-                vec2(-0.24188840,  0.99706507),
-                vec2(-0.81409955,  0.91437590),
-                vec2( 0.19984126,  0.78641367),
-                vec2( 0.14383161, -0.14100790),
-                vec2( 0.50000000,  0.00000000),
-                vec2( 0.00000000,  0.50000000),
-                vec2(-0.50000000,  0.00000000),
-                vec2( 0.00000000, -0.50000000),
-                vec2( 0.25000000,  0.25000000),
-                vec2(-0.25000000,  0.25000000),
-                vec2( 0.25000000, -0.25000000),
-                vec2(-0.25000000, -0.25000000),
-                vec2( 0.00000000,  0.00000000)
-            );
-
-            float sum = 0.0;
-            for (int i = 0; i < MM_SHADOW_MAX_SAMPLES; i++) {
-                if (float(i) >= samplesF) break;
-                vec2 o = mmRotate2D(poisson[i], theta);
-                vec2 duv = vec2(o.x * texelRadius.x, o.y * texelRadius.y);
-                sum += mmSpacecraftShadowCompare(uv + duv, depth, bias);
-            }
-
-            return sum / samplesF;
-        }`
-                                    );
-                                }
-    
-                        if (!shader.fragmentShader.includes('mmSpacecraftSelfShadowApplied')) {
-                            shader.fragmentShader = shader.fragmentShader.replace(
-                                '#include <lights_fragment_end>',
-                                `#include <lights_fragment_end>
-    
-    // mmSpacecraftSelfShadowApplied
-    if (uMMSShadowEnabled > 0.5 && uMMSShadowDepthAvailable > 0.5) {
-        float mmSShadow = mmSpacecraftSelfShadowFactor(geometryPosition, geometryNormal);
-        reflectedLight.directDiffuse *= mmSShadow;
-        reflectedLight.directSpecular *= mmSShadow;
-    }`
-                                );
+                            float bias = uMMSShadowBias;
+                            if (uMMSShadowNormalBias > 0.0) {
+                                float ndl = saturate(dot(normalize(fragNormalView), normalize(uMMSShadowLightDirView)));
+                                bias += uMMSShadowNormalBias * (1.0 - ndl);
                             }
-    
-                        material.userData.mmSpacecraftSelfShadowShader = shader;
-                    };
-    
-                    if (!material.userData) {
-                        material.userData = {};
-                    }
-                    material.userData.mmSpacecraftSelfShadowInstalled = true;
-                    material.needsUpdate = true;
-                };
-    
-                shipMesh.traverse((node) => {
-                    if (!node || node.isMesh !== true) return;
-                    if (node.isPoints || node.isLine || node.isSprite) return;
-                    if (!node.material) return;
-    
-                    if (Array.isArray(node.material)) {
-                        node.material.forEach((m) => applyToMaterial(m));
-                    } else {
-                        applyToMaterial(node.material);
-                    }
-                });
+                            if (uMMSShadowSlopeBias > 0.0) {
+                                bias += uMMSShadowSlopeBias * fwidth(depth);
+                            }
+
+                            // Poisson rotated PCF for ship-only shadow map (softness in texels).
+                            float samplesF = clamp(floor(uMMSShadowSamples + 0.5), 1.0, 25.0);
+                            if (uMMSShadowSoftness <= 0.001 || samplesF <= 1.0) {
+                                return mmSpacecraftShadowCompare(uv, depth, bias);
+                            }
+
+                            // Stable per-fragment rotation (no temporal noise): hash of pixel coordinates.
+                            float theta = mmHash12(floor(gl_FragCoord.xy)) * 6.28318530718;
+                            vec2 texelRadius = uMMSShadowTexelSize * uMMSShadowSoftness;
+
+                            const int MM_SHADOW_MAX_SAMPLES = 25;
+                            const vec2 poisson[25] = vec2[25](
+                                vec2(-0.94201624, -0.39906216),
+                                vec2( 0.94558609, -0.76890725),
+                                vec2(-0.09418410, -0.92938870),
+                                vec2( 0.34495938,  0.29387760),
+                                vec2(-0.91588581,  0.45771432),
+                                vec2(-0.81544232, -0.87912464),
+                                vec2(-0.38277543,  0.27676845),
+                                vec2( 0.97484398,  0.75648379),
+                                vec2( 0.44323325, -0.97511554),
+                                vec2( 0.53742981, -0.47373420),
+                                vec2(-0.26496911, -0.41893023),
+                                vec2( 0.79197514,  0.19090188),
+                                vec2(-0.24188840,  0.99706507),
+                                vec2(-0.81409955,  0.91437590),
+                                vec2( 0.19984126,  0.78641367),
+                                vec2( 0.14383161, -0.14100790),
+                                vec2( 0.50000000,  0.00000000),
+                                vec2( 0.00000000,  0.50000000),
+                                vec2(-0.50000000,  0.00000000),
+                                vec2( 0.00000000, -0.50000000),
+                                vec2( 0.25000000,  0.25000000),
+                                vec2(-0.25000000,  0.25000000),
+                                vec2( 0.25000000, -0.25000000),
+                                vec2(-0.25000000, -0.25000000),
+                                vec2( 0.00000000,  0.00000000)
+                            );
+
+                            float sum = 0.0;
+                            for (int i = 0; i < MM_SHADOW_MAX_SAMPLES; i++) {
+                                if (float(i) >= samplesF) break;
+                                vec2 o = mmRotate2D(poisson[i], theta);
+                                vec2 duv = vec2(o.x * texelRadius.x, o.y * texelRadius.y);
+                                sum += mmSpacecraftShadowCompare(uv + duv, depth, bias);
+                            }
+
+                            return sum / samplesF;
+                        }`
+                    );
+                }
+
+                if (!shader.fragmentShader.includes('mmSpacecraftSelfShadowApplied')) {
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        '#include <lights_fragment_end>',
+                        `#include <lights_fragment_end>
+
+                        // mmSpacecraftSelfShadowApplied
+                        if (uMMSShadowEnabled > 0.5 && uMMSShadowDepthAvailable > 0.5) {
+                            float mmSShadow = mmSpacecraftSelfShadowFactor(geometryPosition, geometryNormal);
+                            reflectedLight.directDiffuse *= mmSShadow;
+                            reflectedLight.directSpecular *= mmSShadow;
+                        }`
+                    );
+                }
+
+                material.userData.mmSpacecraftSelfShadowShader = shader;
+            };
+
+            if (!material.userData) {
+                material.userData = {};
             }
+            material.userData.mmSpacecraftSelfShadowInstalled = true;
+            material.needsUpdate = true;
+        };
 
+        shipMesh.traverse((node) => {
+            if (!node || node.isMesh !== true) return;
+            if (node.isPoints || node.isLine || node.isSprite) return;
+            if (!node.material) return;
 
-     updateSpacecraftTrail(position) {
-         if (this.objects.spacecraft) {
-             this.objects.spacecraft.addTrailPoint(position);
-         }
-     }
- 
-     clearSpacecraftTrail() {
-         if (this.objects.spacecraft) {
-             this.objects.spacecraft.clearTrail();
-         }
-     }
+            if (Array.isArray(node.material)) {
+                node.material.forEach((m) => applyToMaterial(m));
+            } else {
+                applyToMaterial(node.material);
+            }
+        });
+    }
 
-     updatePlanetShadowUniforms() {
-         if (!this.planetShadowUniforms) return;
+    updateSpacecraftTrail(position) {
+        if (this.objects.spacecraft) {
+            this.objects.spacecraft.addTrailPoint(position);
+        }
+    }
 
-         this.planetShadowUniforms.uSunPosWorld.value.set(0, 0, 0);
+    clearSpacecraftTrail() {
+        if (this.objects.spacecraft) {
+            this.objects.spacecraft.clearTrail();
+        }
+    }
 
-         if (this.objects.earth) {
-             this.objects.earth.getWorldPosition(this.planetShadowUniforms.uEarthPosWorld.value);
-         } else {
-             this.planetShadowUniforms.uEarthPosWorld.value.set(1e9, 1e9, 1e9);
-         }
+    updatePlanetShadowUniforms() {
+        if (!this.planetShadowUniforms) return;
 
-         if (this.objects.mars) {
-             this.objects.mars.getWorldPosition(this.planetShadowUniforms.uMarsPosWorld.value);
-         } else {
-             this.planetShadowUniforms.uMarsPosWorld.value.set(1e9, 1e9, 1e9);
-         }
-     }
+        this.planetShadowUniforms.uSunPosWorld.value.set(0, 0, 0);
 
-     installPlanetShadowForSpacecraft() {
-         if (!this.planetShadowEnabled) return;
-         if (!this.objects || !this.objects.spacecraft) return;
+        if (this.objects.earth) {
+            this.objects.earth.getWorldPosition(this.planetShadowUniforms.uEarthPosWorld.value);
+        } else {
+            this.planetShadowUniforms.uEarthPosWorld.value.set(1e9, 1e9, 1e9);
+        }
 
-          if (!this.planetShadowUniforms) {
-              const earthRadius = 0.12;
-              const marsRadius = 0.08;
+        if (this.objects.mars) {
+            this.objects.mars.getWorldPosition(this.planetShadowUniforms.uMarsPosWorld.value);
+        } else {
+            this.planetShadowUniforms.uMarsPosWorld.value.set(1e9, 1e9, 1e9);
+        }
+    }
 
-              this.planetShadowUniforms = {
-                  uPlanetShadowEnabled: { value: 1 },
-                  uSunPosWorld: { value: new THREE.Vector3(0, 0, 0) },
-                  uSunPosView: { value: new THREE.Vector3(0, 0, 0) },
-                  uEarthPosWorld: { value: new THREE.Vector3(0, 0, 0) },
-                  uEarthRadius: { value: earthRadius },
-                  uMarsPosWorld: { value: new THREE.Vector3(0, 0, 0) },
-                  uMarsRadius: { value: marsRadius }
-              };
-          }
+    installPlanetShadowForSpacecraft() {
+        if (!this.planetShadowEnabled) return;
+        if (!this.objects || !this.objects.spacecraft) return;
 
-          const uniforms = this.planetShadowUniforms;
-          uniforms.uPlanetShadowEnabled.value = 1;
+        if (!this.planetShadowUniforms) {
+            const earthRadius = 0.12;
+            const marsRadius = 0.08;
 
+            this.planetShadowUniforms = {
+                uPlanetShadowEnabled: { value: 1 },
+                uSunPosWorld: { value: new THREE.Vector3(0, 0, 0) },
+                uSunPosView: { value: new THREE.Vector3(0, 0, 0) },
+                uEarthPosWorld: { value: new THREE.Vector3(0, 0, 0) },
+                uEarthRadius: { value: earthRadius },
+                uMarsPosWorld: { value: new THREE.Vector3(0, 0, 0) },
+                uMarsRadius: { value: marsRadius }
+            };
+        }
 
-         const shipMesh = this.objects.spacecraft.getMesh();
-         if (!shipMesh) return;
+        const uniforms = this.planetShadowUniforms;
+        uniforms.uPlanetShadowEnabled.value = 1;
 
-          const applyToMaterial = (material) => {
-              if (!material) return;
-              if (!(material.isMeshStandardMaterial || material.isMeshPhysicalMaterial)) return;
-              if (material.userData && material.userData.mmPlanetShadowInstalled) return;
+        const shipMesh = this.objects.spacecraft.getMesh();
+        if (!shipMesh) return;
 
-              const prevCompile = material.onBeforeCompile;
-              material.onBeforeCompile = (shader) => {
-                  if (typeof prevCompile === 'function') {
-                      prevCompile(shader);
-                  }
+        const applyToMaterial = (material) => {
+            if (!material) return;
+            if (!(material.isMeshStandardMaterial || material.isMeshPhysicalMaterial)) return;
+            if (material.userData && material.userData.mmPlanetShadowInstalled) return;
 
+            const prevCompile = material.onBeforeCompile;
+            material.onBeforeCompile = (shader) => {
+                if (typeof prevCompile === 'function') {
+                    prevCompile(shader);
+                }
 
-                 shader.uniforms.uPlanetShadowEnabled = uniforms.uPlanetShadowEnabled;
-                 shader.uniforms.uSunPosWorld = uniforms.uSunPosWorld;
-                 shader.uniforms.uSunPosView = uniforms.uSunPosView;
-                 shader.uniforms.uEarthPosWorld = uniforms.uEarthPosWorld;
-                 shader.uniforms.uEarthRadius = uniforms.uEarthRadius;
-                 shader.uniforms.uMarsPosWorld = uniforms.uMarsPosWorld;
-                 shader.uniforms.uMarsRadius = uniforms.uMarsRadius;
+                shader.uniforms.uPlanetShadowEnabled = uniforms.uPlanetShadowEnabled;
+                shader.uniforms.uSunPosWorld = uniforms.uSunPosWorld;
+                shader.uniforms.uSunPosView = uniforms.uSunPosView;
+                shader.uniforms.uEarthPosWorld = uniforms.uEarthPosWorld;
+                shader.uniforms.uEarthRadius = uniforms.uEarthRadius;
+                shader.uniforms.uMarsPosWorld = uniforms.uMarsPosWorld;
+                shader.uniforms.uMarsRadius = uniforms.uMarsRadius;
 
-                 shader.vertexShader = shader.vertexShader.replace(
-                     '#include <common>',
-                     `#include <common>\nvarying vec3 vMMPlanetShadowWorldPos;`
-                 );
+                shader.vertexShader = shader.vertexShader.replace(
+                    '#include <common>',
+                    `#include <common>\nvarying vec3 vMMPlanetShadowWorldPos;`
+                );
 
-                 shader.vertexShader = shader.vertexShader.replace(
-                     '#include <begin_vertex>',
-                     `#include <begin_vertex>\nvec4 mmPlanetShadowWorldPos = modelMatrix * vec4(transformed, 1.0);\nvMMPlanetShadowWorldPos = mmPlanetShadowWorldPos.xyz;`
-                 );
+                shader.vertexShader = shader.vertexShader.replace(
+                    '#include <begin_vertex>',
+                    `#include <begin_vertex>\nvec4 mmPlanetShadowWorldPos = modelMatrix * vec4(transformed, 1.0);\nvMMPlanetShadowWorldPos = mmPlanetShadowWorldPos.xyz;`
+                );
 
-                  shader.fragmentShader = shader.fragmentShader.replace(
-                      '#include <common>',
-                      `#include <common>\n\nuniform float uPlanetShadowEnabled;\nuniform vec3 uSunPosWorld;\nuniform vec3 uEarthPosWorld;\nuniform float uEarthRadius;\nuniform vec3 uMarsPosWorld;\nuniform float uMarsRadius;\n\nvarying vec3 vMMPlanetShadowWorldPos;\n\nbool mmPlanetShadowRaySphereOccluded(vec3 rayOrigin, vec3 rayDir, vec3 sphereCenter, float sphereRadius, float maxT) {\n    vec3 oc = rayOrigin - sphereCenter;\n    float b = dot(oc, rayDir);\n    float c = dot(oc, oc) - sphereRadius * sphereRadius;\n    float h = b * b - c;\n    if (h < 0.0) return false;\n    float t = -b - sqrt(h);\n    return t > 0.0 && t < maxT;\n}\n\nfloat mmPlanetShadowFactor() {\n    if (uPlanetShadowEnabled < 0.5) return 1.0;\n    vec3 toSun = uSunPosWorld - vMMPlanetShadowWorldPos;\n    float maxT = length(toSun);\n    if (maxT <= 1e-6) return 1.0;\n    vec3 dir = toSun / maxT;\n\n    if (mmPlanetShadowRaySphereOccluded(vMMPlanetShadowWorldPos, dir, uEarthPosWorld, uEarthRadius, maxT)) return 0.0;\n    if (mmPlanetShadowRaySphereOccluded(vMMPlanetShadowWorldPos, dir, uMarsPosWorld, uMarsRadius, maxT)) return 0.0;\n    return 1.0;\n}`
-                  );
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <common>',
+                    `#include <common>\n\nuniform float uPlanetShadowEnabled;\nuniform vec3 uSunPosWorld;\nuniform vec3 uEarthPosWorld;\nuniform float uEarthRadius;\nuniform vec3 uMarsPosWorld;\nuniform float uMarsRadius;\n\nvarying vec3 vMMPlanetShadowWorldPos;\n\nbool mmPlanetShadowRaySphereOccluded(vec3 rayOrigin, vec3 rayDir, vec3 sphereCenter, float sphereRadius, float maxT) {\n    vec3 oc = rayOrigin - sphereCenter;\n    float b = dot(oc, rayDir);\n    float c = dot(oc, oc) - sphereRadius * sphereRadius;\n    float h = b * b - c;\n    if (h < 0.0) return false;\n    float t = -b - sqrt(h);\n    return t > 0.0 && t < maxT;\n}\n\nfloat mmPlanetShadowFactor() {\n    if (uPlanetShadowEnabled < 0.5) return 1.0;\n    vec3 toSun = uSunPosWorld - vMMPlanetShadowWorldPos;\n    float maxT = length(toSun);\n    if (maxT <= 1e-6) return 1.0;\n    vec3 dir = toSun / maxT;\n\n    if (mmPlanetShadowRaySphereOccluded(vMMPlanetShadowWorldPos, dir, uEarthPosWorld, uEarthRadius, maxT)) return 0.0;\n    if (mmPlanetShadowRaySphereOccluded(vMMPlanetShadowWorldPos, dir, uMarsPosWorld, uMarsRadius, maxT)) return 0.0;\n    return 1.0;\n}`
+                );
 
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <lights_fragment_begin>',
+                    `#include <lights_fragment_begin>\n\nfloat mmPlanetShadow = mmPlanetShadowFactor();`
+                );
 
-                  shader.fragmentShader = shader.fragmentShader.replace(
-                      '#include <lights_fragment_begin>',
-                      `#include <lights_fragment_begin>\n\nfloat mmPlanetShadow = mmPlanetShadowFactor();`
-                  );
+                let mmPatchedPointLight = false;
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    /getPointLightInfo\(\s*pointLights\s*\[\s*i\s*\]\s*,\s*geometry\s*,\s*directLight\s*\)\s*;\s*/,
+                    (match) => {
+                        mmPatchedPointLight = true;
+                        return `${match}\nif (distance(pointLights[i].position, uSunPosWorld) < 1e-6) { directLight.color *= mmPlanetShadow; }\n`;
+                    }
+                );
 
-                  let mmPatchedPointLight = false;
-                  shader.fragmentShader = shader.fragmentShader.replace(
-                      /getPointLightInfo\(\s*pointLights\s*\[\s*i\s*\]\s*,\s*geometry\s*,\s*directLight\s*\)\s*;\s*/,
-                      (match) => {
-                          mmPatchedPointLight = true;
-                          return `${match}\nif (distance(pointLights[i].position, uSunPosWorld) < 1e-6) { directLight.color *= mmPlanetShadow; }\n`;
-                      }
-                  );
+                if (!mmPatchedPointLight) {
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        '#include <lights_fragment_end>',
+                        `#include <lights_fragment_end>\n\nif (mmPlanetShadow < 0.5) {\n    reflectedLight.directDiffuse = vec3(0.0);\n    reflectedLight.directSpecular = vec3(0.0);\n}`
+                    );
+                }
 
-                  if (!mmPatchedPointLight) {
-                      shader.fragmentShader = shader.fragmentShader.replace(
-                          '#include <lights_fragment_end>',
-                          `#include <lights_fragment_end>\n\nif (mmPlanetShadow < 0.5) {\n    reflectedLight.directDiffuse = vec3(0.0);\n    reflectedLight.directSpecular = vec3(0.0);\n}`
-                      );
-                  }
+                material.userData.mmPlanetShadowShader = shader;
+            };
 
+            if (!material.userData) {
+                material.userData = {};
+            }
+            material.userData.mmPlanetShadowInstalled = true;
+            material.needsUpdate = true;
+        };
 
+        shipMesh.traverse((node) => {
+            if (!node || node.isMesh !== true) return;
+            if (node.isPoints || node.isLine || node.isSprite) return;
+            if (!node.material) return;
 
+            if (Array.isArray(node.material)) {
+                node.material.forEach((m) => applyToMaterial(m));
+            } else {
+                applyToMaterial(node.material);
+            }
+        });
+    }
 
-                 material.userData.mmPlanetShadowShader = shader;
-             };
-
-             if (!material.userData) {
-                 material.userData = {};
-             }
-             material.userData.mmPlanetShadowInstalled = true;
-             material.needsUpdate = true;
-         };
-
-         shipMesh.traverse((node) => {
-             if (!node || node.isMesh !== true) return;
-             if (node.isPoints || node.isLine || node.isSprite) return;
-             if (!node.material) return;
-
-             if (Array.isArray(node.material)) {
-                 node.material.forEach((m) => applyToMaterial(m));
-             } else {
-                 applyToMaterial(node.material);
-             }
-         });
-     }
-
-     handleMissionUpdate(data) {
+    handleMissionUpdate(data) {
 
         const missionInfo = data.type === 'update' ? data : data.data;
 
-         if (missionInfo.simulation && typeof missionInfo.simulation === 'object') {
-             this.simulationState = { ...this.simulationState, ...missionInfo.simulation };
-             this.syncUiFromSimulationState();
-         }
+        if (missionInfo.simulation && typeof missionInfo.simulation === 'object') {
+            this.simulationState = { ...this.simulationState, ...missionInfo.simulation };
+            this.syncUiFromSimulationState();
+        }
 
         if (typeof missionInfo.time_days === 'number' && Number.isFinite(missionInfo.time_days)) {
             const nowMs = (typeof performance !== 'undefined') ? performance.now() : Date.now();
@@ -5986,25 +6141,24 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
             this.lastSimPacketMs = nowMs;
         }
         
-         // Clear trail on phase change
-         if (missionInfo.phase && this.lastPhase !== missionInfo.phase) {
-             this.clearSpacecraftTrail();
-             this.lastPhase = missionInfo.phase;
-             this.lastSpacecraftPosition = null;
-             if (this.objects.spacecraft) {
-                 const mesh = this.objects.spacecraft.getMesh();
-                 if (mesh) {
-                     mesh.userData.lookTarget = null;
-                     if (mesh.userData.prevRenderPos) {
-                         mesh.userData.prevRenderPos.copy(mesh.position);
-                     } else {
-                         mesh.userData.prevRenderPos = mesh.position.clone();
-                     }
-                 }
-             }
-         }
+        // Clear trail on phase change
+        if (missionInfo.phase && this.lastPhase !== missionInfo.phase) {
+            this.clearSpacecraftTrail();
+            this.lastPhase = missionInfo.phase;
+            this.lastSpacecraftPosition = null;
+            if (this.objects.spacecraft) {
+                const mesh = this.objects.spacecraft.getMesh();
+                if (mesh) {
+                    mesh.userData.lookTarget = null;
+                    if (mesh.userData.prevRenderPos) {
+                        mesh.userData.prevRenderPos.copy(mesh.position);
+                    } else {
+                        mesh.userData.prevRenderPos = mesh.position.clone();
+                    }
+                }
+            }
+        }
 
-        
         if (missionInfo.earth_position && this.objects.earth) {
             if (!this.objects.earth.userData.targetPos) this.objects.earth.userData.targetPos = new THREE.Vector3();
             this.mapBackendToThreeVector(missionInfo.earth_position, this.objects.earth.userData.targetPos);
@@ -6036,7 +6190,7 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
                 console.warn('Invalid spacecraft_position payload:', missionInfo.spacecraft_position);
             }
         }
-        
+
         updateDataPanel(missionInfo);
         updateTimeline(missionInfo.time_days, missionInfo.timeline_horizon_end);
     }
@@ -6150,11 +6304,11 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
         if (focusPoint && idealOffset) {
             const lastTarget = this.controls.target.clone();
             const idealCameraPos = focusPoint.clone().add(idealOffset);
-            
+
             if (this.isTransitioning && !this.isUserInteracting) {
                 const distToTarget = this.camera.position.distanceTo(idealCameraPos);
                 const distToFocus = this.controls.target.distanceTo(focusPoint);
-                
+
                 if (distToTarget < 0.001 && distToFocus < 0.001) {
                     this.isTransitioning = false;
                     this.controls.target.copy(focusPoint);
@@ -6177,85 +6331,84 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
         window.addEventListener('resize', () => this.onWindowResize());
     }
 
-        onWindowResize() {
-            this.camera.aspect = window.innerWidth / window.innerHeight;
-            this.camera.updateProjectionMatrix();
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
-                ? this.renderer.getPixelRatio()
-                : (window.devicePixelRatio || 1);
+    onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
+            ? this.renderer.getPixelRatio()
+            : (window.devicePixelRatio || 1);
 
-            this.renderer.setSize(width, height);
-            if (this.bloomComposer) {
-                if (typeof this.bloomComposer.setPixelRatio === 'function') {
-                    this.bloomComposer.setPixelRatio(pixelRatio);
-                }
-                this.bloomComposer.setSize(width, height);
+        this.renderer.setSize(width, height);
+        if (this.bloomComposer) {
+            if (typeof this.bloomComposer.setPixelRatio === 'function') {
+                this.bloomComposer.setPixelRatio(pixelRatio);
             }
-            if (this.finalComposer) {
-                if (typeof this.finalComposer.setPixelRatio === 'function') {
-                    this.finalComposer.setPixelRatio(pixelRatio);
-                }
-                this.finalComposer.setSize(width, height);
+            this.bloomComposer.setSize(width, height);
+        }
+        if (this.finalComposer) {
+            if (typeof this.finalComposer.setPixelRatio === 'function') {
+                this.finalComposer.setPixelRatio(pixelRatio);
             }
-            if (this.bloomPass) {
-                this.bloomPass.resolution.set(width * pixelRatio, height * pixelRatio);
+            this.finalComposer.setSize(width, height);
+        }
+        if (this.bloomPass) {
+            this.bloomPass.resolution.set(width * pixelRatio, height * pixelRatio);
+        }
+        if (this.ssaaPass && typeof this.ssaaPass.setSize === 'function') {
+            this.ssaaPass.setSize(width * pixelRatio, height * pixelRatio);
+        }
+        if (this.smaaPass && typeof this.smaaPass.setSize === 'function') {
+            this.smaaPass.setSize(width * pixelRatio, height * pixelRatio);
+        }
+        if (this.lensFlarePass && this.lensFlarePass.uniforms && this.lensFlarePass.uniforms.uAspect) {
+            this.lensFlarePass.uniforms.uAspect.value = (height > 0) ? (width / height) : 1.0;
+        }
+
+        const wantsContactShadowDepth =
+            this.aoMode === 'contact' ||
+            this.aoMode === 'ssao' ||
+            this.csDebugMode !== 0 ||
+            this.ssaoDebugMode !== 0;
+        if (wantsContactShadowDepth) {
+            this.ensureContactShadowDepthTargets(width, height, pixelRatio);
+        }
+
+        const wantsSsao = this.aoMode === 'ssao' || this.ssaoDebugMode !== 0;
+        if (wantsSsao) {
+            this.ensureSsaoTargets(width, height, pixelRatio);
+            this.setupSsaoViews();
+        }
+    }
+
+    updateConnectionStatus(connected) {
+        if (typeof updateStatusIndicator === 'function') {
+            if (connected) {
+                updateStatusIndicator('System Online', 'connected');
+            } else {
+                updateStatusIndicator('System Offline', 'disconnected');
             }
-            if (this.ssaaPass && typeof this.ssaaPass.setSize === 'function') {
-                this.ssaaPass.setSize(width * pixelRatio, height * pixelRatio);
-            }
-            if (this.smaaPass && typeof this.smaaPass.setSize === 'function') {
-                this.smaaPass.setSize(width * pixelRatio, height * pixelRatio);
-            }
-            if (this.lensFlarePass && this.lensFlarePass.uniforms && this.lensFlarePass.uniforms.uAspect) {
-                this.lensFlarePass.uniforms.uAspect.value = (height > 0) ? (width / height) : 1.0;
-            }
+        }
+    }
 
-                const wantsContactShadowDepth =
-                    this.aoMode === 'contact' ||
-                    this.aoMode === 'ssao' ||
-                    this.csDebugMode !== 0 ||
-                    this.ssaoDebugMode !== 0;
-                if (wantsContactShadowDepth) {
-                    this.ensureContactShadowDepthTargets(width, height, pixelRatio);
-                }
+    syncUiFromSimulationState() {
+        const state = this.simulationState;
+        if (!state || typeof state !== 'object') return;
 
-                const wantsSsao = this.aoMode === 'ssao' || this.ssaoDebugMode !== 0;
-                if (wantsSsao) {
-                    this.ensureSsaoTargets(width, height, pixelRatio);
-                    this.setupSsaoViews();
-                }
-            }
+        const speed = (typeof state.time_speed === 'number' && Number.isFinite(state.time_speed)) ? state.time_speed : null;
+        if (speed === null) return;
 
-     updateConnectionStatus(connected) {
-         if (typeof updateStatusIndicator === 'function') {
-             if (connected) {
-                 updateStatusIndicator('System Online', 'connected');
-             } else {
-                 updateStatusIndicator('System Offline', 'disconnected');
-             }
-         }
-     }
+        const timeSpeedSlider = document.getElementById('time-speed');
+        if (timeSpeedSlider) {
+            timeSpeedSlider.value = String(speed);
+        }
 
-     syncUiFromSimulationState() {
-         const state = this.simulationState;
-         if (!state || typeof state !== 'object') return;
-
-         const speed = (typeof state.time_speed === 'number' && Number.isFinite(state.time_speed)) ? state.time_speed : null;
-         if (speed === null) return;
-
-         const timeSpeedSlider = document.getElementById('time-speed');
-         if (timeSpeedSlider) {
-             timeSpeedSlider.value = String(speed);
-         }
-
-         const speedValue = document.getElementById('speed-value');
-         if (speedValue) {
-             speedValue.textContent = speed.toFixed(1);
-         }
-     }
-
+        const speedValue = document.getElementById('speed-value');
+        if (speedValue) {
+            speedValue.textContent = speed.toFixed(1);
+        }
+    }
 
     updateLensFlare(dtSec) {
         if (!this.lensFlarePass || !this.lensFlarePass.uniforms) return;
@@ -6585,22 +6738,21 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
         this.camera.updateMatrixWorld();
         this.camera.matrixWorldInverse.copy(this.camera.matrixWorld).invert();
 
-         if (this.objects.sun) {
-             this.objects.sun.rotation.y += 0.001;
- 
-                 this.objects.sun.getWorldPosition(this.sunWorldPosition);
+        if (this.objects.sun) {
+            this.objects.sun.rotation.y += 0.001;
 
-                 if (this.objects.spacecraft && typeof this.objects.spacecraft.updateSolarTracking === 'function') {
-                     // Solar panel tracking (comment out to disable for other models).
-                     const simDays = this.getDisplaySimulationTimeDays();
-                     this.objects.spacecraft.updateSolarTracking(this.sunWorldPosition, simDays);
-                 }
+            this.objects.sun.getWorldPosition(this.sunWorldPosition);
 
-                 this.updatePlanetShadowUniforms();
-                 
-                 this.sunViewPosition.copy(this.sunWorldPosition);
-                 this.sunViewPosition.applyMatrix4(this.camera.matrixWorldInverse);
+            if (this.objects.spacecraft && typeof this.objects.spacecraft.updateSolarTracking === 'function') {
+                // Solar panel tracking (comment out to disable for other models).
+                const simDays = this.getDisplaySimulationTimeDays();
+                this.objects.spacecraft.updateSolarTracking(this.sunWorldPosition, simDays);
+            }
 
+            this.updatePlanetShadowUniforms();
+
+            this.sunViewPosition.copy(this.sunWorldPosition);
+            this.sunViewPosition.applyMatrix4(this.camera.matrixWorldInverse);
 
             if (this.earthDayShader && this.earthDayShader.uniforms.sunPositionView) {
                 this.earthDayShader.uniforms.sunPositionView.value.copy(this.sunViewPosition);
@@ -6614,8 +6766,7 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
                     this.earthLightsShader.uniforms.time.value = Date.now() * 0.001;
                 }
             }
-
-            }
+        }
 
         if (this.objects.sunGlow && this.objects.sunGlow.length >= 2) {
             const time = Date.now() * 0.002;
@@ -6677,6 +6828,8 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
             const normalizedOffset = ((-cloudLocalRotation / twoPi) % 1 + 1) % 1;
             this.cloudShadowUvOffset = normalizedOffset;
 
+            this.cloudWarpTimeSec += dtSec;
+
             if (this.earthDayShader && this.earthDayShader.uniforms) {
                 if (this.earthDayShader.uniforms.cloudShadowEnabled) {
                     this.earthDayShader.uniforms.cloudShadowEnabled.value = this.cloudShadowEnabled ? 1.0 : 0.0;
@@ -6693,13 +6846,29 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
                 if (this.earthDayShader.uniforms.cloudShadowUvOffset) {
                     this.earthDayShader.uniforms.cloudShadowUvOffset.value = normalizedOffset;
                 }
+                if (this.earthDayShader.uniforms.cloudWarpAmp) {
+                    this.earthDayShader.uniforms.cloudWarpAmp.value = this.cloudWarp;
+                }
+                if (this.earthDayShader.uniforms.cloudWarpTime) {
+                    this.earthDayShader.uniforms.cloudWarpTime.value = this.cloudWarpTimeSec;
+                }
                 if (this.earthDayShader.uniforms.cloudShadowTexelSize && this.earthCloudAlphaTexture && this.earthCloudAlphaTexture.image) {
                     const img = this.earthCloudAlphaTexture.image;
                     const w = img && img.width ? img.width : 0;
                     const h = img && img.height ? img.height : 0;
                     if (w > 0 && h > 0) {
                         this.earthDayShader.uniforms.cloudShadowTexelSize.value.set(1 / w, 1 / h);
+
                     }
+                }
+            }
+
+            if (this.earthCloudShader && this.earthCloudShader.uniforms) {
+                if (this.earthCloudShader.uniforms.cloudWarpAmp) {
+                    this.earthCloudShader.uniforms.cloudWarpAmp.value = this.cloudWarp;
+                }
+                if (this.earthCloudShader.uniforms.cloudWarpTime) {
+                    this.earthCloudShader.uniforms.cloudWarpTime.value = this.cloudWarpTimeSec;
                 }
             }
         }
@@ -6721,50 +6890,50 @@ if (uMMContactEnabled > 0.5 && uMMDepthAvailable > 0.5) {
 
         this.updateLensFlare(dtSec);
 
-                    const wantsContactShadowDepth =
-                    this.aoMode === 'contact' ||
-                    this.aoMode === 'ssao' ||
-                    this.csDebugMode !== 0 ||
-                    this.ssaoDebugMode !== 0;
-                    if (this.spacecraftSelfShadowEnabled) {
-                        this.ensureSpacecraftSelfShadowTargets();
-                        this.updateSpacecraftSelfShadowCamera();
-                        this.renderSpacecraftSelfShadowDepthTarget();
-                        this.updateSpacecraftSelfShadowUniforms();
-                    }
-                    if (wantsContactShadowDepth) {
-                        const width = window.innerWidth;
-                        const height = window.innerHeight;
-                        const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
-                            ? this.renderer.getPixelRatio()
-                            : (window.devicePixelRatio || 1);
+        const wantsContactShadowDepth =
+            this.aoMode === 'contact' ||
+            this.aoMode === 'ssao' ||
+            this.csDebugMode !== 0 ||
+            this.ssaoDebugMode !== 0;
+        if (this.spacecraftSelfShadowEnabled) {
+            this.ensureSpacecraftSelfShadowTargets();
+            this.updateSpacecraftSelfShadowCamera();
+            this.renderSpacecraftSelfShadowDepthTarget();
+            this.updateSpacecraftSelfShadowUniforms();
+        }
+        if (wantsContactShadowDepth) {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const pixelRatio = (this.renderer && typeof this.renderer.getPixelRatio === 'function')
+                ? this.renderer.getPixelRatio()
+                : (window.devicePixelRatio || 1);
 
-                    this.ensureContactShadowDepthTargets(width, height, pixelRatio);
-                    this.renderContactShadowDepthTargets();
-                    this.updateContactShadowUniforms();
+            this.ensureContactShadowDepthTargets(width, height, pixelRatio);
+            this.renderContactShadowDepthTargets();
+            this.updateContactShadowUniforms();
 
-                    const wantsSsao = this.aoMode === 'ssao' || this.ssaoDebugMode !== 0;
-                    if (wantsSsao) {
-                        this.ensureSsaoTargets(width, height, pixelRatio);
-                        this.setupSsaoViews();
-                        this.renderSsao();
-                    }
-                }
+            const wantsSsao = this.aoMode === 'ssao' || this.ssaoDebugMode !== 0;
+            if (wantsSsao) {
+                this.ensureSsaoTargets(width, height, pixelRatio);
+                this.setupSsaoViews();
+                this.renderSsao();
+            }
+        }
 
-                if (this.csDebugMode !== 0) {
-                    this.renderContactShadowDebug();
-                    return;
-                }
+        if (this.csDebugMode !== 0) {
+            this.renderContactShadowDebug();
+            return;
+        }
         if (this.ssaoDebugMode !== 0) {
             this.renderSsaoDebug();
             return;
         }
 
-            const postMode = this.getRequestedPostMode();
-            const isRawPost = postMode === 'raw';
-            const bloomEnabled = this.getRequestedBloomEnabled(!isRawPost);
-            const bloomDebugMode = this.getRequestedBloomDebugMode();
-            const wantsBloom = bloomEnabled || bloomDebugMode !== 0;
+        const postMode = this.getRequestedPostMode();
+        const isRawPost = postMode === 'raw';
+        const bloomEnabled = this.getRequestedBloomEnabled(!isRawPost);
+        const bloomDebugMode = this.getRequestedBloomDebugMode();
+        const wantsBloom = bloomEnabled || bloomDebugMode !== 0;
 
         if (
             wantsBloom &&
