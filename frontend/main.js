@@ -573,6 +573,7 @@ const TEXTURE_PATHS = Object.freeze({
     earthBump: '/static/assets/textures/earth/4k/earth_bump.jpg',
     earthLights: '/static/assets/textures/earth/4k/earth_night.jpg',
     earthSpec: '/static/assets/textures/earth/4k/earth_spec.jpg',
+    earthBathy: '/static/assets/textures/earth/4k/earth_bathy.jpg',
     earthCloudAlpha: '/static/assets/textures/earth/8k/earth_clouds.jpg',
 
     marsMap: '/static/assets/textures/mars/2k/mars_diffuse.png',
@@ -586,6 +587,7 @@ const TEXTURE_PATH_LIST = Object.freeze([
     TEXTURE_PATHS.earthBump,
     TEXTURE_PATHS.earthLights,
     TEXTURE_PATHS.earthSpec,
+    TEXTURE_PATHS.earthBathy,
     TEXTURE_PATHS.earthCloudAlpha,
     TEXTURE_PATHS.marsMap,
     TEXTURE_PATHS.marsNormal,
@@ -1537,12 +1539,14 @@ class MarsMissionApp {
         this.cloudShadowUvOffset = 0.0;
         this.earthCloudAlphaTexture = null;
 
-              this.cloudWarp = this.getRequestedCloudWarp();
-              this.cloudWarpTimeSec = 0.0;
-              this.cloudWarpNoiseTexture = null;
-              this.earthCloudShader = null;
+        this.cloudWarp = this.getRequestedCloudWarp();
+        this.cloudWarpTimeSec = 0.0;
+        this.cloudWarpNoiseTexture = null;
+        this.earthCloudShader = null;
 
-
+        this.oceanDepthEnabled = this.getRequestedOceanDepthEnabled();
+        this.oceanDepthStrength = this.getRequestedOceanDepthStrength();
+        this.earthBathyTexture = null;
 
         this.contactShadowUniforms = null;
         this.ssaoUniforms = null;
@@ -2227,10 +2231,10 @@ class MarsMissionApp {
         return true;
     }
 
-     getRequestedCloudWarp() {
-         if (typeof window === 'undefined' || !window.location) {
-             return 0.004;
-         }
+    getRequestedCloudWarp() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 0.004;
+        }
         if (typeof URLSearchParams === 'undefined') {
             return 0.004;
         }
@@ -2245,13 +2249,50 @@ class MarsMissionApp {
 
         const value = Number(raw);
         if (!Number.isFinite(value)) return 0.004;
-         return THREE.MathUtils.clamp(value, 0.0, 0.03);
-     }
+        return THREE.MathUtils.clamp(value, 0.0, 0.03);
+    }
 
-     isSpacecraftSelfShadowEnabled() {
-          if (typeof window === 'undefined' || !window.location) {
-              return false;
-          }
+    getRequestedOceanDepthEnabled() {
+        if (typeof window === 'undefined' || !window.location) {
+            return false;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return false;
+        }
+
+        const params = getEffectiveParams();
+        if (!params) return false;
+        if (!params.has('oceanDepth')) return false;
+        const raw = String(params.get('oceanDepth') || '').trim().toLowerCase();
+        if (!raw || raw === '0' || raw === 'off' || raw === 'false') {
+            return false;
+        }
+        return true;
+    }
+
+    getRequestedOceanDepthStrength() {
+        if (typeof window === 'undefined' || !window.location) {
+            return 0.25;
+        }
+        if (typeof URLSearchParams === 'undefined') {
+            return 0.25;
+        }
+
+        const params = getEffectiveParams();
+        if (!params) return 0.25;
+        const raw = String(params.get('oceanDepthStr') || '').trim();
+        if (!raw) return 0.25;
+
+        const value = Number(raw);
+        if (!Number.isFinite(value)) return 0.25;
+        // Allow >0.6 for cases where the effect is too subtle under strong IBL/clearcoat.
+        return THREE.MathUtils.clamp(value, 0.0, 2.0);
+    }
+
+    isSpacecraftSelfShadowEnabled() {
+        if (typeof window === 'undefined' || !window.location) {
+            return false;
+        }
         if (typeof URLSearchParams === 'undefined') {
             return false;
         }
@@ -4818,6 +4859,42 @@ class MarsMissionApp {
             earthSpec.minFilter = THREE.LinearFilter;
             earthSpec.magFilter = THREE.LinearFilter;
             this.registerDataTexture(earthSpec);
+
+            const earthBathy = this.textureLoader.load(
+                TEXTURE_PATHS.earthBathy,
+                (texture) => {
+                    try {
+                        const image = texture && texture.image;
+                        if (!image || !image.width || !image.height) return;
+
+                        // Strong downsample to keep only low-frequency depth structure.
+                        // This avoids visible seafloor ridges at Earth-from-space scale.
+                        const targetW = 1024;
+                        const targetH = 512;
+
+                        const canvas = document.createElement('canvas');
+                        canvas.width = targetW;
+                        canvas.height = targetH;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.imageSmoothingQuality = 'high';
+                        ctx.drawImage(image, 0, 0, targetW, targetH);
+                        texture.image = canvas;
+                        texture.needsUpdate = true;
+                    } catch (err) {
+                        console.warn('Failed to downsample bathymetry texture:', err);
+                    }
+                }
+            );
+            earthBathy.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+            earthBathy.minFilter = THREE.LinearMipmapLinearFilter;
+            earthBathy.magFilter = THREE.LinearFilter;
+            earthBathy.wrapS = THREE.RepeatWrapping;
+            earthBathy.wrapT = THREE.ClampToEdgeWrapping;
+            this.registerDataTexture(earthBathy);
+            this.earthBathyTexture = earthBathy;
             
             const earthNightMaterial = new THREE.MeshPhysicalMaterial({
                 map: earthTexture,
@@ -4835,7 +4912,7 @@ class MarsMissionApp {
             const earthDayMaterial = new THREE.MeshPhysicalMaterial({
                 map: earthTexture,
                 bumpMap: earthBump,
-                bumpScale: 0.003,
+                bumpScale: 0.008,
                 emissive: new THREE.Color(0x000000),
                 emissiveIntensity: 0,
                 metalness: 0.0,
@@ -4859,6 +4936,11 @@ class MarsMissionApp {
                 shader.uniforms.cloudShadowUvOffset = { value: this.cloudShadowUvOffset };
                 shader.uniforms.cloudShadowTexelSize = { value: new THREE.Vector2(1 / 2048, 1 / 1024) };
 
+                shader.uniforms.oceanBathyMap = { value: earthBathy };
+                shader.uniforms.oceanBathyAvailable = { value: (earthBathy && earthBathy.image && earthBathy.image.width) ? 1.0 : 0.0 };
+                shader.uniforms.oceanDepthEnabled = { value: this.oceanDepthEnabled ? 1.0 : 0.0 };
+                shader.uniforms.oceanDepthStrength = { value: this.oceanDepthStrength };
+
                 const warpNoise = this.ensureCloudWarpNoiseTexture();
                 shader.uniforms.cloudWarpNoiseMap = { value: warpNoise || this.ensureBlackTexture() };
                 shader.uniforms.cloudWarpAmp = { value: warpNoise ? this.cloudWarp : 0.0 };
@@ -4881,6 +4963,11 @@ class MarsMissionApp {
                     uniform sampler2D cloudWarpNoiseMap;
                     uniform float cloudWarpAmp;
                     uniform float cloudWarpTime;
+
+                    uniform sampler2D oceanBathyMap;
+                    uniform float oceanBathyAvailable;
+                    uniform float oceanDepthEnabled;
+                    uniform float oceanDepthStrength;
 
                     vec2 mmWarpCloudUv(vec2 uv) {
                         if (cloudWarpAmp <= 0.0) {
@@ -4922,16 +5009,49 @@ class MarsMissionApp {
                  shader.fragmentShader = shader.fragmentShader.replace(
                      '#include <roughnessmap_fragment>',
                      `
-                     float roughnessFactor = roughness;
-                     #ifdef USE_ROUGHNESSMAP
-                         vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
-                         float oceanMask = clamp(texelRoughness.g, 0.0, 1.0);
-                         float landRoughness = 0.92;
-                         float oceanRoughness = 0.08;
-                         roughnessFactor = mix(landRoughness, oceanRoughness, oceanMask);
-                     #endif
-                     `
-                 );
+                      float roughnessFactor = roughness;
+                      #ifdef USE_ROUGHNESSMAP
+                           vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
+                           float oceanMask = clamp(texelRoughness.g, 0.0, 1.0);
+                           float oceanMaskSmooth = smoothstep(0.35, 0.85, oceanMask);
+                           float landRoughness = 0.92;
+                           float oceanRoughness = 0.08;
+                           roughnessFactor = mix(landRoughness, oceanRoughness, oceanMask);
+
+                          if (oceanBathyAvailable > 0.5 && oceanDepthEnabled > 0.5 && oceanDepthStrength > 0.0 && oceanMaskSmooth > 0.0) {
+                              float b = texture2D(oceanBathyMap, vRoughnessMapUv).r;
+                              float depthRaw = clamp(1.0 - b, 0.0, 1.0);
+                              // Single continuous depth ramp (avoid a "two-tone" look).
+                              float depth01 = pow(smoothstep(0.18, 0.78, depthRaw), 0.95);
+                              float shallow01 = pow(smoothstep(0.90, 0.990, b), 1.15);
+                              float k = oceanDepthStrength * oceanMaskSmooth;
+                              float w = clamp(k, 0.0, 1.0);
+
+                               vec3 baseOcean = diffuseColor.rgb;
+
+                               // Targets tuned around the observed ocean base (sRGB ~ 30,59,117).
+                               // Use a 3-stop ramp (shallow -> mid -> deep) to avoid a "two-tone" look.
+                               vec3 deepTarget = baseOcean * vec3(0.40, 0.58, 0.92);
+                               vec3 midTarget = baseOcean * vec3(0.92, 1.12, 1.15);
+                               vec3 shallowTarget = baseOcean * vec3(1.04, 1.28, 1.16) + vec3(0.010, 0.028, 0.020);
+                               vec3 shelfTarget = baseOcean * vec3(1.08, 1.38, 1.18) + vec3(0.012, 0.032, 0.022);
+
+                               float t = clamp(depth01, 0.0, 1.0);
+                               vec3 rampA = mix(shallowTarget, midTarget, t);
+                               vec3 rampB = mix(midTarget, deepTarget, t);
+                               vec3 depthGraded = mix(rampA, rampB, t);
+
+                               // Extra shelf pop (very shallow), kept subtle.
+                               depthGraded = mix(depthGraded, shelfTarget, shallow01 * 0.22);
+
+                               diffuseColor.rgb = mix(baseOcean, depthGraded, w);
+
+                               // Micro-variation in roughness only (no normal perturbation) to avoid multi-sun glints.
+                               roughnessFactor = clamp(roughnessFactor + (depth01 * 0.055 - shallow01 * 0.025) * w, 0.0, 1.0);
+                           }
+                       #endif
+                       `
+                   );
 
                  shader.fragmentShader = shader.fragmentShader.replace(
                      '#include <dithering_fragment>',
@@ -6872,6 +6992,19 @@ class MarsMissionApp {
                         this.earthDayShader.uniforms.cloudShadowTexelSize.value.set(1 / w, 1 / h);
 
                     }
+                }
+
+                if (this.earthDayShader.uniforms.oceanBathyAvailable) {
+                    const img = this.earthBathyTexture && this.earthBathyTexture.image;
+                    const w = img && img.width ? img.width : 0;
+                    const h = img && img.height ? img.height : 0;
+                    this.earthDayShader.uniforms.oceanBathyAvailable.value = (w > 0 && h > 0) ? 1.0 : 0.0;
+                }
+                if (this.earthDayShader.uniforms.oceanDepthEnabled) {
+                    this.earthDayShader.uniforms.oceanDepthEnabled.value = this.oceanDepthEnabled ? 1.0 : 0.0;
+                }
+                if (this.earthDayShader.uniforms.oceanDepthStrength) {
+                    this.earthDayShader.uniforms.oceanDepthStrength.value = this.oceanDepthStrength;
                 }
             }
 

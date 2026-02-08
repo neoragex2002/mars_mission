@@ -370,6 +370,31 @@
 
 ---
 
+## 8.4 地球海洋深浅色调（bathymetry）
+
+使用 `earth_bathy.jpg`（陆地近白、海洋偏黑、越黑越深；bathymetry）给海洋增加轻微到中等的“深浅层次/色调差异”（随 `oceanDepthStr` 调整）。
+
+设计目标：外太空尺度下 **不应看见海底纹理线条**（中洋脊/断裂带/沟壑等），只保留大尺度的深浅观感。
+
+参数：
+
+### 8.4.1 开关
+参数：`oceanDepth`
+- **默认值**：关闭
+- **开启**：`oceanDepth=1` / `true` / `on`
+- **关闭**：`oceanDepth=0` / `off` / `false`
+
+### 8.4.2 强度
+参数：`oceanDepthStr`
+- **默认值**：`0.25`
+- **取值范围**：`0..2.0`（会 clamp；`0..0.6` 更偏保守，>0.6 用于在强 IBL/clearcoat 下仍能看出差异）
+
+示例：
+- `/?oceanDepth=1&oceanDepthStr=0.25`
+- `/?post=raw&bg=dim&oceanDepth=1&oceanDepthStr=0.35`
+
+---
+
 ## 9. Contact Shadows / SSAO（Phase 3A：Contact Shadows 已实现）
 
 参数：`ao`
@@ -487,6 +512,8 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | Shadow | `cloudShadowSoftness` | `1.2` | 云影软化/模糊（0..4；值越大越糊） |
 | Shadow | `cloudShadowLatitudeFade` | `on` | 极区云影衰减（0/1；建议保持开启） |
 | Shadow | `cloudWarp` | `0.004` | 云层 UV 扰动幅度（0..0.03；0=关闭；云层与云影同步） |
+| Ocean | `oceanDepth` | `off` | 海洋深浅色调（bathymetry；外太空尺度低频分层） |
+| Ocean | `oceanDepthStr` | `0.25` | 海洋深浅强度（0..2.0；建议优先 0..0.6） |
 | Shadow | `sShadowSoft` | `0` | 自阴影软硬（PCF 半径，单位 texels；0=硬边） |
 | Shadow | `sShadowSamples` | `16` | 自阴影 PCF 采样数（1..25；越大越自然但更耗） |
 | Shadow | `sShadowFit` | `1` | 自阴影 tight fit（1=收紧 frustum） |
