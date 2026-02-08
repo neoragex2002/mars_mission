@@ -1537,10 +1537,12 @@ class MarsMissionApp {
         this.cloudShadowUvOffset = 0.0;
         this.earthCloudAlphaTexture = null;
 
-        this.cloudWarp = this.getRequestedCloudWarp();
-        this.cloudWarpTimeSec = 0.0;
-        this.cloudWarpNoiseTexture = null;
-        this.earthCloudShader = null;
+              this.cloudWarp = this.getRequestedCloudWarp();
+              this.cloudWarpTimeSec = 0.0;
+              this.cloudWarpNoiseTexture = null;
+              this.earthCloudShader = null;
+
+
 
         this.contactShadowUniforms = null;
         this.ssaoUniforms = null;
@@ -2225,10 +2227,10 @@ class MarsMissionApp {
         return true;
     }
 
-    getRequestedCloudWarp() {
-        if (typeof window === 'undefined' || !window.location) {
-            return 0.004;
-        }
+     getRequestedCloudWarp() {
+         if (typeof window === 'undefined' || !window.location) {
+             return 0.004;
+         }
         if (typeof URLSearchParams === 'undefined') {
             return 0.004;
         }
@@ -2243,13 +2245,13 @@ class MarsMissionApp {
 
         const value = Number(raw);
         if (!Number.isFinite(value)) return 0.004;
-        return THREE.MathUtils.clamp(value, 0.0, 0.03);
-    }
+         return THREE.MathUtils.clamp(value, 0.0, 0.03);
+     }
 
-    isSpacecraftSelfShadowEnabled() {
-        if (typeof window === 'undefined' || !window.location) {
-            return false;
-        }
+     isSpacecraftSelfShadowEnabled() {
+          if (typeof window === 'undefined' || !window.location) {
+              return false;
+          }
         if (typeof URLSearchParams === 'undefined') {
             return false;
         }
@@ -4817,7 +4819,7 @@ class MarsMissionApp {
             earthSpec.magFilter = THREE.LinearFilter;
             this.registerDataTexture(earthSpec);
             
-            const earthNightMaterial = new THREE.MeshStandardMaterial({
+            const earthNightMaterial = new THREE.MeshPhysicalMaterial({
                 map: earthTexture,
                 bumpMap: earthBump,
                 bumpScale: 0.0,
@@ -4826,10 +4828,11 @@ class MarsMissionApp {
                 metalness: 0.0,
                 roughness: 1.0,
                 roughnessMap: earthSpec,
+                clearcoat: 0.0,
                 envMapIntensity: 0.02
             });
 
-            const earthDayMaterial = new THREE.MeshStandardMaterial({
+            const earthDayMaterial = new THREE.MeshPhysicalMaterial({
                 map: earthTexture,
                 bumpMap: earthBump,
                 bumpScale: 0.003,
@@ -4838,6 +4841,9 @@ class MarsMissionApp {
                 metalness: 0.0,
                 roughness: 1.0,
                 roughnessMap: earthSpec,
+                clearcoat: 1.0,
+                clearcoatRoughness: 0.08,
+                clearcoatMap: earthSpec,
                 envMapIntensity: 0.02
             });
 
@@ -4919,7 +4925,10 @@ class MarsMissionApp {
                      float roughnessFactor = roughness;
                      #ifdef USE_ROUGHNESSMAP
                          vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
-                         roughnessFactor *= texelRoughness.g;
+                         float oceanMask = clamp(texelRoughness.g, 0.0, 1.0);
+                         float landRoughness = 0.92;
+                         float oceanRoughness = 0.08;
+                         roughnessFactor = mix(landRoughness, oceanRoughness, oceanMask);
                      #endif
                      `
                  );
@@ -4977,7 +4986,10 @@ class MarsMissionApp {
                      float roughnessFactor = roughness;
                      #ifdef USE_ROUGHNESSMAP
                          vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
-                         roughnessFactor *= texelRoughness.g;
+                         float oceanMask = clamp(texelRoughness.g, 0.0, 1.0);
+                         float landRoughness = 0.92;
+                         float oceanRoughness = 0.08;
+                         roughnessFactor = mix(landRoughness, oceanRoughness, oceanMask);
                      #endif
                      `
                  );

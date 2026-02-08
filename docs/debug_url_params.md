@@ -362,6 +362,14 @@
 
 ---
 
+## 8.3 地球海洋高光（clearcoat）
+
+地球地表材质使用 `earth_spec.jpg` 作为海洋 mask（海洋亮、陆地暗），用于：
+- 海洋更光滑（roughness 更低）
+- 海洋额外 clearcoat 高光层（更“晶莹通透”）
+
+---
+
 ## 9. Contact Shadows / SSAO（Phase 3A：Contact Shadows 已实现）
 
 参数：`ao`
