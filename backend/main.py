@@ -3,17 +3,32 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager, suppress
 import asyncio
+from dataclasses import dataclass
 import json
 import struct
 import time
 import urllib.request
 from pathlib import Path
+from typing import Callable, Optional
 from orbit_engine import OrbitEngine
 
 GATEWAY_CORE_NASA_URL = (
     "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/model/gateway/"
     "Gateway%20Core.glb?emrc=697ae83982ce6"
 )
+
+EARTH_8K_DAY_URL = "https://www.solarsystemscope.com/textures/download/8k_earth_daymap.jpg"
+EARTH_8K_CLOUDS_URL = "https://www.solarsystemscope.com/textures/download/8k_earth_clouds.jpg"
+
+
+@dataclass(frozen=True)
+class AssetSpec:
+    asset_id: str
+    target_rel_path: str
+    url: Optional[str]
+    validate: Callable[[Path], None]
+    required: bool = True
+    description: str = ""
 
 
 def _validate_glb_file(path: Path) -> None:
@@ -63,13 +78,85 @@ def _validate_glb_file(path: Path) -> None:
         raise ValueError("Invalid glTF JSON (missing nodes)")
 
 
-def _ensure_gateway_core_nasa_glb(frontend_dir: Path) -> None:
-    models_dir = frontend_dir / "assets" / "models"
-    target_path = models_dir / "GatewayCore_Nasa.glb"
-    rel_target = target_path.relative_to(frontend_dir)
+def _validate_jpeg_file(path: Path) -> None:
+    file_size = path.stat().st_size
+    if file_size < 512 * 1024:
+        raise ValueError(f"JPEG too small: {file_size} bytes")
+    if file_size < 4:
+        raise ValueError("JPEG truncated")
+
+    with path.open("rb") as f:
+        head = f.read(512)
+        if len(head) < 4:
+            raise ValueError("JPEG header truncated")
+
+        if head[:2] != b"\xff\xd8":
+            raise ValueError(f"Invalid JPEG magic: {head[:2]!r}")
+
+        head_lower = head.lower()
+        if b"<!doctype" in head_lower or b"<html" in head_lower:
+            raise ValueError("JPEG appears to be an HTML error page")
+
+        f.seek(-2, 2)
+        tail = f.read(2)
+        if tail != b"\xff\xd9":
+            raise ValueError(f"JPEG missing EOI marker: {tail!r}")
+
+
+def _download_to_tmp(url: str, tmp_path: Path, rel_target: Path) -> tuple[int, float]:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "MarsMission3D/1.0 (+FastAPI StaticFiles bootstrap)",
+        },
+    )
+
+    start = time.time()
+    bytes_written = 0
+    total_bytes = None
+    last_progress_at = 0
+    progress_step = 10 * 1024 * 1024
+
+    with urllib.request.urlopen(req, timeout=120) as response, tmp_path.open("wb") as f:
+        raw_total = response.headers.get("Content-Length")
+        if raw_total:
+            try:
+                total_bytes = int(raw_total)
+                total_mb = total_bytes / (1024 * 1024)
+                print(f"[startup] Expected size: {total_mb:.1f} MiB", flush=True)
+                progress_step = max(progress_step, total_bytes // 10)
+            except Exception:
+                total_bytes = None
+
+        while True:
+            chunk = response.read(1024 * 1024)
+            if not chunk:
+                break
+            f.write(chunk)
+            bytes_written += len(chunk)
+
+            if bytes_written - last_progress_at >= progress_step:
+                last_progress_at = bytes_written
+                if total_bytes:
+                    pct = (bytes_written / total_bytes) * 100.0
+                    print(f"[startup] Download progress: {pct:.0f}%", flush=True)
+                else:
+                    mb = bytes_written / (1024 * 1024)
+                    print(f"[startup] Downloaded: {mb:.1f} MiB", flush=True)
+
+    elapsed = time.time() - start
+    mb = bytes_written / (1024 * 1024)
+    print(f"[startup] Saved {rel_target} ({mb:.1f} MiB) in {elapsed:.1f}s", flush=True)
+    return bytes_written, elapsed
+
+
+def _ensure_asset(frontend_dir: Path, spec: AssetSpec) -> None:
+    target_path = frontend_dir / spec.target_rel_path
+    rel_target = Path(spec.target_rel_path)
+
     if target_path.exists():
         try:
-            _validate_glb_file(target_path)
+            spec.validate(target_path)
         except Exception as e:
             print(f"[startup] Found {rel_target} but validation failed; re-downloading. ({e})", flush=True)
             with suppress(Exception):
@@ -78,54 +165,19 @@ def _ensure_gateway_core_nasa_glb(frontend_dir: Path) -> None:
             print(f"[startup] Found {rel_target}; skipping download.", flush=True)
             return
 
-    models_dir.mkdir(parents=True, exist_ok=True)
-    tmp_path = models_dir / (target_path.name + ".download")
+    if not spec.url:
+        raise RuntimeError(f"Missing required asset and no download URL: {rel_target}")
 
-    req = urllib.request.Request(
-        GATEWAY_CORE_NASA_URL,
-        headers={
-            "User-Agent": "MarsMission3D/1.0 (+FastAPI StaticFiles bootstrap)",
-        },
-    )
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = target_path.with_name(target_path.name + ".download")
+    with suppress(Exception):
+        tmp_path.unlink(missing_ok=True)
 
-    print(f"[startup] Downloading {rel_target} from NASA: {GATEWAY_CORE_NASA_URL}", flush=True)
-    start = time.time()
-
-    bytes_written = 0
-    total_bytes = None
-    last_progress_at = 0
-    progress_step = 10 * 1024 * 1024
-
+    print(f"[startup] Downloading {rel_target} from: {spec.url}", flush=True)
     try:
-        with urllib.request.urlopen(req, timeout=60) as response, tmp_path.open("wb") as f:
-            raw_total = response.headers.get("Content-Length")
-            if raw_total:
-                try:
-                    total_bytes = int(raw_total)
-                    total_mb = total_bytes / (1024 * 1024)
-                    print(f"[startup] Expected size: {total_mb:.1f} MiB", flush=True)
-                    progress_step = max(progress_step, total_bytes // 10)
-                except Exception:
-                    total_bytes = None
-
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                f.write(chunk)
-                bytes_written += len(chunk)
-
-                if bytes_written - last_progress_at >= progress_step:
-                    last_progress_at = bytes_written
-                    if total_bytes:
-                        pct = (bytes_written / total_bytes) * 100.0
-                        print(f"[startup] Download progress: {pct:.0f}%", flush=True)
-                    else:
-                        mb = bytes_written / (1024 * 1024)
-                        print(f"[startup] Downloaded: {mb:.1f} MiB", flush=True)
-
+        _download_to_tmp(spec.url, tmp_path, rel_target)
         print(f"[startup] Validating downloaded {rel_target}...", flush=True)
-        _validate_glb_file(tmp_path)
+        spec.validate(tmp_path)
         print(f"[startup] Validation OK: {rel_target}", flush=True)
         tmp_path.replace(target_path)
     except Exception:
@@ -133,21 +185,63 @@ def _ensure_gateway_core_nasa_glb(frontend_dir: Path) -> None:
             tmp_path.unlink(missing_ok=True)
         raise
 
-    elapsed = time.time() - start
-    mb = bytes_written / (1024 * 1024)
-    print(f"[startup] Saved {rel_target} ({mb:.1f} MiB) in {elapsed:.1f}s", flush=True)
 
+def _ensure_startup_assets(frontend_dir: Path) -> None:
+    required_assets = [
+        AssetSpec(
+            asset_id="gateway_core_nasa_glb",
+            target_rel_path="assets/models/GatewayCore_Nasa.glb",
+            url=GATEWAY_CORE_NASA_URL,
+            validate=_validate_glb_file,
+            required=True,
+            description="NASA Gateway Core model (GLB)",
+        ),
+        AssetSpec(
+            asset_id="earth_8k_day",
+            target_rel_path="assets/textures/earth/8k/earth_day.jpg",
+            url=EARTH_8K_DAY_URL,
+            validate=_validate_jpeg_file,
+            required=True,
+            description="Earth 8K day map (JPG)",
+        ),
+        AssetSpec(
+            asset_id="earth_8k_clouds",
+            target_rel_path="assets/textures/earth/8k/earth_clouds.jpg",
+            url=EARTH_8K_CLOUDS_URL,
+            validate=_validate_jpeg_file,
+            required=True,
+            description="Earth 8K cloud alpha map (JPG)",
+        ),
+    ]
+
+    failures: list[tuple[AssetSpec, Exception]] = []
+    for spec in required_assets:
+        try:
+            _ensure_asset(frontend_dir, spec)
+        except Exception as e:
+            failures.append((spec, e))
+
+    required_failures = [item for item in failures if item[0].required]
+    if not required_failures:
+        return
+
+    print("[startup] Required assets are missing or failed to download.", flush=True)
+    print("[startup] Please download and place the files manually:", flush=True)
+    for spec, err in required_failures:
+        target_path = frontend_dir / spec.target_rel_path
+        print(f"[startup] - {spec.description or spec.asset_id}", flush=True)
+        print(f"[startup]   Path: {target_path}", flush=True)
+        if spec.url:
+            print(f"[startup]   URL:  {spec.url}", flush=True)
+        print(f"[startup]   Error: {err}", flush=True)
+
+    raise RuntimeError("Startup asset bootstrap failed")
 
 # Lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    try:
-        await asyncio.to_thread(_ensure_gateway_core_nasa_glb, frontend_dir)
-    except Exception as e:
-        # Don't block startup if the model download fails (offline, firewall, etc.).
-        # Frontend loader will fall back to procedural model if the model is missing.
-        print(f"[startup] Failed to ensure GatewayCore_Nasa.glb: {e!r}", flush=True)
+    await asyncio.to_thread(_ensure_startup_assets, frontend_dir)
 
     simulation_task = asyncio.create_task(simulation_loop())
     try:

@@ -148,17 +148,32 @@ NASA 原始文件名包含空格（`Gateway Core.glb`），本项目统一使用
 
 - 若文件不存在：从 NASA 下载并保存（约 60+ MiB；启动会等待下载完成；控制台打印进度）
 - 若文件存在但校验失败：删除并重新下载
-- 若下载/校验失败：后端仍会启动；前端加载失败后会回退到程序生成（procedural）的飞船模型
+- 若下载/校验失败：**后端会阻止启动**，并提示手工下载/放置到目标路径
 
 下载源（后端内置）：`https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/model/gateway/Gateway%20Core.glb?emrc=697ae83982ce6`
 
-### 7.3 下载完成后的快速校验
+### 7.3 地球 8K 贴图（后端启动门禁）
+后端启动会确保以下贴图存在（缺失会自动下载；下载失败会阻止启动，并提示手工下载）：
+
+- `frontend/assets/textures/earth/8k/earth_day.jpg`
+  - 下载源：`https://www.solarsystemscope.com/textures/download/8k_earth_daymap.jpg`
+  - 注意：下载下来后必须重命名为 `earth_day.jpg`
+- `frontend/assets/textures/earth/8k/earth_clouds.jpg`
+  - 下载源：`https://www.solarsystemscope.com/textures/download/8k_earth_clouds.jpg`
+  - 注意：下载下来后必须重命名为 `earth_clouds.jpg`
+
+### 7.4 下载完成后的快速校验
 后端会做轻量校验，避免保存到 HTML/错误文件：
 - GLB 头部：magic/version/length（长度需与文件大小一致）
 - 第一个 chunk：必须是 JSON 且可解析
 - glTF JSON：至少包含 `asset` / `scenes` / `nodes`
 
-### 7.4 坐标系矫正（重要）
+对 JPG 贴图也会做轻量校验：
+- 文件大小阈值
+- JPEG 头尾标记（SOI/EOI）
+- 避免保存到 HTML 错误页
+
+### 7.5 坐标系矫正（重要）
 NASA 原始模型与项目内部坐标约定存在差异。前端加载 `GatewayCore_Nasa.glb` 后会应用一次固定的“本地坐标系矫正矩阵”（见 `frontend/spacecraft.js`）。
 
 因此：
@@ -237,14 +252,16 @@ mars_mission/
 Three.js 与 examples 默认从 CDN 加载；若网络/代理/防火墙阻止外网访问，会导致前端依赖无法加载。
 
 ### 12.2 启动很慢
-首次启动可能会下载 `GatewayCore_Nasa.glb`（60+ MiB），属于预期行为；后端控制台会打印下载进度与校验结果。
+首次启动可能会下载以下资源（属于预期行为；后端控制台会打印下载进度与校验结果）：
+- `GatewayCore_Nasa.glb`（60+ MiB）
+- 地球 8K 贴图：`earth_day.jpg` / `earth_clouds.jpg`
 
 ### 12.3 飞船模型不显示
 可能原因：
-- NASA 模型下载失败（检查后端启动日志）
+- NASA 模型下载失败（检查后端启动日志；下载失败会阻止后端启动）
 - `/static/assets/models/GatewayCore_Nasa.glb` 无法被访问（被删除/路径不一致）
 
-模型加载失败时，前端会回退 procedural 飞船模型以保证应用可用。
+处理方式：按启动日志提示手工下载并放置到 `frontend/assets/models/GatewayCore_Nasa.glb` 后再启动。
 
 ---
 
