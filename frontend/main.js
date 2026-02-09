@@ -1587,7 +1587,7 @@ class MarsMissionApp {
         this.simulationState = {
             is_running: false,
             paused: false,
-            time_speed: 0.5,
+            time_speed: 0.03,
         };
 
         // Simulation-time tracking for smooth rendering between WS updates.
@@ -2532,7 +2532,53 @@ class MarsMissionApp {
             return null;
         }
 
-        return THREE.MathUtils.clamp(value, 0, 5);
+        return THREE.MathUtils.clamp(value, 0.02, 5);
+    }
+
+    getWarpSpeedMin() {
+        return 0.02;
+    }
+
+    getWarpSpeedMax() {
+        return 5.0;
+    }
+
+    getWarpSpeedSliderMax() {
+        return 500;
+    }
+
+    warpSliderPosToSpeed(pos) {
+        const sliderMax = this.getWarpSpeedSliderMax();
+        const minSpeed = this.getWarpSpeedMin();
+        const maxSpeed = this.getWarpSpeedMax();
+        const p = THREE.MathUtils.clamp(Number(pos), 0, sliderMax);
+        if (!Number.isFinite(p)) {
+            return minSpeed;
+        }
+        const t = (sliderMax > 0) ? (p / sliderMax) : 0.0;
+        const ratio = maxSpeed / minSpeed;
+        return minSpeed * Math.pow(ratio, THREE.MathUtils.clamp(t, 0.0, 1.0));
+    }
+
+    warpSpeedToSliderPos(speed) {
+        const sliderMax = this.getWarpSpeedSliderMax();
+        const minSpeed = this.getWarpSpeedMin();
+        const maxSpeed = this.getWarpSpeedMax();
+        const s = THREE.MathUtils.clamp(Number(speed), minSpeed, maxSpeed);
+        if (!Number.isFinite(s) || s <= 0.0) {
+            return 0;
+        }
+        const ratio = maxSpeed / minSpeed;
+        const t = Math.log(s / minSpeed) / Math.log(ratio);
+        const pos = Math.round(THREE.MathUtils.clamp(t, 0.0, 1.0) * sliderMax);
+        return THREE.MathUtils.clamp(pos, 0, sliderMax);
+    }
+
+    formatWarpSpeed(speed) {
+        const s = Number(speed);
+        if (!Number.isFinite(s)) return '';
+        if (s < 1.0) return s.toFixed(2);
+        return s.toFixed(1);
     }
 
     applyIblIntensity() {
@@ -6542,8 +6588,8 @@ class MarsMissionApp {
         switch (this.viewMode) {
             case 'earth':
                 this.controls.enablePan = false;
-                this.controls.minDistance = 0.3;
-                this.controls.maxDistance = 50;
+                this.controls.minDistance = 0.2;
+                this.controls.maxDistance = 4;
                 if (earthPos) {
                     focusPoint = earthPos;
                     idealOffset = new THREE.Vector3(0.8, 0.4, 0.8);
@@ -6552,8 +6598,8 @@ class MarsMissionApp {
 
             case 'mars':
                 this.controls.enablePan = false;
-                this.controls.minDistance = 0.3;
-                this.controls.maxDistance = 50;
+                this.controls.minDistance = 0.15;
+                this.controls.maxDistance = 4;
                 if (marsPos) {
                     focusPoint = marsPos;
                     idealOffset = new THREE.Vector3(0.6, 0.3, 0.6);
@@ -6563,7 +6609,7 @@ class MarsMissionApp {
             case 'spacecraft':
                 this.controls.enablePan = false;
                 this.controls.minDistance = 0.02;
-                this.controls.maxDistance = 10;
+                this.controls.maxDistance = 4;
                 if (shipPos) {
                     focusPoint = shipPos;
                     idealOffset = new THREE.Vector3(0.18, 0.12, 0.18);
@@ -6572,6 +6618,8 @@ class MarsMissionApp {
 
             case 'top':
                 this.controls.enablePan = true;
+                this.controls.minDistance = 0.4;
+                this.controls.maxDistance = 6;
                 if (!this.isUserInteracting) {
                     this.controls.target.lerp(new THREE.Vector3(0, 0, 0), this.targetLerpFactor);
                     // Add a tiny offset to avoid collinearity singularities in OrbitControls.
@@ -6583,6 +6631,8 @@ class MarsMissionApp {
             case 'free':
             default:
                 this.controls.enablePan = true;
+                this.controls.minDistance = 0.2;
+                this.controls.maxDistance = 4;
                 this.controls.update();
                 return;
         }
@@ -6688,12 +6738,12 @@ class MarsMissionApp {
 
         const timeSpeedSlider = document.getElementById('time-speed');
         if (timeSpeedSlider) {
-            timeSpeedSlider.value = String(speed);
+            timeSpeedSlider.value = String(this.warpSpeedToSliderPos(speed));
         }
 
         const speedValue = document.getElementById('speed-value');
         if (speedValue) {
-            speedValue.textContent = speed.toFixed(1);
+            speedValue.textContent = this.formatWarpSpeed(speed);
         }
     }
 

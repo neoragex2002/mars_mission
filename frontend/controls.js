@@ -66,10 +66,37 @@ function setupPlaybackControls() {
 function setupTimeSpeedControl() {
     const timeSpeedSlider = document.getElementById('time-speed');
     const speedValue = document.getElementById('speed-value');
-    
+
+    if (!timeSpeedSlider || !speedValue) {
+        return;
+    }
+
+    const getSpeedFromSlider = (raw) => {
+        const pos = Number(raw);
+        if (!Number.isFinite(pos)) {
+            return null;
+        }
+        if (app && typeof app.warpSliderPosToSpeed === 'function') {
+            return app.warpSliderPosToSpeed(pos);
+        }
+        return null;
+    };
+
+    const formatSpeed = (speed) => {
+        if (!Number.isFinite(speed)) return '';
+        if (app && typeof app.formatWarpSpeed === 'function') {
+            return app.formatWarpSpeed(speed);
+        }
+        if (speed < 1.0) return speed.toFixed(2);
+        return speed.toFixed(1);
+    };
+
     timeSpeedSlider.addEventListener('input', (event) => {
-        const speed = parseFloat(event.target.value);
-        speedValue.textContent = speed.toFixed(1);
+        const speed = getSpeedFromSlider(event && event.target ? event.target.value : null);
+        if (speed === null) {
+            return;
+        }
+        speedValue.textContent = formatSpeed(speed);
         
         if (app) {
             app.setTimeSpeed(speed);

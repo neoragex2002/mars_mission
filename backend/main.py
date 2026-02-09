@@ -286,7 +286,7 @@ class SimulationState:
     def __init__(self):
         self.is_running = False
         self.current_time = 0.0
-        self.time_speed = 0.1  # days per frame (slower for better visibility)
+        self.time_speed = 0.03  # days per frame (warp speed)
         self.paused = False
 
 sim_state = SimulationState()
@@ -469,7 +469,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "message": f"Invalid speed: {raw_speed!r}",
                     })
                 else:
-                    sim_state.time_speed = max(0.0, speed)
+                    sim_state.time_speed = min(5.0, max(0.02, speed))
                     await broadcast_to_clients(build_simulation_update("update"))
             
             elif command == "set_time":

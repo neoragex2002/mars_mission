@@ -262,8 +262,8 @@
 ## 7.3 Warp（时间速度）
 
 参数：`speed` / `warp`
-- **默认值**：不指定（使用后端当前 `time_speed`；UI 会在 WS 连接后同步显示实际值）
-- **取值范围**：`0` 到 `5`（会 clamp）
+- **默认值**：不指定（使用后端当前 `time_speed`；当前默认 `0.03`；UI 会在 WS 连接后同步显示实际值）
+- **取值范围**：`0.02` 到 `5`（会 clamp；UI 滑条为对数映射，但 URL 仍填写真实 speed）
 
 含义：
 - 用于强制指定刷新/重载后的时间速度（Warp），并让 UI（底部 Warp 滑条）显示与后端一致。
@@ -504,7 +504,7 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | Lighting | `hemi` | `0.0` | Hemisphere 强度 |
 | Background | `bg` | `default` | `default`/`off`/`dim` |
 | Background | `city` | `1.0` | 地球夜灯 0..2 |
-| Warp | `speed` / `warp` | (无) | 刷新后强制 Warp（0..5） |
+| Warp | `speed` / `warp` | (无) | 刷新后强制 Warp（0.02..5；UI 滑条为对数映射） |
 | Shadow | `ps` | `off` | 行星遮挡太阳直射（飞船解析） |
 | Shadow | `sShadow` | `off` | 飞船自阴影（ship-only shadow map；仅影响太阳直射） |
 | Shadow | `cloudShadow` | `on` | 地球云影（地表暗化；采样云层 alpha；不走 shadow map） |
