@@ -430,20 +430,20 @@
 ### 10.2 Sun Glow（已实现）
 - `sunGlow=auto|1|0`：太阳光晕 sprites（非 bloom，偏艺术向装饰）开关；默认关闭（`auto` 当前等同关闭），显式指定可开启（用于隔离“太阳光晕 vs bloom”贡献）。
 
-### 10.3 Planet Atmosphere / Glow（Phase 4B，已实现）
-行星大气 Fresnel 与外圈 glow 走 HDR 口径（scene-referred），可独立控制是否参与 bloom。
+### 10.3 Planet Atmosphere / Halo（Phase 4B，已实现）
+行星大气 Fresnel 与外圈 Halo Layer 走 HDR 口径（scene-referred），可独立控制是否参与 bloom。
 
 - `atmo=auto|1|0`：行星大气 Fresnel 开关（`auto` 默认随 `post`；`post=raw` 时默认关）
 - `atmoStr=<float>`：大气强度（默认 `1.0`；范围 `0..6`）
 - `atmoBloom=auto|1|0`：大气是否进入 bloom layer（`auto` 默认随 `post`）
 
-- `glow=auto|1|0`：行星外圈 glow sprites（偏艺术向装饰；当前默认关闭以避免与 bloom 双叠加）
-- `glowStr=<float>`：glow 强度（默认 `0.6`；范围 `0..6`）
-- `glowBloom=auto|1|0`：glow 是否进入 bloom layer（默认关闭）
+- `halo=auto|1|0`：行星外圈 Halo Layer（薄壳 mesh；用于外发光能量分布；默认关闭以避免与 bloom 叠加过头）
+- `haloStr=<float>`：Halo 强度（默认 `0.6`；范围 `0..6`）
+- `haloBloom=auto|1|0`：Halo 是否进入 bloom layer（默认关闭；要“向宇宙外扩柔光”通常需要开启）
 
 推荐验证：
 - 仅看 HDR 大气本体：`/?post=raw&bloom=0&atmo=1`
-- 让 halo 主要由 bloom 生成：`/?post=raw&bloom=1&atmo=1&atmoBloom=1&bloomTh=1.0&bloomRad=0.4`
+- 让 Halo 通过 bloom 外扩：`/?post=raw&bloom=1&atmo=1&atmoBloom=0&halo=1&haloBloom=1&bloomTh=1.0&bloomRad=0.6`
 
 ### 10.4 Lens Flare（已实现）
 - `flare=auto|1|0`：独立控制 lens flare（HDR post pass）；默认 `auto`（随 `post`，`post=raw` 默认关），显式指定会覆盖 `post` 的默认值（允许 `post=raw&flare=1` 做 flare-only 标定）。
@@ -547,9 +547,9 @@ SSAO 调试（已实现，全屏替换输出，不经过 tone mapping）：
 | PostFX | `atmo` | auto | `auto` / `1` / `0`（行星大气 Fresnel；默认随 `post`） |
 | PostFX | `atmoStr` | `1.0` | 大气强度（0..6） |
 | PostFX | `atmoBloom` | auto | `auto` / `1` / `0`（大气是否进入 bloom layer） |
-| PostFX | `glow` | `off` | `auto` / `1` / `0`（行星外圈 glow；偏艺术向装饰） |
-| PostFX | `glowStr` | `0.6` | glow 强度（0..6） |
-| PostFX | `glowBloom` | auto | `auto` / `1` / `0`（glow 是否进入 bloom layer） |
+| PostFX | `halo` | `off` | `auto` / `1` / `0`（行星外圈 Halo Layer；薄壳 mesh；用于外发光能量分布） |
+| PostFX | `haloStr` | `0.6` | Halo 强度（0..6） |
+| PostFX | `haloBloom` | auto | `auto` / `1` / `0`（Halo 是否进入 bloom layer） |
 | PostFX | `flare` | `auto` | `auto` / `1` / `0`（lens flare HDR post pass；默认随 `post`） |
 | PostFX | `flareCore` | `1.0` | flare 核心/光晕组强度（0..1.6） |
 | PostFX | `flareStreak` | `1.0` | flare 花瓣/尖刺/拖影组强度（0..1.4） |

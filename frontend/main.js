@@ -1793,7 +1793,7 @@ class MarsMissionApp {
         return true;
     }
 
-    getRequestedGlowEnabled(fallbackEnabled) {
+    getRequestedHaloEnabled(fallbackEnabled) {
         const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : false;
         if (typeof window === 'undefined' || !window.location) {
             return fallback;
@@ -1804,7 +1804,7 @@ class MarsMissionApp {
 
         const params = getEffectiveParams();
         if (!params) return fallback;
-        const raw = String(params.get('glow') || '').trim().toLowerCase();
+        const raw = String(params.get('halo') || '').trim().toLowerCase();
         if (!raw || raw === 'auto') {
             return fallback;
         }
@@ -1835,7 +1835,7 @@ class MarsMissionApp {
         return true;
     }
 
-    getRequestedGlowBloomEnabled(fallbackEnabled) {
+    getRequestedHaloBloomEnabled(fallbackEnabled) {
         const fallback = (typeof fallbackEnabled === 'boolean') ? fallbackEnabled : false;
         if (typeof window === 'undefined' || !window.location) {
             return fallback;
@@ -1846,7 +1846,7 @@ class MarsMissionApp {
 
         const params = getEffectiveParams();
         if (!params) return fallback;
-        const raw = String(params.get('glowBloom') || '').trim().toLowerCase();
+        const raw = String(params.get('haloBloom') || '').trim().toLowerCase();
         if (!raw || raw === 'auto') {
             return fallback;
         }
@@ -1877,7 +1877,7 @@ class MarsMissionApp {
         return THREE.MathUtils.clamp(value, 0.0, 6.0);
     }
 
-    getRequestedGlowStrength() {
+    getRequestedHaloStrength() {
         if (typeof window === 'undefined' || !window.location) {
             return null;
         }
@@ -1887,7 +1887,7 @@ class MarsMissionApp {
 
         const params = getEffectiveParams();
         if (!params) return null;
-        const raw = String(params.get('glowStr') || '').trim();
+        const raw = String(params.get('haloStr') || '').trim();
         if (!raw) {
             return null;
         }
@@ -4263,39 +4263,6 @@ class MarsMissionApp {
         return texture;
     }
 
-    createRadialTexture() {
-        if (this.sharedTextures.radial) {
-            this.registerColorTexture(this.sharedTextures.radial);
-            return this.sharedTextures.radial;
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 512;
-        const context = canvas.getContext('2d');
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        const gradient = context.createRadialGradient(256, 256, 0, 256, 256, 256);
-        
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
-        gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.8)');
-        gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.2)');
-        // RGB=0 at alpha=0 avoids additive/bloom edge bleed.
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        
-        context.fillStyle = gradient;
-        context.fillRect(0, 0, 512, 512);
-        
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.generateMipmaps = false;
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        texture.premultiplyAlpha = true;
-        texture.needsUpdate = true;
-        this.sharedTextures.radial = texture;
-        this.registerColorTexture(texture);
-        return texture;
-    }
-
      loadTextureWithFallback(primaryUrl, fallbackUrl, onLoad) {
          const texture = this.textureLoader.load(
              primaryUrl,
@@ -4739,8 +4706,17 @@ class MarsMissionApp {
         hazeStrength = 0.12,
         twilightStrength = 0.25,
         twilightAlpha = 0.55,
-        alphaScale = 0.9
+        alphaScale = 0.9,
+        dayEdge0 = -0.2,
+        dayEdge1 = 0.2,
+        mieColor = null,
+        mieStrength = 0.0,
+        miePower = 10.0,
+        mieRimPower = 2.5
     }) {
+        const resolvedMieColor = (mieColor && mieColor.isColor)
+            ? mieColor
+            : new THREE.Color(0.95, 0.98, 1.0);
         return new THREE.ShaderMaterial({
             transparent: true,
             blending: THREE.CustomBlending,
@@ -4766,7 +4742,13 @@ class MarsMissionApp {
                 twilightWidth: { value: twilightWidth },
                 twilightStrength: { value: twilightStrength },
                 twilightAlpha: { value: twilightAlpha },
-                alphaScale: { value: alphaScale }
+                alphaScale: { value: alphaScale },
+                dayEdge0: { value: dayEdge0 },
+                dayEdge1: { value: dayEdge1 },
+                mieColor: { value: resolvedMieColor.clone() },
+                mieStrength: { value: mieStrength },
+                miePower: { value: miePower },
+                mieRimPower: { value: mieRimPower }
             },
             vertexShader: `
                 varying vec3 vWorldNormal;
@@ -4793,28 +4775,137 @@ class MarsMissionApp {
                 uniform float twilightStrength;
                 uniform float twilightAlpha;
                 uniform float alphaScale;
+                uniform float dayEdge0;
+                uniform float dayEdge1;
+                uniform vec3 mieColor;
+                uniform float mieStrength;
+                uniform float miePower;
+                uniform float mieRimPower;
                 varying vec3 vWorldNormal;
                 varying vec3 vWorldPos;
 
-                    void main() {
-                        vec3 N = normalize(vWorldNormal);
-                        vec3 V = normalize(cameraPosition - vWorldPos);
-                        float ndv = abs(dot(N, V));
-                        float rim = pow(1.0 - ndv, mix(rimPowerNear, rimPowerFar, cameraFactor));
-                        float edge = smoothstep(0.0, mix(0.12, 0.04, cameraFactor), 1.0 - ndv);
-                        rim *= edge;
-                        float sunDot = dot(N, normalize(sunDirection));
-                        float daySide = smoothstep(-0.2, 0.2, sunDot);
-                        rim = rim * rimIntensity * mix(0.35, 1.0, daySide);
-                        float twilight = smoothstep(twilightWidth, 0.0, abs(sunDot));
-                    float dayMask = smoothstep(0.0, 0.35, sunDot);
+                void main() {
+                    vec3 N = normalize(vWorldNormal);
+                    vec3 V = normalize(cameraPosition - vWorldPos);
+                    float ndv = abs(dot(N, V));
+                    float rimBase = pow(1.0 - ndv, mix(rimPowerNear, rimPowerFar, cameraFactor));
+                    float edge = smoothstep(0.0, mix(0.12, 0.04, cameraFactor), 1.0 - ndv);
+                    rimBase *= edge;
 
-                    vec3 color = rim * rimColor;
+                    vec3 L = normalize(sunDirection);
+                    float sunDot = dot(N, L);
+                    float dayMask = smoothstep(dayEdge0, dayEdge1, sunDot);
+
+                    // Rayleigh-like: wide, blue, view-dependent rim.
+                    float rayleigh = rimBase * rimIntensity * dayMask;
+
+                    // Mie-like: narrow, forward scattering approximation.
+                    float mie = 0.0;
+                    if (mieStrength > 0.0) {
+                        float cosTheta = clamp(dot(V, L), 0.0, 1.0);
+                        float miePhase = pow(cosTheta, max(miePower, 0.0));
+                        float mieRim = pow(rimBase, max(mieRimPower, 0.0));
+                        mie = mieStrength * miePhase * mieRim * dayMask;
+                    }
+
+                    float twilight = smoothstep(twilightWidth, 0.0, abs(sunDot));
+                    float twilightMask = smoothstep(-0.35, 0.15, sunDot);
+                    twilight *= twilightMask;
+
+                    vec3 color = rayleigh * rimColor;
+                    color += mie * mieColor;
                     color += twilight * twilightColor * twilightStrength;
-                    color += hazeStrength * rim * mix(hazeColor, rimColor, dayMask);
+                    // Keep the night side clean: haze should follow the illuminated hemisphere.
+                    color += hazeStrength * rimBase * mix(hazeColor, rimColor, dayMask) * dayMask;
 
-                    float opacity = (rim + twilight * twilightAlpha) * alphaScale;
+                    float opacity = (rimBase * dayMask + twilight * twilightAlpha) * alphaScale;
                     color *= opacity * atmoStrength;
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `
+        });
+    }
+
+    createHaloMaterial({
+        tint,
+        strength = 0.6,
+        rimPowerNear = 3.0,
+        rimPowerFar = 2.4,
+        dayEdge0 = -0.10,
+        dayEdge1 = 0.22,
+        alphaScale = 1.0,
+        terminatorWidth = 0.22,
+        terminatorStrength = 0.20
+    }) {
+        const resolvedTint = (tint && tint.isColor)
+            ? tint
+            : new THREE.Color(0.40, 0.62, 1.00);
+
+        return new THREE.ShaderMaterial({
+            transparent: true,
+            blending: THREE.CustomBlending,
+            blendEquation: THREE.AddEquation,
+            blendSrc: THREE.OneFactor,
+            blendDst: THREE.OneFactor,
+            blendSrcAlpha: THREE.OneFactor,
+            blendDstAlpha: THREE.OneFactor,
+            depthWrite: false,
+            side: THREE.BackSide,
+            toneMapped: false,
+            uniforms: {
+                haloTint: { value: resolvedTint.clone() },
+                sunDirection: { value: new THREE.Vector3(1, 0, 0) },
+                cameraFactor: { value: 0.0 },
+                rimPowerNear: { value: rimPowerNear },
+                rimPowerFar: { value: rimPowerFar },
+                haloStrength: { value: strength },
+                dayEdge0: { value: dayEdge0 },
+                dayEdge1: { value: dayEdge1 },
+                alphaScale: { value: alphaScale },
+                terminatorWidth: { value: terminatorWidth },
+                terminatorStrength: { value: terminatorStrength }
+            },
+            vertexShader: `
+                varying vec3 vWorldNormal;
+                varying vec3 vWorldPos;
+                void main() {
+                    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                    vWorldPos = worldPos.xyz;
+                    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+                    gl_Position = projectionMatrix * viewMatrix * worldPos;
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 haloTint;
+                uniform vec3 sunDirection;
+                uniform float cameraFactor;
+                uniform float rimPowerNear;
+                uniform float rimPowerFar;
+                uniform float haloStrength;
+                uniform float dayEdge0;
+                uniform float dayEdge1;
+                uniform float alphaScale;
+                uniform float terminatorWidth;
+                uniform float terminatorStrength;
+                varying vec3 vWorldNormal;
+                varying vec3 vWorldPos;
+
+                void main() {
+                    vec3 N = normalize(vWorldNormal);
+                    vec3 V = normalize(cameraPosition - vWorldPos);
+                    float ndv = abs(dot(N, V));
+                    float rim = pow(1.0 - ndv, mix(rimPowerNear, rimPowerFar, cameraFactor));
+                    float edge = smoothstep(0.0, mix(0.16, 0.06, cameraFactor), 1.0 - ndv);
+                    rim *= edge;
+
+                    vec3 L = normalize(sunDirection);
+                    float sunDot = dot(N, L);
+                    float day = smoothstep(dayEdge0, dayEdge1, sunDot);
+                    float terminator = smoothstep(terminatorWidth, 0.0, abs(sunDot));
+
+                    float halo = rim * (0.72 * day + terminatorStrength * terminator);
+                    vec3 color = haloTint * halo * haloStrength;
+                    color *= alphaScale;
                     gl_FragColor = vec4(color, 1.0);
                 }
             `
@@ -5007,85 +5098,84 @@ class MarsMissionApp {
                 );
 
                  shader.fragmentShader = shader.fragmentShader.replace(
-                     '#include <roughnessmap_fragment>',
-                     `
-                      float roughnessFactor = roughness;
-                      #ifdef USE_ROUGHNESSMAP
-                           vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
-                           float oceanMask = clamp(texelRoughness.g, 0.0, 1.0);
-                           float oceanMaskSmooth = smoothstep(0.35, 0.85, oceanMask);
-                           float landRoughness = 0.92;
-                           float oceanRoughness = 0.08;
-                           roughnessFactor = mix(landRoughness, oceanRoughness, oceanMask);
+                    '#include <roughnessmap_fragment>',
+                    `
+                    float roughnessFactor = roughness;
+                    #ifdef USE_ROUGHNESSMAP
+                        vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
+                        float oceanMask = clamp(texelRoughness.g, 0.0, 1.0);
+                        float oceanMaskSmooth = smoothstep(0.35, 0.85, oceanMask);
+                        float landRoughness = 0.92;
+                        float oceanRoughness = 0.08;
+                        roughnessFactor = mix(landRoughness, oceanRoughness, oceanMask);
 
-                          if (oceanBathyAvailable > 0.5 && oceanDepthEnabled > 0.5 && oceanDepthStrength > 0.0 && oceanMaskSmooth > 0.0) {
-                              float b = texture2D(oceanBathyMap, vRoughnessMapUv).r;
-                              float depthRaw = clamp(1.0 - b, 0.0, 1.0);
-                              // Single continuous depth ramp (avoid a "two-tone" look).
-                              float depth01 = pow(smoothstep(0.18, 0.78, depthRaw), 0.95);
-                              float shallow01 = pow(smoothstep(0.90, 0.990, b), 1.15);
-                              float k = oceanDepthStrength * oceanMaskSmooth;
-                              float w = clamp(k, 0.0, 1.0);
+                        if (oceanBathyAvailable > 0.5 && oceanDepthEnabled > 0.5 && oceanDepthStrength > 0.0 && oceanMaskSmooth > 0.0) {
+                            float b = texture2D(oceanBathyMap, vRoughnessMapUv).r;
+                            float depthRaw = clamp(1.0 - b, 0.0, 1.0);
+                            // Single continuous depth ramp (avoid a "two-tone" look).
+                            float depth01 = pow(smoothstep(0.18, 0.78, depthRaw), 0.95);
+                            float shallow01 = pow(smoothstep(0.90, 0.990, b), 1.15);
+                            float k = oceanDepthStrength * oceanMaskSmooth;
+                            float w = clamp(k, 0.0, 1.0);
 
-                               vec3 baseOcean = diffuseColor.rgb;
+                            vec3 baseOcean = diffuseColor.rgb;
 
-                               // Targets tuned around the observed ocean base (sRGB ~ 30,59,117).
-                               // Use a 3-stop ramp (shallow -> mid -> deep) to avoid a "two-tone" look.
-                               vec3 deepTarget = baseOcean * vec3(0.40, 0.58, 0.92);
-                               vec3 midTarget = baseOcean * vec3(0.92, 1.12, 1.15);
-                               vec3 shallowTarget = baseOcean * vec3(1.04, 1.28, 1.16) + vec3(0.010, 0.028, 0.020);
-                               vec3 shelfTarget = baseOcean * vec3(1.08, 1.38, 1.18) + vec3(0.012, 0.032, 0.022);
+                            // Targets tuned around the observed ocean base (sRGB ~ 30,59,117).
+                            // Use a 3-stop ramp (shallow -> mid -> deep) to avoid a "two-tone" look.
+                            vec3 deepTarget = baseOcean * vec3(0.40, 0.58, 0.92);
+                            vec3 midTarget = baseOcean * vec3(0.92, 1.12, 1.15);
+                            vec3 shallowTarget = baseOcean * vec3(1.04, 1.28, 1.16) + vec3(0.010, 0.028, 0.020);
+                            vec3 shelfTarget = baseOcean * vec3(1.08, 1.38, 1.18) + vec3(0.012, 0.032, 0.022);
 
-                               float t = clamp(depth01, 0.0, 1.0);
-                               vec3 rampA = mix(shallowTarget, midTarget, t);
-                               vec3 rampB = mix(midTarget, deepTarget, t);
-                               vec3 depthGraded = mix(rampA, rampB, t);
+                            float t = clamp(depth01, 0.0, 1.0);
+                            vec3 rampA = mix(shallowTarget, midTarget, t);
+                            vec3 rampB = mix(midTarget, deepTarget, t);
+                            vec3 depthGraded = mix(rampA, rampB, t);
 
-                               // Extra shelf pop (very shallow), kept subtle.
-                               depthGraded = mix(depthGraded, shelfTarget, shallow01 * 0.22);
+                            // Extra shelf pop (very shallow), kept subtle.
+                            depthGraded = mix(depthGraded, shelfTarget, shallow01 * 0.22);
 
-                               diffuseColor.rgb = mix(baseOcean, depthGraded, w);
+                            diffuseColor.rgb = mix(baseOcean, depthGraded, w);
 
-                               // Micro-variation in roughness only (no normal perturbation) to avoid multi-sun glints.
-                               roughnessFactor = clamp(roughnessFactor + (depth01 * 0.055 - shallow01 * 0.025) * w, 0.0, 1.0);
-                           }
-                       #endif
-                       `
+                            // Micro-variation in roughness only (no normal perturbation) to avoid multi-sun glints.
+                            roughnessFactor = clamp(roughnessFactor + (depth01 * 0.055 - shallow01 * 0.025) * w, 0.0, 1.0);
+                        }
+                    #endif
+                    `
                    );
 
-                 shader.fragmentShader = shader.fragmentShader.replace(
-                     '#include <dithering_fragment>',
-                     `
-                      vec3 fragPosView = -vViewPosition;
-                      vec3 sunDirView = normalize(sunPositionView - fragPosView);
-                      float ndl = dot(normalize(vNormal), sunDirView);
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <dithering_fragment>',
+                    `
+                    vec3 fragPosView = -vViewPosition;
+                    vec3 sunDirView = normalize(sunPositionView - fragPosView);
+                    float ndl = dot(normalize(vNormal), sunDirView);
 
-                      float cloudShadow = 0.0;
-                      #ifdef USE_MAP
-                      if (cloudShadowEnabled > 0.5 && cloudShadowStrength > 0.0) {
-                          vec2 cloudUv = vec2(vMapUv.x + cloudShadowUvOffset, clamp(vMapUv.y, 0.0, 1.0));
-                          cloudUv = mmWarpCloudUv(cloudUv);
-                          float cloudDensity = mmCloudShadowDensity(cloudUv);
-                          float cloudDayMask = smoothstep(-0.05, 0.22, ndl);
-                          cloudShadow = clamp(cloudDensity * cloudShadowStrength * cloudDayMask, 0.0, 0.92);
+                    float cloudShadow = 0.0;
+                    #ifdef USE_MAP
+                    if (cloudShadowEnabled > 0.5 && cloudShadowStrength > 0.0) {
+                        vec2 cloudUv = vec2(vMapUv.x + cloudShadowUvOffset, clamp(vMapUv.y, 0.0, 1.0));
+                        cloudUv = mmWarpCloudUv(cloudUv);
+                        float cloudDensity = mmCloudShadowDensity(cloudUv);
+                        float cloudDayMask = smoothstep(-0.05, 0.22, ndl);
+                        cloudShadow = clamp(cloudDensity * cloudShadowStrength * cloudDayMask, 0.0, 0.92);
 
-                          if (cloudShadowLatitudeFadeEnabled > 0.5) {
-                              float lat01 = abs(cloudUv.y - 0.5) * 2.0;
-                              float pole = smoothstep(0.65, 1.0, lat01);
-                              float latAtten = mix(1.0, 0.25, pole);
-                              cloudShadow *= latAtten;
-                          }
-                      }
-                      #endif
+                        if (cloudShadowLatitudeFadeEnabled > 0.5) {
+                            float lat01 = abs(cloudUv.y - 0.5) * 2.0;
+                            float pole = smoothstep(0.65, 1.0, lat01);
+                            float latAtten = mix(1.0, 0.25, pole);
+                            cloudShadow *= latAtten;
+                        }
+                    }
+                    #endif
 
-                      gl_FragColor.rgb *= (1.0 - cloudShadow);
-                      float dayFactor = smoothstep(0.03, 0.12, ndl);
-                      float noise = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453123);
-                      if (noise >= dayFactor) discard;
-                      #include <dithering_fragment>
-                      `
-                  );
-
+                    gl_FragColor.rgb *= (1.0 - cloudShadow);
+                    float dayFactor = smoothstep(0.03, 0.12, ndl);
+                    float noise = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453123);
+                    if (noise >= dayFactor) discard;
+                    #include <dithering_fragment>
+                    `
+                );
             };
 
             material.onBeforeCompile = (shader) => {
@@ -5100,28 +5190,27 @@ class MarsMissionApp {
                     `
                 );
 
-                 shader.fragmentShader = shader.fragmentShader.replace(
-                     '#include <roughnessmap_fragment>',
-                     `
-                     float roughnessFactor = roughness;
-                     #ifdef USE_ROUGHNESSMAP
-                         vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
-                         float oceanMask = clamp(texelRoughness.g, 0.0, 1.0);
-                         float landRoughness = 0.92;
-                         float oceanRoughness = 0.08;
-                         roughnessFactor = mix(landRoughness, oceanRoughness, oceanMask);
-                     #endif
-                     `
-                 );
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <roughnessmap_fragment>',
+                    `
+                    float roughnessFactor = roughness;
+                    #ifdef USE_ROUGHNESSMAP
+                        vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
+                        float oceanMask = clamp(texelRoughness.g, 0.0, 1.0);
+                        float landRoughness = 0.92;
+                        float oceanRoughness = 0.08;
+                        roughnessFactor = mix(landRoughness, oceanRoughness, oceanMask);
+                    #endif
+                    `
+                );
 
-                 shader.fragmentShader = shader.fragmentShader.replace(
-                     '#include <dithering_fragment>',
-                     `
-                     vec3 fragPosView = -vViewPosition;
-                     vec3 sunDirView = normalize(sunPositionView - fragPosView);
-                     vec3 N = normalize(vNormal);
-                     float ndl = dot(N, sunDirView);
-
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <dithering_fragment>',
+                    `
+                    vec3 fragPosView = -vViewPosition;
+                    vec3 sunDirView = normalize(sunPositionView - fragPosView);
+                    vec3 N = normalize(vNormal);
+                    float ndl = dot(N, sunDirView);
 
                     // Night visibility mask (soft terminator): 0 on day side, 1 on deep night.
                     float nightMask = 1.0 - smoothstep(0.02, 0.18, ndl);
@@ -5422,53 +5511,119 @@ class MarsMissionApp {
 
         const postMode = this.getRequestedPostMode();
         const atmoEnabled = this.getRequestedAtmoEnabled(postMode !== 'raw');
-        const glowEnabled = this.getRequestedGlowEnabled(false);
+        const haloEnabled = this.getRequestedHaloEnabled(false);
         const atmoBloomEnabled = atmoEnabled && this.getRequestedAtmoBloomEnabled(postMode !== 'raw');
-        const glowBloomEnabled = glowEnabled && this.getRequestedGlowBloomEnabled(false);
+        const haloBloomEnabled = haloEnabled && this.getRequestedHaloBloomEnabled(false);
         const atmoStrength = this.getRequestedAtmoStrength();
-        const glowStrength = this.getRequestedGlowStrength();
+        const haloStrength = this.getRequestedHaloStrength();
         const resolvedAtmoStrength = (typeof atmoStrength === 'number') ? atmoStrength : 1.0;
-        const resolvedGlowStrength = (typeof glowStrength === 'number') ? glowStrength : 0.6;
+        const resolvedHaloStrength = (typeof haloStrength === 'number') ? haloStrength : 0.6;
 
-        if (glowEnabled && resolvedGlowStrength > 0.0) {
-            const glowTexture = this.createRadialTexture();
-            const glowColor = new THREE.Color(color);
-            glowColor.multiplyScalar(resolvedGlowStrength);
+        // Halo Layer: thin shell mesh (replaces the old sprite ring).
+        // - Primary role: feed BLOOM_LAYER so bloom can create the soft outer glow.
+        // - When bloom is enabled and haloBloom=1, prefer bloom-only halo to avoid a visible hard ring in base render.
+        if (haloEnabled && resolvedHaloStrength > 0.0) {
+            const isRawPost = postMode === 'raw';
+            const bloomEnabled = this.getRequestedBloomEnabled(!isRawPost);
+            const bloomDebugMode = this.getRequestedBloomDebugMode();
+            const wantsBloom = bloomEnabled || bloomDebugMode !== 0;
+            const haloBloomOnly = wantsBloom && haloBloomEnabled;
 
-            const glowMaterial = new THREE.SpriteMaterial({
-                map: glowTexture,
-                color: glowColor,
-                transparent: true,
-                opacity: 1.0,
-                blending: THREE.CustomBlending,
-                blendEquation: THREE.AddEquation,
-                blendSrc: THREE.OneFactor,
-                blendDst: THREE.OneFactor,
-                blendSrcAlpha: THREE.OneFactor,
-                blendDstAlpha: THREE.OneFactor,
-                depthWrite: false,
-                toneMapped: false
-            });
+            const haloPreset = name === 'earth'
+                ? {
+                    tint: new THREE.Color(0.40, 0.62, 1.00),
+                    strength: resolvedHaloStrength,
+                    rimPowerNear: 1.0,
+                    rimPowerFar: 1.4,
+                    dayEdge0: -0.10,
+                    dayEdge1: 0.22,
+                    alphaScale: 1.0,
+                    terminatorWidth: 0.22,
+                    terminatorStrength: 0.22
+                }
+                : {
+                    tint: new THREE.Color(color),
+                    strength: resolvedHaloStrength,
+                    rimPowerNear: 3.0,
+                    rimPowerFar: 2.4,
+                    dayEdge0: -0.10,
+                    dayEdge1: 0.22,
+                    alphaScale: 1.0,
+                    terminatorWidth: 0.22,
+                    terminatorStrength: 0.18
+                };
 
-            const glow = new THREE.Sprite(glowMaterial);
-            glow.scale.set(size * 4, size * 4, 1.0);
-            if (glowBloomEnabled) {
-                glow.layers.enable(BLOOM_LAYER);
+            const haloRadius = name === 'earth'
+                ? size * 1.012
+                : name === 'mars'
+                    ? size * 1.005
+                    : size * 1.005;
+
+            const haloGeometry = new THREE.SphereGeometry(haloRadius, 64, 64);
+            const haloMaterial = this.createHaloMaterial(haloPreset);
+            const halo = new THREE.Mesh(haloGeometry, haloMaterial);
+            halo.userData.haloRadius = haloRadius;
+            halo.visible = true;
+            halo.renderOrder = 3;
+
+            if (haloBloomEnabled) {
+                halo.layers.enable(BLOOM_LAYER);
             }
-            this.objects[name].add(glow);
+            if (haloBloomOnly) {
+                halo.layers.set(BLOOM_LAYER);
+            }
+
+            const planetWorldPos = new THREE.Vector3();
+            const sunWorldPos = new THREE.Vector3();
+            const sunDirWorld = new THREE.Vector3();
+            const updateHaloUniforms = (mesh, camera) => {
+                if (!mesh.material || !mesh.material.uniforms) return;
+                mesh.getWorldPosition(planetWorldPos);
+                sunWorldPos.copy(this.sunWorldPosition);
+                sunDirWorld.subVectors(sunWorldPos, planetWorldPos);
+                const len = sunDirWorld.length();
+                if (len > 0.0001) {
+                    sunDirWorld.divideScalar(len);
+                } else {
+                    sunDirWorld.set(1, 0, 0);
+                }
+                mesh.material.uniforms.sunDirection.value.copy(sunDirWorld);
+
+                const r = mesh.userData.haloRadius || size;
+                const dist = camera.position.distanceTo(planetWorldPos);
+                const start = r * 1.05;
+                const end = r * 3.2;
+                mesh.material.uniforms.cameraFactor.value =
+                    THREE.MathUtils.clamp((dist - start) / (end - start), 0, 1);
+            };
+            halo.onBeforeRender = (renderer, scene, camera) => {
+                updateHaloUniforms(halo, camera);
+            };
+
+            this.objects[name].add(halo);
         }
 
         const atmospherePreset = name === 'earth'
             ? {
-                rimColor: new THREE.Color(0.75, 0.9, 1.0),
-                hazeColor: new THREE.Color(0.58, 0.80, 1.0),
-                twilightColor: new THREE.Color(0.75, 0.88, 1.0),
-                intensity: 0.85,
-                twilightWidth: 0.1,
-                hazeStrength: 0.2,
-                twilightStrength: 0.42,
-                twilightAlpha: 0.75,
-                alphaScale: 1.0
+                // Atmosphere Layer (Earth): prioritize translucency in the center and a crisp rim near the limb.
+                rimColor: new THREE.Color(0.52, 0.72, 1.0),
+                hazeColor: new THREE.Color(0.50, 0.70, 1.0),
+                twilightColor: new THREE.Color(0.85, 0.55, 0.30),
+                intensity: 0.45,
+                rimPowerNear: 6.7,
+                rimPowerFar: 4.8,
+                twilightWidth: 0.15,
+                hazeStrength: 0.055,
+                twilightStrength: 0.50,
+                twilightAlpha: 0.60,
+                alphaScale: 1.0,
+                dayEdge0: -0.25,
+                dayEdge1: 0.25,
+                // Rayleigh/Mie upgrade: keep controls internal; `atmoStr` remains the only user-facing strength knob.
+                mieColor: new THREE.Color(0.98, 0.98, 1.0),
+                mieStrength: 0.55,
+                miePower: 12.0,
+                mieRimPower: 3.2
             }
             : name === 'mars'
                 ? {
@@ -5495,10 +5650,10 @@ class MarsMissionApp {
                 };
 
         const atmosphereRadius = name === 'earth'
-            ? size * 1.02
+            ? size * 1.005
             : name === 'mars'
-                ? size * 1.01
-                : size * 1.01;
+                ? size * 1.002
+                : size * 1.002;
 
         const atmosphereGeometry = new THREE.SphereGeometry(atmosphereRadius, 64, 64);
         const atmosphereMaterial = this.createAtmosphereMaterial({

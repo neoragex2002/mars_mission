@@ -201,7 +201,7 @@
 ### 8.6 Phase 2（物理摄影感照明）快速验证
 - 打开：`/?post=raw`
 - 期望：
-  - bloom/flare/planet glow/atmosphere 不参与，便于专注调光照。
+- bloom/flare/planet halo/atmosphere 不参与，便于专注调光照。
   - 夜面更暗，层次更强（不再被 ambient/hemi 大幅抬平）。
 
 - 调参示例：`/?post=raw&exp=0.9&sun=3.8&amb=0.03&hemi=0.03`

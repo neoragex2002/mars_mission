@@ -247,7 +247,7 @@
 
 建议：
 - 提供/维护一个“校准预设 URL”，用于一键关闭所有艺术向层：
-  - 例如：`/?post=raw&bloom=0&flare=0&sunGlow=0&glow=0&atmo=0&cine=0`
+- 例如：`/?post=raw&bloom=0&flare=0&sunGlow=0&halo=0&atmo=0&cine=0`
 
 ---
 

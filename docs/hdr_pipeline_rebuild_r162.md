@@ -242,7 +242,7 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 ### 10.6 Phase 2（照明标定）最低可解释性验证
 - 打开：`/?post=raw`
 - 期望：
-  - bloom/flare/planet glow/atmosphere 不参与，便于专注调光照。
+- bloom/flare/planet halo/atmosphere 不参与，便于专注调光照。
 - 调参示例：`/?post=raw&exp=0.9&sun=3.8&amb=0&hemi=0`
 - 期望：
   - 降低 `amb/hemi` → 阴影更深。
@@ -348,7 +348,7 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 - 定位：风格化边缘光/辉光（scene 内 ShaderMaterial/Sprite additive），最容易在 HDR 下抬平暗部。
 - 规则：必须明确哪些对象参与 BloomLayer（参与则会被 bloom 放大），默认强度必须保守。
 - DoD：开启后不应造成“暗面发白、阴影丢结构”，且与 Phase 3A 接触层次互补。
-- 状态：已实现 HDR 口径的大气 Fresnel 与可选外圈 glow，并支持独立开关与 BloomLayer 参与控制（详见 `docs/debug_url_params.md`）。
+- 状态：已实现 HDR 口径的大气 Fresnel 与可选外圈 Halo Layer，并支持独立开关与 BloomLayer 参与控制（详见 `docs/debug_url_params.md`）。
 
 #### Phase 4C — Lens Flare（最后恢复，改为 Post）
 - 定位：镜头伪影，当前作为 HDR post pass（OutputPass 之前）。
@@ -380,7 +380,7 @@ EffectComposer 的 `RenderPass` 会调用 `renderer.render(scene, camera)`。若
 10. Phase 3B（飞船 SSAO）：`ao=ssao`（ship-only，自研 shader + 复用 ship depth；仅衰减间接光），并提供 `ssaoDebug=1` 调试输出。
 11. 飞船太阳直射自阴影：`sShadow=1`（ship-only shadow map depth prepass + shader compare；提供 tight fit/snap、bias、软硬与采样数等参数）。
 12. Phase 4A（Bloom 开始解耦）：新增 `bloom=0/1` 独立开关（允许 `post=raw&bloom=1`），并提供 `bloomStr/bloomRad/bloomTh` 调参与 `bloomDebug=1` 全屏替换调试输出。
-13. Phase 4B（Atmosphere/Glow）：HDR 口径大气 Fresnel + 可选 glow（默认关闭），并提供 `atmo`/`glow`、`*Bloom`、`*Str` 等开关与调参。
+13. Phase 4B（Atmosphere/Halo）：HDR 口径大气 Fresnel + 可选 Halo Layer（默认关闭），并提供 `atmo`/`halo`、`*Bloom`、`*Str` 等开关与调参。
 14. Phase 4C（Lens Flare）：迁移为 HDR post pass，弃用 scene sprites，保持 tone mapping 只在 OutputPass 执行。
 15. HDR 基线收敛：统一设置场景材质 `toneMapped=false`，确保 tone mapping 只由末端 `OutputPass` 执行。
 16. Output Dither：显示域末端加入轻微 dithering（debug/raw 自动禁用）。
